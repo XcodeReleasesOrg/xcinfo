@@ -151,6 +151,8 @@ Xcode comes as `.xip` and, from Xcode 27.3, also as Apple Encrypted Archive (`.a
 
 After a download, and before installing from `--archive-path`, xcinfo checks the archive's SHA-1 against xcodereleases.com when the list has one ("Verifying"). A mismatch after a download fails with exit code 5 and keeps the file; for an `--archive-path` archive it warns and asks whether to install anyway. `--no-verify` skips the check.
 
+A version without a qualifier means the final release: `26.6` is 26.6, not 26.6 RC 2, and `26` is the newest final 26.x. Release candidates and betas are chosen by name (`26.6 RC 2`, `26.6 rc2`, `27.0 beta 3`) or by build number, or when a version has no final release yet; xcinfo says which one it took. `latest` is the newest entry on xcodereleases.com, betas included.
+
 Some versions come as two downloads, one for Apple silicon only and one Universal (Apple silicon and Intel); `list`, `info` and the terminal UI label them. `download` and `install` take the Apple silicon one on an Apple silicon Mac and the Universal one on an Intel Mac, and say so; `--apple-silicon` or `--universal` chooses the other. `info` asks which one to show.
 
 `uninstall` asks with the full path of the Xcode it is about to remove and moves it to the Trash. `--delete-permanently` deletes it right away; if the Trash can't be used, `uninstall` stops and suggests that flag.

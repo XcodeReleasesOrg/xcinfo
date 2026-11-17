@@ -746,10 +746,10 @@ extension Core {
         switch version {
         case let .version(version):
             if let versionParts = VersionParts(rawValue: version) {
-                let result = knownXcodes.filter {
+                let matches = knownXcodes.filter {
                     $0.matching(versionParts)
                 }
-                return result
+                return preferringFinalRelease(matches, for: versionParts, query: version) { $0 }
             } else {
                 return knownXcodes.filter { xcode in
                     xcode.version.build?.hasPrefix(version) ?? false
@@ -769,8 +769,40 @@ extension Core {
             xcodesApplications = xcodesApplications.filter {
                 $0.xcode.matching(fullVersion: fullVersion, betaVersion: betaVersion, version: version)
             }
+            if let versionParts = VersionParts(rawValue: version) {
+                xcodesApplications = preferringFinalRelease(xcodesApplications, for: versionParts, query: version, \.xcode)
+            }
         }
         return xcodesApplications
+    }
+
+    private func preferringFinalRelease<Candidate>(
+        _ candidates: [Candidate],
+        for versionParts: VersionParts,
+        query: String,
+        _ xcode: (Candidate) -> Xcode
+    ) -> [Candidate] {
+        guard versionParts.type == nil, Set(candidates.map { xcode($0).displayName }).count > 1 else { return candidates }
+        let finals = candidates.filter { xcode($0).isFinalRelease }
+        let exact = finals.filter { xcode($0).hasVersionNumber(of: versionParts) }
+        let pool = versionParts.minor != nil && !exact.isEmpty ? exact : finals.isEmpty ? candidates : finals
+        guard let newest = pool.map(xcode).max() else { return candidates }
+        let chosen = candidates.filter { xcode($0).displayName == newest.displayName }
+
+        let excludedPrerelease = candidates.map(xcode).filter { !$0.isFinalRelease && $0.version.number == newest.version.number }.max()
+        var message = switch (finals.isEmpty, versionParts.minor) {
+        case (true, _):
+            "Using Xcode \(newest.displayName), the newest pre-release of \(query); there is no final release yet."
+        case (false, nil):
+            "Using Xcode \(newest.displayName), the newest final release of Xcode \(query)."
+        case (false, .some):
+            "Using Xcode \(newest.displayName), the final release."
+        }
+        if !finals.isEmpty, let excludedPrerelease, let kind = excludedPrerelease.version.release.kindDescription {
+            message += " Use '\(excludedPrerelease.displayVersion)' for \(kind)."
+        }
+        logger.log(message)
+        return chosen
     }
 
     private func extractVersionParts(from version: String) -> (String?, Int?) {

@@ -50,7 +50,7 @@ struct SwitchTests {
     func `several matches are offered with their paths`() async throws {
         let prompt = FakePrompt(choices: [1], passwords: ["sudo-password"])
         let fixture = try Fixture(xcodes: xcodes, apps: {
-            [try $0.fakeXcode(named: "Xcode-beta.app", build: "15A1"), try $0.fakeXcode(named: "Xcode-15.app", build: "15A2")]
+            [try $0.fakeXcode(named: "Xcode-15-copy.app", build: "15A2"), try $0.fakeXcode(named: "Xcode-15.app", build: "15A2")]
         }, prompt: prompt)
 
         let switched = try await fixture.core.switchXcode(to: "15", options: .init(skipXcodeSelection: true), updateVersionList: true)
@@ -58,7 +58,7 @@ struct SwitchTests {
         let choices = try #require(prompt.chosen.values.first)
         #expect(choices.count == 2)
         #expect(choices.allSatisfy { $0.contains(fixture.applications.url.path) })
-        #expect(switched.url.lastPathComponent == (choices[1].contains("Xcode-beta.app") ? "Xcode-beta.app" : "Xcode-15.app"))
+        #expect(switched.url.lastPathComponent == (choices[1].contains("Xcode-15-copy.app") ? "Xcode-15-copy.app" : "Xcode-15.app"))
         #expect(fixture.shell.privilegedCalls.isEmpty)
     }
 
@@ -221,5 +221,18 @@ struct SwitchTests {
         let app = fixture.applications.url.appendingPathComponent("Xcode-16.app")
         #expect(fixture.shell.privilegedCalls.last?.args == ["-s", app.path])
         #expect(fixture.logs.messages.contains("xcode-select now uses \(app.path), but \(fixture.symlink.path) was not changed."))
+    }
+
+    @Test
+    func `a version without a qualifier switches to the installed final release`() async throws {
+        let fixture = try Fixture(xcodes: xcodes, apps: {
+            [try $0.fakeXcode(named: "Xcode-beta.app", build: "15A1"), try $0.fakeXcode(named: "Xcode-15.app", build: "15A2")]
+        })
+
+        let switched = try await fixture.core.switchXcode(to: "15.0", options: .init(skipXcodeSelection: true), updateVersionList: true)
+
+        #expect(switched.url.lastPathComponent == "Xcode-15.app")
+        #expect(fixture.prompt.chosen.values.isEmpty)
+        #expect(fixture.logs.messages.contains("Using Xcode 15.0 (15A2), the final release. Use '15.0 Beta 2' for a beta."))
     }
 }
