@@ -39,8 +39,9 @@
 
 - CLI subcommands, flags and their defaults (deprecated flags stay as aliases)
 - The text output of `list` and `installed` when piped
-- Keychain service names `xcinfo.appleid` and `xcinfo.session`, the `cookies` user defaults key, and the cache file `~/Library/Caches/xcinfo/xcinfo.json`
-- Keychain service names `xcinfo.cookies` (session cookies, migrated once from the old `cookies` user defaults key)
+- The cache file `~/Library/Caches/xcinfo/xcinfo.json`
+- One Keychain item, service and account `xcinfo`, holding a versioned `VaultContents` (account name, sessions per account). It is read at most once per run through `KeychainVault` and written at most once per run, after the download authorization succeeded. The old items `xcinfo.appleid`, `xcinfo.session`, `xcinfo.cookies` and the `cookies` user defaults key are migrated once and deleted
+- The Apple ID password is never stored, logged or sent: it comes from `XCINFO_APPLE_PASSWORD` or a prompt, only when a new sign-in is needed, and goes only into the SRP computation
 
 ## Apple sign-in
 

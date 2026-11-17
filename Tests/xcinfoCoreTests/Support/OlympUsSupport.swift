@@ -3,11 +3,34 @@ import Foundation
 @testable import OlympUs
 import os
 
+func cookieData(_ cookies: [HTTPCookie]) -> Data? {
+    guard !cookies.isEmpty else { return nil }
+    let properties = cookies.compactMap { cookie in
+        cookie.properties.map { Dictionary(uniqueKeysWithValues: $0.map { ($0.key.rawValue, $0.value) }) }
+    }
+    return try? PropertyListSerialization.data(fromPropertyList: properties, format: .binary, options: 0)
+}
+
+func cookieNames(in data: Data?) -> Set<String> {
+    guard
+        let data,
+        let cookies = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Any]]
+    else { return [] }
+    return Set(cookies.compactMap { $0[HTTPCookiePropertyKey.name.rawValue] as? String })
+}
+
 final class InMemorySessionStore: Sendable {
     private let items: OSAllocatedUnfairLock<[String: Data]>
+    private let legacyCookies: OSAllocatedUnfairLock<Data?>
+    let saves = Recorder<String>()
 
-    init(_ items: [String: Data] = [:]) {
+    init(_ items: [String: Data] = [:], legacyCookies: [HTTPCookie] = []) {
         self.items = OSAllocatedUnfairLock(initialState: items)
+        self.legacyCookies = OSAllocatedUnfairLock(initialState: cookieData(legacyCookies))
+    }
+
+    static func session(assets: OlympUs.AuthenticationAssets = .fixture, cookies: [HTTPCookie]) -> Data {
+        try! JSONEncoder().encode(StoredSession(assets: assets, cookies: cookieData(cookies)))
     }
 
     var accounts: [String] {
@@ -18,15 +41,25 @@ final class InMemorySessionStore: Sendable {
         items.withLock { $0[account] }
     }
 
+    func storedSession(for account: String) -> StoredSession? {
+        data(for: account).flatMap { try? JSONDecoder().decode(StoredSession.self, from: $0) }
+    }
+
+    func cookieNames(for account: String) -> Set<String> {
+        xcinfoCoreTests.cookieNames(in: storedSession(for: account)?.cookies)
+    }
+
+    var hasLegacyCookies: Bool {
+        legacyCookies.withLock { $0 != nil }
+    }
+
     var store: AuthenticationSessionStore {
         AuthenticationSessionStore(
             load: { [items] account in
-                guard let data = items.withLock({ $0[account] }) else {
-                    throw CocoaError(.fileNoSuchFile)
-                }
-                return data
+                items.withLock { $0[account] }
             },
-            save: { [items] data, account in
+            save: { [items, saves] data, account in
+                saves.append(account)
                 items.withLock { $0[account] = data }
             },
             removeAll: { [items] in
@@ -35,42 +68,14 @@ final class InMemorySessionStore: Sendable {
                     items.removeAll()
                     return count
                 }
+            },
+            loadLegacyCookies: { [legacyCookies] in
+                legacyCookies.withLock { $0 }
+            },
+            removeLegacyCookies: { [legacyCookies] in
+                legacyCookies.withLock { $0 = nil }
             }
         )
-    }
-}
-
-final class InMemoryCookieStore: Sendable {
-    private let data = OSAllocatedUnfairLock<Data?>(initialState: nil)
-
-    init(cookies: [HTTPCookie] = []) {
-        if !cookies.isEmpty {
-            let properties = cookies.compactMap { cookie in
-                cookie.properties.map { Dictionary(uniqueKeysWithValues: $0.map { ($0.key.rawValue, $0.value) }) }
-            }
-            let encoded = try? PropertyListSerialization.data(fromPropertyList: properties, format: .binary, options: 0)
-            data.withLock { $0 = encoded }
-        }
-    }
-
-    var store: CookieStore {
-        CookieStore(
-            load: { [data] in data.withLock { $0 } },
-            save: { [data] newValue in data.withLock { $0 = newValue } },
-            remove: { [data] in data.withLock { $0 = nil } }
-        )
-    }
-
-    var cookieNames: Set<String> {
-        guard
-            let data = data.withLock({ $0 }),
-            let cookies = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Any]]
-        else { return [] }
-        return Set(cookies.compactMap { $0[HTTPCookiePropertyKey.name.rawValue] as? String })
-    }
-
-    var isEmpty: Bool {
-        data.withLock { $0 == nil }
     }
 }
 

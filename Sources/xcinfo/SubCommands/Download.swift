@@ -11,7 +11,10 @@ extension XCInfo {
     struct Download: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Downloads an Xcode version",
-            discussion: "Downloads a specific version of Xcode."
+            discussion: """
+            Downloads a specific version of Xcode. Signs in to Apple when the stored session has expired and asks \
+            for the password then. Set XCINFO_APPLE_ID and XCINFO_APPLE_PASSWORD for unattended use.
+            """
         )
 
         @OptionGroup

@@ -72,7 +72,13 @@ $ brew install xcinfo
 
 ### Signing in to Apple
 
-`download` and `install` sign in to the Apple Developer Portal with SRP, like Xcode does, so the password is never sent. Session cookies are kept in the Keychain (`xcinfo.cookies`); `xcinfo cleanup` removes them together with the stored credentials.
+`download` and `install` sign in to the Apple Developer Portal with SRP, like Xcode does, so the password is never sent.
+
+- xcinfo keeps one Keychain item named `xcinfo` with your Apple ID account name and the Apple session. It never stores your password: it asks for it only when Apple needs a new sign-in.
+- The item is read once per run. macOS asks you to allow access when the item was created by a different build of xcinfo. Builds signed with the same identity keep that approval: `make CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" install`.
+- For unattended use, set `XCINFO_APPLE_ID` and `XCINFO_APPLE_PASSWORD`. Without a terminal and without these variables, xcinfo fails with exit code 4 instead of waiting for input.
+- Older versions kept the password in the Keychain items `xcinfo.appleid`, `xcinfo.session` and `xcinfo.cookies`. The first run moves the account name and session into the new item and deletes the old ones, the password included.
+- `xcinfo cleanup` removes everything xcinfo stored.
 
 ### Output
 

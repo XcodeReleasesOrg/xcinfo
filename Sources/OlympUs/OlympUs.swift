@@ -134,81 +134,30 @@ extension ValidationType {
 extension OlympUs.AuthenticationAssets: Codable {}
 
 public struct AuthenticationSessionStore: Sendable {
-    public var load: @Sendable (_ account: String) throws -> Data
-    public var save: @Sendable (_ data: Data, _ account: String) throws -> Void
-    public var removeAll: @Sendable () throws -> Int
+    public var load: @Sendable (_ account: String) async throws -> Data?
+    public var save: @Sendable (_ data: Data, _ account: String) async throws -> Void
+    public var removeAll: @Sendable () async throws -> Int
+    public var loadLegacyCookies: @Sendable () async -> Data?
+    public var removeLegacyCookies: @Sendable () async -> Void
 
     public init(
-        load: @escaping @Sendable (String) throws -> Data,
-        save: @escaping @Sendable (Data, String) throws -> Void,
-        removeAll: @escaping @Sendable () throws -> Int
+        load: @escaping @Sendable (String) async throws -> Data?,
+        save: @escaping @Sendable (Data, String) async throws -> Void,
+        removeAll: @escaping @Sendable () async throws -> Int,
+        loadLegacyCookies: @escaping @Sendable () async -> Data? = { nil },
+        removeLegacyCookies: @escaping @Sendable () async -> Void = {}
     ) {
         self.load = load
         self.save = save
         self.removeAll = removeAll
+        self.loadLegacyCookies = loadLegacyCookies
+        self.removeLegacyCookies = removeLegacyCookies
     }
 }
 
-public extension AuthenticationSessionStore {
-    static let keychain = AuthenticationSessionStore(
-        load: { account in
-            try KeychainPasswordItem(service: "xcinfo.session", account: account).readData()
-        },
-        save: { data, account in
-            try KeychainPasswordItem(service: "xcinfo.session", account: account).saveData(data, overwriteExisting: true)
-        },
-        removeAll: {
-            let items = try KeychainPasswordItem.passwordItems(forService: "xcinfo.session")
-            for item in items {
-                try item.deleteItem()
-            }
-            return items.count
-        }
-    )
-}
-
-public struct CookieStore: Sendable {
-    public var load: @Sendable () -> Data?
-    public var save: @Sendable (_ data: Data) -> Void
-    public var remove: @Sendable () -> Void
-
-    public init(
-        load: @escaping @Sendable () -> Data?,
-        save: @escaping @Sendable (Data) -> Void,
-        remove: @escaping @Sendable () -> Void
-    ) {
-        self.load = load
-        self.save = save
-        self.remove = remove
-    }
-}
-
-public extension CookieStore {
-    static let keychain = CookieStore(
-        load: {
-            let item = KeychainPasswordItem(service: "xcinfo.cookies", account: "olympus")
-            if let data = try? item.readData() {
-                return data
-            }
-            guard
-                let legacy = UserDefaults.standard.array(forKey: "cookies"),
-                let data = try? PropertyListSerialization.data(fromPropertyList: legacy, format: .binary, options: 0)
-            else {
-                return nil
-            }
-            if (try? item.saveData(data, overwriteExisting: true)) != nil {
-                UserDefaults.standard.removeObject(forKey: "cookies")
-            }
-            return data
-        },
-        save: { data in
-            try? KeychainPasswordItem(service: "xcinfo.cookies", account: "olympus").saveData(data, overwriteExisting: true)
-        },
-        remove: {
-            try? KeychainPasswordItem(service: "xcinfo.cookies", account: "olympus").deleteItem()
-            UserDefaults.standard.removeObject(forKey: "cookies")
-        }
-    )
+struct StoredSession: Codable, Equatable {
+    var assets: OlympUs.AuthenticationAssets
+    var cookies: Data?
 }
 
 public struct SignInResult: Sendable, Equatable {
@@ -226,7 +175,6 @@ public actor OlympUs {
     }
 
     public nonisolated let session: URLSession
-    private nonisolated let cookieStore: CookieStore
     private nonisolated let sessionStore: AuthenticationSessionStore
     private nonisolated let prompt: PromptClient
     private let srpGroup: SRPGroup
@@ -235,20 +183,23 @@ public actor OlympUs {
     public init(
         logger: Logger,
         session: URLSession,
-        cookieStore: CookieStore = .keychain,
-        sessionStore: AuthenticationSessionStore = .keychain,
+        sessionStore: AuthenticationSessionStore,
         prompt: PromptClient = .live,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
         self.logger = logger
         self.session = session
-        self.cookieStore = cookieStore
         self.sessionStore = sessionStore
         self.prompt = prompt
         self.now = now
         srpGroup = .rfc5054_2048
-        restoreCookies()
     }
+
+    private var loadedAccount: String?
+    private var loadedAssets: AuthenticationAssets?
+    private var savedSession: SavedSessionKey?
+    private var hasWarnedAboutSaving = false
+    private var hasLegacyCookies = false
 
     private func displayState() {
         guard let state, let index = OlympUsState.allCases.firstIndex(of: state) else { return }
@@ -261,27 +212,70 @@ public actor OlympUs {
         var authServiceKey: String
     }
 
-    public nonisolated func storedAuthenticationAssets(for account: String) -> AuthenticationAssets? {
+    public func storedAuthenticationAssets(for account: String) async -> AuthenticationAssets? {
+        if loadedAccount == account {
+            return loadedAssets
+        }
+        loadedAccount = account
+        loadedAssets = nil
+        savedSession = nil
+
+        let data: Data?
         do {
-            return try JSONDecoder().decode(AuthenticationAssets.self, from: sessionStore.load(account))
+            data = try await sessionStore.load(account)
         } catch {
+            logger.warn("Could not read the stored Apple session from the Keychain (\(error)). Allow xcinfo to access the Keychain to avoid signing in again.")
             return nil
         }
+
+        guard let data else {
+            logger.verbose("No stored session found.")
+            restoreCookies(from: await sessionStore.loadLegacyCookies())
+            return nil
+        }
+        if let stored = try? JSONDecoder().decode(StoredSession.self, from: data) {
+            logger.verbose("Stored session found.")
+            restoreCookies(from: stored.cookies)
+            loadedAssets = stored.assets
+            savedSession = SavedSessionKey(assets: stored.assets, cookies: cookieKeys)
+        } else if let legacyAssets = try? JSONDecoder().decode(AuthenticationAssets.self, from: data) {
+            logger.verbose("Stored session found in the old format. It is saved in the new format after the next sign-in step.")
+            restoreCookies(from: await sessionStore.loadLegacyCookies())
+            loadedAssets = legacyAssets
+            hasLegacyCookies = true
+        } else {
+            logger.verbose("The stored session could not be read and is ignored.")
+        }
+        return loadedAssets
     }
 
     @discardableResult
-    private func storeAuthenticationAssets(assets: AuthenticationAssets, for account: String) -> Bool {
+    private func persistSession(assets: AuthenticationAssets) async -> Bool {
+        guard let account = loadedAccount else { return false }
+        loadedAssets = assets
+        let key = SavedSessionKey(assets: assets, cookies: cookieKeys)
+        guard key != savedSession, let data = try? JSONEncoder().encode(StoredSession(assets: assets, cookies: cookieData())) else { return true }
+        if hasLegacyCookies {
+            await sessionStore.removeLegacyCookies()
+            hasLegacyCookies = false
+        }
         do {
-            try sessionStore.save(JSONEncoder().encode(assets), account)
+            try await sessionStore.save(data, account)
+            savedSession = key
+            logger.verbose("Saved the session with \(cookieNames.count) cookies.")
             return true
         } catch {
+            if !hasWarnedAboutSaving {
+                hasWarnedAboutSaving = true
+                logger.warn("Could not save the Apple session in the Keychain (\(error)). The next sign-in will ask for two-factor authentication again.")
+            }
             return false
         }
     }
 
     public func validateSession(for account: String) async throws {
         state = .validatingExistingSession
-        guard let assets = storedAuthenticationAssets(for: account) else {
+        guard let assets = await storedAuthenticationAssets(for: account) else {
             throw OlympUsError.sessionInvalid
         }
         do {
@@ -297,8 +291,9 @@ public actor OlympUs {
 
     private let sessionKeyURL = URL(string: "https://appstoreconnect.apple.com/olympus/v1/app/config")!
     public func getServiceKey(for account: String) async throws -> String {
+        _ = await storedAuthenticationAssets(for: account)
         state = .requestingServiceKey
-        if let serviceKey = storedAuthenticationAssets(for: account)?.serviceKey {
+        if let serviceKey = await storedAuthenticationAssets(for: account)?.serviceKey {
             return serviceKey
         }
         var components = URLComponents(url: sessionKeyURL, resolvingAgainstBaseURL: false)!
@@ -370,7 +365,7 @@ public actor OlympUs {
         serviceKey: String,
         privateKey: [UInt8]? = nil
     ) async throws -> SignInResult {
-        session.configuration.httpCookieStorage?.removeCookies(since: Date(timeIntervalSinceReferenceDate: 0))
+        _ = await storedAuthenticationAssets(for: accountName)
         let hashcash = await hashcash(serviceKey: serviceKey)
         state = .signingIn
 
@@ -645,18 +640,23 @@ public actor OlympUs {
 
     private let olympusSessionURL = URL(string: "https://appstoreconnect.apple.com/olympus/v1/session")!
     public func getOlympusSession(assets: AuthenticationAssets, for account: String) async throws {
+        if loadedAccount != account {
+            _ = await storedAuthenticationAssets(for: account)
+        }
         state = .gettingSession
         let request = request(forURL: olympusSessionURL, assets: assets, method: .get)
         let response: URLResponse
         do {
-            (_, response) = try await session.data(for: request)
+            let (data, urlResponse) = try await session.data(for: request)
+            logResponse(request, urlResponse, data)
+            response = urlResponse
         } catch {
             throw OlympUsError.olympusSessionFailed
         }
         guard handle(response: response) else {
             throw OlympUsError.olympusSessionFailed
         }
-        storeAuthenticationAssets(assets: assets, for: account)
+        loadedAssets = assets
     }
 
     private func handle(response: URLResponse) -> Bool {
@@ -701,8 +701,6 @@ public actor OlympUs {
         cookies.forEach {
             session.configuration.httpCookieStorage?.setCookie($0)
         }
-
-        storeCookies()
         return true
     }
 
@@ -713,7 +711,9 @@ public actor OlympUs {
         let request = request(forURL: downloadAuthURL, assets: assets, method: .post)
         let response: URLResponse
         do {
-            (_, response) = try await session.data(for: request)
+            let (data, urlResponse) = try await session.data(for: request)
+            logResponse(request, urlResponse, data)
+            response = urlResponse
         } catch {
             throw OlympUsError.downloadAuthFailed
         }
@@ -724,16 +724,13 @@ public actor OlympUs {
         else {
             throw OlympUsError.downloadAuthFailed
         }
+        await persistSession(assets: assets)
     }
 
-    public nonisolated func cleanup() {
-        removeDownloadSessionInfo()
-        cookieStore.remove()
-    }
-
-    private nonisolated func removeDownloadSessionInfo() {
+    public func cleanup() async {
         do {
-            if try sessionStore.removeAll() > 0 {
+            await sessionStore.removeLegacyCookies()
+            if try await sessionStore.removeAll() > 0 {
                 logger.success("Deleted Apple developer portal session info from keychain.")
             } else {
                 logger.log("No Apple developer portal session info was stored.")
@@ -741,7 +738,7 @@ public actor OlympUs {
         } catch {
             logger
                 .error(
-                    "Error deleting Keychain entries. Please open Keychain Access.app and remove items named 'xcinfo.session'."
+                    "Error deleting Keychain entries. Please open Keychain Access.app and remove the item named 'xcinfo'."
                 )
         }
     }
@@ -760,28 +757,43 @@ public actor OlympUs {
     }
 }
 
+struct SavedSessionKey: Equatable {
+    var assets: OlympUs.AuthenticationAssets
+    var cookies: Set<String>
+}
+
 extension OlympUs {
-    private func storeCookies() {
-        guard let cookies = session.configuration.httpCookieStorage?.cookies else { return }
+    private var cookieKeys: Set<String> {
+        Set((session.configuration.httpCookieStorage?.cookies ?? []).map { "\($0.domain)|\($0.path)|\($0.name)|\($0.value)" })
+    }
+
+    private var cookieNames: [String] {
+        (session.configuration.httpCookieStorage?.cookies ?? []).map(\.name).sorted()
+    }
+
+    private func cookieData() -> Data? {
+        guard let cookies = session.configuration.httpCookieStorage?.cookies, !cookies.isEmpty else { return nil }
         let properties = cookies.compactMap { cookie in
             cookie.properties.map { Dictionary(uniqueKeysWithValues: $0.map { ($0.key.rawValue, $0.value) }) }
         }
-        guard let data = try? PropertyListSerialization.data(fromPropertyList: properties, format: .binary, options: 0) else { return }
-        cookieStore.save(data)
+        return try? PropertyListSerialization.data(fromPropertyList: properties, format: .binary, options: 0)
     }
 
-    private nonisolated func restoreCookies() {
+    private func restoreCookies(from data: Data?) {
         guard
             let cookieStorage = session.configuration.httpCookieStorage,
-            let data = cookieStore.load(),
+            let data,
             let cookies = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Any]]
         else { return }
 
+        var restored: [String] = []
         for cookieProperties in cookies {
             let properties = Dictionary(uniqueKeysWithValues: cookieProperties.map { (HTTPCookiePropertyKey($0.key), $0.value) })
             if let cookie = HTTPCookie(properties: properties) {
                 cookieStorage.setCookie(cookie)
+                restored.append(cookie.name)
             }
         }
+        logger.verbose("Restored \(restored.count) cookies: \(restored.sorted().joined(separator: ", "))")
     }
 }

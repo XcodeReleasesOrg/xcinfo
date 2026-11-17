@@ -217,10 +217,11 @@ extension Core {
         cachesDirectory: URL,
         listXcodes: (@Sendable () async throws -> [Xcode])? = nil,
         removeCookies: (@Sendable () -> Void)? = nil,
-        getCredentials: (@Sendable () throws -> Credentials)? = nil,
-        cleanupCredentials: (@Sendable () -> Void)? = nil,
-        authenticate: (@Sendable (Credentials) async throws -> Void)? = nil,
-        cleanupAuthentication: (@Sendable () -> Void)? = nil,
+        accountName: (@Sendable () async throws -> String)? = nil,
+        password: (@Sendable (String) async throws -> String)? = nil,
+        cleanupCredentials: (@Sendable () async -> Void)? = nil,
+        authenticate: (@Sendable (String, @escaping @Sendable () async throws -> String) async throws -> Void)? = nil,
+        cleanupAuthentication: (@Sendable () async -> Void)? = nil,
         download: (@Sendable (URL, URL, Bool) async throws -> URL)? = nil,
         extract: (@Sendable (URL, URL, String?, Bool) async throws -> URL)? = nil,
         shell: FakeShell? = nil,
@@ -246,7 +247,8 @@ extension Core {
             )
             if let listXcodes { $0.xcodeReleases.listXcodes = listXcodes }
             if let removeCookies { $0.xcodeReleases.removeCookies = removeCookies }
-            if let getCredentials { $0.credentials.credentials = getCredentials }
+            if let accountName { $0.credentials.accountName = accountName }
+            if let password { $0.credentials.password = password }
             if let cleanupCredentials { $0.credentials.removeAll = cleanupCredentials }
             if let authenticate { $0.authentication.authenticate = authenticate }
             if let cleanupAuthentication { $0.authentication.cleanup = cleanupAuthentication }

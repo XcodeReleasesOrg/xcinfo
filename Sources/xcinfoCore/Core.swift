@@ -164,9 +164,13 @@ public struct Core: Sendable {
         }
 
         logger.beginSection("Sign in to Apple Developer")
-        let appleID = try credentials.credentials()
+        let accountName = try await credentials.accountName()
         do {
-            try await authentication.authenticate(appleID)
+            try await authentication.authenticate(accountName) { [credentials] in
+                try await credentials.password(accountName)
+            }
+        } catch let error as CredentialsError {
+            throw error
         } catch let error as OlympUsError {
             throw CoreError.signInFailed(error.description)
         } catch {
@@ -329,10 +333,10 @@ public struct Core: Sendable {
         }
     }
 
-    public func cleanup() {
+    public func cleanup() async {
         logger.beginSection("Cleanup")
-        credentials.removeAll()
-        authentication.cleanup()
+        await credentials.removeAll()
+        await authentication.cleanup()
         xcodeReleases.removeCookies()
 
         logger.success("Removed stored cookies.")

@@ -16,8 +16,8 @@ struct ChecksumTests {
             isVerbose: true,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            getCredentials: { Credentials(username: "user", password: "secret") },
-            authenticate: { _ in },
+            accountName: { "user" },
+            authenticate: { _, _ in },
             download: { _, _, _ in archive },
             applicationsDirectory: caches.url
         )

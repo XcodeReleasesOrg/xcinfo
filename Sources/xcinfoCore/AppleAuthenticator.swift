@@ -18,14 +18,10 @@ final class AppleAuthenticator: Sendable {
         self.logger = logger
     }
 
-    func authenticate(credentials: Credentials) async throws {
-        try await authenticate(username: credentials.username, password: credentials.password)
-    }
-
-    func authenticate(username: String, password: String) async throws {
+    func authenticate(username: String, password: @Sendable () async throws -> String) async throws {
         do {
             try await olymp.validateSession(for: username)
-            guard let assets = olymp.storedAuthenticationAssets(for: username) else {
+            guard let assets = await olymp.storedAuthenticationAssets(for: username) else {
                 throw OlympUsError.sessionInvalid
             }
             try await olymp.getDownloadAuth(assets: assets)
@@ -35,7 +31,7 @@ final class AppleAuthenticator: Sendable {
         }
 
         let serviceKey = try await olymp.getServiceKey(for: username)
-        let signIn = try await olymp.signIn(accountName: username, password: password, serviceKey: serviceKey)
+        let signIn = try await olymp.signIn(accountName: username, password: password(), serviceKey: serviceKey)
         if signIn.requiresTwoFactorAuthentication {
             let validationType = try await olymp.requestAuthentication(assets: signIn.assets)
             try await olymp.sendSecurityCode(validationType: validationType, assets: signIn.assets)
