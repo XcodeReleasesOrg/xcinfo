@@ -117,7 +117,7 @@ public extension PromptClient {
                 console.readLine(prompt)
             },
             readSecret: { prompt in
-                String(cString: getpass("\(prompt) "))
+                SecretInput.readFromTerminal(prompt: prompt) ?? ""
             }
         )
     }
