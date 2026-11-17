@@ -35,11 +35,22 @@ let package = Package(
             name: "XCUnxip",
             dependencies: []
         ),
+        .target(
+            name: "XCInfoTUI",
+            dependencies: [
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                "XCIFoundation",
+                "xcinfoCore",
+                .product(name: "XCModel", package: "data"),
+            ],
+            swiftSettings: swiftSettings
+        ),
         .executableTarget(
             name: "xcinfo",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "Dependencies", package: "swift-dependencies"),
+                "XCInfoTUI",
                 "xcinfoCore",
                 "XCIFoundation",
             ],
@@ -67,6 +78,7 @@ let package = Package(
             dependencies: [
                 "xcinfo",
                 "xcinfoCore",
+                "XCInfoTUI",
                 "OlympUs",
                 "XCIFoundation",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),

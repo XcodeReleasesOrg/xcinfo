@@ -70,6 +70,21 @@ $ brew install xcinfo
 ### cleanup
 - if something goes wrong this removes all entries stored in the keychain, all cookies, and user defaults
 
+### tui
+
+`xcinfo tui`, or plain `xcinfo` in an interactive terminal, opens a full-screen view of all Xcode versions, grouped into installed, available and not installable, with the SDKs, compilers and links of the selected version.
+
+| Key | Action |
+|---|---|
+| ↑ ↓, j k, Page Up/Down, Home/End | Move |
+| i | Install the selected version |
+| d | Download the selected version |
+| u | Uninstall the selected version |
+| r | Refresh the list |
+| q, Esc, Ctrl-C | Quit |
+
+Install, download and uninstall leave the full-screen view while they run, so sign-in, two-factor codes and the administrator password can be typed as usual. Press Return afterwards to go back to the list.
+
 ### Signing in to Apple
 
 `download` and `install` sign in to the Apple Developer Portal with SRP, like Xcode does, so the password is never sent.
