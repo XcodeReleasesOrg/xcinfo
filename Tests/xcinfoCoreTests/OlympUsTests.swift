@@ -478,15 +478,15 @@ struct OlympUsSessionTests {
         let stored = try #require(fixture.sessionStore.storedSession(for: "user"))
         #expect(stored.assets == assets)
         #expect(fixture.cookieNames == ["ADCDownloadAuth", "dqsid", "myacinfo", "nodomain"])
-        #expect(fixture.sessionStore.cookieNames(for: "user") == ["ADCDownloadAuth", "dqsid", "myacinfo"])
+        #expect(fixture.sessionStore.cookieNames(for: "user") == ["dqsid", "myacinfo"])
         #expect(fixture.sessionStore.saves.values == ["user"])
-        #expect(fixture.logs.messages.contains("Saved the session with 3 cookies."))
+        #expect(fixture.logs.messages.contains("Saved the session with 2 cookies."))
     }
 
     @Test
-    func `an unchanged session is not saved again`() async throws {
-        let stored = InMemorySessionStore.session(cookies: [HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "ADCDownloadAuth", .value: "token"])!])
-        let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in StubResponse() }
+    func `a session whose only change is a new download cookie is not saved again`() async throws {
+        let stored = InMemorySessionStore.session(cookies: [HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "account"])!])
+        let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in StubResponse(headers: ["Set-Cookie": downloadAuthCookie]) }
 
         try await fixture.olymp.validateSession(for: "user")
         try await fixture.olymp.getDownloadAuth(assets: assets)
@@ -497,14 +497,16 @@ struct OlympUsSessionTests {
 
     @Test
     func `a refreshed cookie value saves the session and names the cookie`() async throws {
-        let stored = InMemorySessionStore.session(cookies: [HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "ADCDownloadAuth", .value: "old"])!])
-        let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in StubResponse(headers: ["Set-Cookie": downloadAuthCookie]) }
+        let stored = InMemorySessionStore.session(cookies: [HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "old"])!])
+        let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in
+            StubResponse(headers: ["Set-Cookie": "\(downloadAuthCookie), myacinfo=new; Path=/; Domain=.apple.com"])
+        }
 
         try await fixture.olymp.validateSession(for: "user")
         try await fixture.olymp.getDownloadAuth(assets: assets)
 
         #expect(fixture.sessionStore.saves.values == ["user"])
-        #expect(fixture.logs.messages.contains("Saving the session because these cookies changed: ADCDownloadAuth."))
+        #expect(fixture.logs.messages.contains("Saving the session because these cookies changed: myacinfo."))
     }
 
     @Test(arguments: [201, 401, 500])
@@ -611,7 +613,7 @@ struct OlympUsSessionTests {
         let restarted = OlympUs(logger: restartedLogs.logger(), session: server.session(), sessionStore: sessionStore.store, prompt: FakePrompt().client)
         try await restarted.validateSession(for: "user")
 
-        #expect(restarted.session.configuration.httpCookieStorage?.cookies?.map(\.name).sorted() == ["ADCDownloadAuth", "myacinfo"])
+        #expect(restarted.session.configuration.httpCookieStorage?.cookies?.map(\.name).sorted() == ["myacinfo"])
         #expect(restartedLogs.messages.contains("Stored session found."))
         #expect(restartedLogs.messages.contains("Reusing valid session."))
     }
@@ -640,7 +642,7 @@ struct OlympUsSessionTests {
         try await fixture.olymp.validateSession(for: "user")
         try await fixture.olymp.getDownloadAuth(assets: assets)
 
-        #expect(fixture.sessionStore.cookieNames(for: "user") == ["ADCDownloadAuth", "myacinfo"])
+        #expect(fixture.sessionStore.cookieNames(for: "user") == ["myacinfo"])
         #expect(!fixture.sessionStore.hasLegacyCookies)
     }
 
@@ -851,7 +853,7 @@ struct SessionCookieTests {
     @Test(arguments: [
         ("myacinfo", ".apple.com", nil, true),
         ("DES58b0eba556d80ed2b98707e15ffafd344", ".apple.com", nil, true),
-        ("ADCDownloadAuth", ".apple.com", nil, true),
+        ("ADCDownloadAuth", ".apple.com", nil, false),
         ("DSESSIONID", "developer.apple.com", nil, true),
         ("dqsid", "appstoreconnect.apple.com", nil, true),
         ("itctx", ".apple.com", nil, true),
@@ -877,6 +879,7 @@ struct SessionCookieTests {
 
     @Test(arguments: [
         ("site", ".apple.com", nil, "not needed"),
+        ("ADCDownloadAuth", ".apple.com", nil, "renewed on every run"),
         ("dqsid", "localhost", nil, "not an Apple domain"),
         ("dqsid", ".apple.com", -1, "expired"),
     ] as [(String, String, Double?, String)])
@@ -897,8 +900,8 @@ struct SessionCookieTests {
         try await fixture.olymp.getOlympusSession(assets: assets, for: "user")
         try await fixture.olymp.getDownloadAuth(assets: assets)
 
-        #expect(fixture.sessionStore.cookieNames(for: "user") == ["ADCDownloadAuth", "dqsid", "myacinfo"])
-        #expect(fixture.logs.messages.contains("Keeping cookies: ADCDownloadAuth, dqsid, myacinfo. Dropping cookies: dslang on .apple.com, not needed; site on .apple.com, not needed."))
+        #expect(fixture.sessionStore.cookieNames(for: "user") == ["dqsid", "myacinfo"])
+        #expect(fixture.logs.messages.contains("Keeping cookies: dqsid, myacinfo. Dropping cookies: ADCDownloadAuth on .apple.com, renewed on every run; dslang on .apple.com, not needed; site on .apple.com, not needed."))
     }
 
     @Test
@@ -939,14 +942,16 @@ struct SessionCookieTests {
         ].map { name, value in
             try #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: name, .value: value]))
         }
-        let fixture = OlympUsFixture(storedAssets: ["user": InMemorySessionStore.session(cookies: cookies)]) { _ in StubResponse() }
+        let fixture = OlympUsFixture(storedAssets: ["user": InMemorySessionStore.session(cookies: cookies)]) { _ in
+            StubResponse(headers: ["Set-Cookie": downloadAuthCookie])
+        }
 
         try await fixture.olymp.validateSession(for: "user")
         try await fixture.olymp.getDownloadAuth(assets: assets)
 
         #expect(fixture.cookieNames == ["ADCDownloadAuth", "myacinfo"])
-        #expect(fixture.logs.messages.contains("Dropped 2 stored cookies: dslang on .apple.com, not needed; site on .apple.com, not needed"))
+        #expect(fixture.logs.messages.contains("Dropped 3 stored cookies: ADCDownloadAuth on .apple.com, renewed on every run; dslang on .apple.com, not needed; site on .apple.com, not needed"))
         #expect(fixture.sessionStore.saves.values == ["user"])
-        #expect(fixture.sessionStore.cookieNames(for: "user") == ["ADCDownloadAuth", "myacinfo"])
+        #expect(fixture.sessionStore.cookieNames(for: "user") == ["myacinfo"])
     }
 }
