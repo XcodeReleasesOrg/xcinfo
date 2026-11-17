@@ -6,7 +6,7 @@ import Testing
 import XCIFoundation
 @testable import xcinfoCore
 
-private enum AEAFixture {
+enum AEAFixture {
     static func url(_ name: String) throws -> URL {
         try #require(Bundle.module.url(forResource: name, withExtension: nil, subdirectory: "Fixtures/AEA"))
     }

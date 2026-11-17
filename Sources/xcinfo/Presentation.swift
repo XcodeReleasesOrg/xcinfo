@@ -20,7 +20,7 @@ extension Error {
                 64
             case .authenticationFailed, .signInFailed:
                 4
-            case .downloadFailed, .checksumMismatch, .archiveFormatNotOffered:
+            case .downloadFailed, .checksumMismatch, .archiveFormatNotOffered, .destinationExists:
                 5
             case .extractionFailed, .unsupportedFile, .invalidExtractionOutputURL:
                 6

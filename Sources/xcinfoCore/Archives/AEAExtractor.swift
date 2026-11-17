@@ -193,3 +193,50 @@ extension Extractor {
         return targetURL
     }
 }
+
+struct AEASignatureCheck {
+    let source: URL
+    let trust: AEASigningTrust
+
+    func run(progress: @escaping @Sendable (Double) -> Void) throws {
+        guard let file = ArchiveByteStream.fileStream(
+            path: FilePath(source.path),
+            mode: .readOnly,
+            options: [],
+            permissions: FilePermissions(rawValue: 0o644)
+        ) else { throw AEAError.notAnArchive }
+        defer { try? file.close() }
+        let size = (try? FileManager.default.attributesOfItem(atPath: source.path)[.size] as? Int64) ?? 0
+        guard let counted = ArchiveByteStream.customStream(instance: ProgressReportingStream(inner: file, size: size, report: progress)) else {
+            throw AEAError.notAnArchive
+        }
+        defer { try? counted.close() }
+        guard let context = ArchiveEncryptionContext(from: counted) else { throw AEAError.notAnArchive }
+        guard context.profile == .hkdf_sha256_hmac__none__ecdsa_p256 else {
+            throw AEAError.unsupportedProfile(context.profile.name)
+        }
+        guard let authData = context.authData else { throw AEAError.untrusted("The archive has no signing certificate chain.") }
+        try context.setSigningPublicKey(trust.signingKey(from: AEAAuthData(authData)))
+        guard let decrypted = ArchiveByteStream.decryptionStream(readingFrom: counted, encryptionContext: context) else {
+            throw AEAError.invalidSignature
+        }
+        defer { try? decrypted.close() }
+        guard let sink = ArchiveByteStream.customStream(instance: DiscardingStream()) else { throw AEAError.notAnArchive }
+        defer { try? sink.close() }
+        do {
+            _ = try ArchiveByteStream.process(readingFrom: decrypted, writingTo: sink)
+        } catch {
+            throw AEAError.invalidSignature
+        }
+    }
+}
+
+private final class DiscardingStream: ArchiveByteStreamProtocol {
+    func read(into buffer: UnsafeMutableRawBufferPointer) throws -> Int { 0 }
+    func read(into buffer: UnsafeMutableRawBufferPointer, atOffset offset: Int64) throws -> Int { 0 }
+    func write(from buffer: UnsafeRawBufferPointer) throws -> Int { buffer.count }
+    func write(from buffer: UnsafeRawBufferPointer, atOffset offset: Int64) throws -> Int { buffer.count }
+    func seek(toOffset offset: Int64, relativeTo origin: FileDescriptor.SeekOrigin) throws -> Int64 { offset }
+    func cancel() {}
+    func close() throws {}
+}

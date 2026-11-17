@@ -25,6 +25,7 @@ public enum CoreError: LocalizedError, Sendable {
     case invalidExtractionOutputURL(URL)
     case checksumMismatch(file: URL, expected: String, actual: String)
     case versionRequired
+    case destinationExists(URL, reason: String)
     case archiveFormatNotOffered(ArchiveFormat, offered: [String])
     case unknownArchiveVersion(String?)
 
@@ -56,6 +57,8 @@ public enum CoreError: LocalizedError, Sendable {
             return "Failed to access output directory at \(output.path)."
         case let .archiveFormatNotOffered(format, offered):
             return "Apple does not offer this version as .\(format.rawValue)\(offered.isEmpty ? "." : ", only as \(offered.joined(separator: ", ")).") Run the command without --archive-format to take what is offered."
+        case let .destinationExists(url, reason):
+            return "\(url.path) already exists, and \(reason). Move or delete it, or run the command again with --overwrite to move it to the Trash and download anew."
         case .versionRequired:
             return "Give an Xcode version, or an archive with --archive-path."
         case let .unknownArchiveVersion(build):
@@ -84,7 +87,14 @@ public struct Core: Sendable {
     }
 
     public struct DownloadOptions: Sendable {
-        public init(destination: URL, disableSleep: Bool, verifiesChecksum: Bool = true, archiveFormat: ArchiveFormat? = nil) {
+        public init(
+            destination: URL,
+            disableSleep: Bool,
+            verifiesChecksum: Bool = true,
+            archiveFormat: ArchiveFormat? = nil,
+            overwritesExistingFile: Bool = false
+        ) {
+            self.overwritesExistingFile = overwritesExistingFile
             self.destination = destination
             self.disableSleep = disableSleep
             self.verifiesChecksum = verifiesChecksum
@@ -92,6 +102,7 @@ public struct Core: Sendable {
         }
 
         public var archiveFormat: ArchiveFormat?
+        public var overwritesExistingFile: Bool
 
         public var destination: URL
         public var disableSleep: Bool
@@ -147,6 +158,8 @@ public struct Core: Sendable {
     @Dependency(\.fileSystem) private var fileSystem
     @Dependency(\.workspace) private var workspace
 
+    var signingTrust: AEASigningTrust = .apple
+
     public init() {}
 
     public func info(version: XcodeVersion, shouldUpdate: Bool) async throws -> Xcode {
@@ -199,6 +212,9 @@ public struct Core: Sendable {
         if let note = source.note {
             logger.log(note)
         }
+        if let existing = try await reusableDownload(at: options.destination.appendingPathComponent(source.url.lastPathComponent), xcode: xcode, options: options) {
+            return (xcode, existing)
+        }
         do {
             let downloadURL: URL
             do {
@@ -216,6 +232,63 @@ public struct Core: Sendable {
         } catch let error as XCAPIError {
             throw CoreError.downloadFailed(error.description)
         }
+    }
+
+    private enum ExistingDownload {
+        case valid(String)
+        case unusable(String)
+    }
+
+    private func reusableDownload(at file: URL, xcode: Xcode, options: DownloadOptions) async throws -> URL? {
+        guard FileManager.default.fileExists(atPath: file.path) else { return nil }
+        logger.log("\(file.lastPathComponent) is already in \(file.deletingLastPathComponent().path). Checking it before downloading again.")
+        switch try await check(existing: file, xcode: xcode) {
+        case let .valid(reason):
+            logger.success("Using the existing \(file.path) (\(reason)).")
+            return file
+        case let .unusable(reason):
+            let replaces = options.overwritesExistingFile
+                || (isatty(STDIN_FILENO) != 0 && prompt.agree("\(file.path) exists, but \(reason). Move it to the Trash and download it anew?"))
+            guard replaces else { throw CoreError.destinationExists(file, reason: reason) }
+            let trashed = try fileSystem.trashItem(file)
+            logger.log("Moved the existing file to the Trash\(trashed.map { ": \($0.path)" } ?? ".")")
+            return nil
+        }
+    }
+
+    private func check(existing file: URL, xcode: Xcode) async throws -> ExistingDownload {
+        switch ArchiveFormat(contentsOf: file) {
+        case nil:
+            return .unusable("it is not a .xip or .aea archive")
+        case .xip:
+            guard let expected = xcode.checksums?.sha1?.lowercased(), !expected.isEmpty else {
+                return .unusable("xcodereleases.com has no checksum to check it against")
+            }
+            let actual = try await ArchiveChecksum(url: file).sha1(logger: logger)
+            return actual == expected ? .valid("SHA-1 matches xcodereleases.com") : .unusable("its SHA-1 does not match xcodereleases.com")
+        case .aea:
+            do {
+                try await verifySignature(of: file)
+                return .valid("Apple signature checked")
+            } catch let error as AEAError {
+                return .unusable("its signature could not be checked: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func verifySignature(of file: URL) async throws {
+        let (progressUpdates, continuation) = AsyncStream.makeStream(of: Double.self, bufferingPolicy: .bufferingNewest(1))
+        let trust = signingTrust
+        async let check: Void = {
+            defer { continuation.finish() }
+            try AEASignatureCheck(source: file, trust: trust).run { continuation.yield($0) }
+        }()
+        var milestones = ProgressMilestones()
+        for await progress in progressUpdates {
+            logger.progress(OutputProgress(title: "Verifying", fraction: min(progress, 0.999), isMilestone: milestones.reached(progress)))
+        }
+        try await check
+        logger.progress(OutputProgress(title: "Verifying", fraction: 1, detail: "signature checked", isFinished: true))
     }
 
     private func checksumMismatch(of archive: URL, xcode: Xcode) async throws -> CoreError? {
