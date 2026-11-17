@@ -174,8 +174,9 @@ struct CoreDownloadTests {
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            getCredentials: { Credentials(username: "appleid@example.invalid", password: "secret") },
-            authenticate: { credentials.append("\($0.username):\($0.password)") },
+            accountName: { "appleid@example.invalid" },
+            password: { _ in "secret" },
+            authenticate: { accountName, password in credentials.append("\(accountName):\(try await password())") },
             download: { url, destination, disableSleep in
                 downloadCalls.append("\(url.absoluteString) \(destination.path) \(disableSleep)")
                 return destination.appendingPathComponent("Xcode_15.xip")
@@ -207,7 +208,7 @@ struct CoreDownloadTests {
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            authenticate: { _ in Issue.record("Must not sign in") },
+            authenticate: { _, _ in Issue.record("Must not sign in") },
             applicationsDirectory: applications.url
         )
 
@@ -227,8 +228,8 @@ struct CoreDownloadTests {
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            getCredentials: { Credentials(username: "user", password: "secret") },
-            authenticate: { _ in throw AuthenticationError() },
+            accountName: { "user" },
+            authenticate: { _, _ in throw AuthenticationError() },
             download: { _, _, _ in
                 Issue.record("Must not download")
                 return URL(fileURLWithPath: "/")
@@ -252,8 +253,8 @@ struct CoreDownloadTests {
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            getCredentials: { Credentials(username: "user", password: "secret") },
-            authenticate: { _ in throw OlympUsError.incorrectVerificationCode },
+            accountName: { "user" },
+            authenticate: { _, _ in throw OlympUsError.incorrectVerificationCode },
             applicationsDirectory: applications.url
         )
 
@@ -273,7 +274,7 @@ struct CoreDownloadTests {
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            getCredentials: { throw CredentialsError.invalidPassword },
+            accountName: { throw CredentialsError.accountNameUnavailable },
             applicationsDirectory: applications.url
         )
 
@@ -295,8 +296,8 @@ struct CoreDownloadTests {
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            getCredentials: { Credentials(username: "user", password: "secret") },
-            authenticate: { _ in },
+            accountName: { "user" },
+            authenticate: { _, _ in },
             download: { _, _, _ in throw apiError },
             applicationsDirectory: applications.url
         )
@@ -317,8 +318,8 @@ struct CoreDownloadTests {
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            getCredentials: { Credentials(username: "user", password: "secret") },
-            authenticate: { _ in },
+            accountName: { "user" },
+            authenticate: { _, _ in },
             download: { _, _, _ in throw Interrupted(signal: SIGINT) },
             applicationsDirectory: applications.url
         )
@@ -347,8 +348,8 @@ struct CoreInstallTests {
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            getCredentials: { Credentials(username: "user", password: "secret") },
-            authenticate: { _ in },
+            accountName: { "user" },
+            authenticate: { _, _ in },
             download: download,
             extract: { source, destination, filename, useLegacyUnxip in
                 extractions.append("\(source.lastPathComponent) \(destination.path) \(filename ?? "-") \(useLegacyUnxip)")
@@ -908,7 +909,7 @@ struct CoreUninstallTests {
 
 struct CoreCleanupTests {
     @Test
-    func `cleanup removes credentials, sessions and cookies`() throws {
+    func `cleanup removes credentials, sessions and cookies`() async throws {
         let directory = try TemporaryDirectory()
         let logs = LogRecorder()
         let calls = Recorder<String>()
@@ -921,7 +922,7 @@ struct CoreCleanupTests {
             applicationsDirectory: directory.url
         )
 
-        core.cleanup()
+        await core.cleanup()
 
         #expect(calls.values == ["credentials", "authentication", "cookies"])
         #expect(logs.messages == ["\nCleanup", "Removed stored cookies."])

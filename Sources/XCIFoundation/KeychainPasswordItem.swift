@@ -109,87 +109,45 @@ public struct KeychainPasswordItem {
     }
 
     public func savePassword(_ password: String, overwriteExisting: Bool = false) throws {
-        // Encode the password into an Data object.
-        let encodedPassword = password.data(using: String.Encoding.utf8)!
-
-        do {
-            // Check for an existing item in the keychain.
-            try _ = readPassword()
-
-            guard overwriteExisting else { throw KeychainError.passwordAlreadySet }
-
-            // Update the existing item with the new password.
-            var attributesToUpdate = [String: AnyObject]()
-            attributesToUpdate[kSecValueData as String] = encodedPassword as AnyObject?
-
-            let query = KeychainPasswordItem.keychainQuery(
-                withService: service,
-                account: account,
-                accessGroup: accessGroup
-            )
-            let status = SecItemUpdate(query as CFDictionary, attributesToUpdate as CFDictionary)
-
-            // Throw an error if an unexpected status was returned.
-            guard status == noErr else { throw KeychainError.unhandledError(status: status) }
-        } catch KeychainError.noPassword {
-            /*
-             No password was found in the keychain. Create a dictionary to save
-             as a new keychain item.
-             */
-            var newItem = KeychainPasswordItem.keychainQuery(
-                withService: service,
-                account: account,
-                accessGroup: accessGroup
-            )
-            newItem[kSecValueData as String] = encodedPassword as AnyObject?
-
-            // Add a the new item to the keychain.
-            let status = SecItemAdd(newItem as CFDictionary, nil)
-
-            // Throw an error if an unexpected status was returned.
-            guard status == noErr else { throw KeychainError.unhandledError(status: status) }
-        }
+        try saveData(Data(password.utf8), overwriteExisting: overwriteExisting)
     }
 
     public func saveData(_ data: Data, overwriteExisting: Bool = false) throws {
-        // Encode the password into an Data object.
-        do {
-            // Check for an existing item in the keychain.
-            try _ = readPassword()
-
-            guard overwriteExisting else { throw KeychainError.passwordAlreadySet }
-
-            // Update the existing item with the new password.
-            var attributesToUpdate = [String: AnyObject]()
-            attributesToUpdate[kSecValueData as String] = data as AnyObject?
-
-            let query = KeychainPasswordItem.keychainQuery(
-                withService: service,
-                account: account,
-                accessGroup: accessGroup
-            )
-            let status = SecItemUpdate(query as CFDictionary, attributesToUpdate as CFDictionary)
-
-            // Throw an error if an unexpected status was returned.
-            guard status == noErr else { throw KeychainError.unhandledError(status: status) }
-        } catch KeychainError.noPassword {
-            /*
-             No password was found in the keychain. Create a dictionary to save
-             as a new keychain item.
-             */
-            var newItem = KeychainPasswordItem.keychainQuery(
-                withService: service,
-                account: account,
-                accessGroup: accessGroup
-            )
-            newItem[kSecValueData as String] = data as AnyObject?
-
-            // Add a the new item to the keychain.
-            let status = SecItemAdd(newItem as CFDictionary, nil)
-
-            // Throw an error if an unexpected status was returned.
-            guard status == noErr else { throw KeychainError.unhandledError(status: status) }
+        let query = KeychainPasswordItem.keychainQuery(withService: service, account: account, accessGroup: accessGroup)
+        if overwriteExisting {
+            let status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary)
+            guard status == errSecItemNotFound else {
+                guard status == noErr else { throw KeychainError.unhandledError(status: status) }
+                return
+            }
         }
+        var newItem = query
+        newItem[kSecValueData as String] = data as AnyObject?
+        let status = SecItemAdd(newItem as CFDictionary, nil)
+        guard status != errSecDuplicateItem else { throw KeychainError.passwordAlreadySet }
+        guard status == noErr else { throw KeychainError.unhandledError(status: status) }
+    }
+
+    public static func firstItem(forService service: String, accessGroup: String? = nil) throws -> (account: String, data: Data)? {
+        var query = KeychainPasswordItem.keychainQuery(withService: service, accessGroup: accessGroup)
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        query[kSecReturnAttributes as String] = kCFBooleanTrue
+        query[kSecReturnData as String] = kCFBooleanTrue
+
+        var result: AnyObject?
+        let status = withUnsafeMutablePointer(to: &result) {
+            SecItemCopyMatching(query as CFDictionary, UnsafeMutablePointer($0))
+        }
+        guard status != errSecItemNotFound else { return nil }
+        guard status == noErr else { throw KeychainError.unhandledError(status: status) }
+        guard
+            let item = result as? [String: AnyObject],
+            let account = item[kSecAttrAccount as String] as? String,
+            let data = item[kSecValueData as String] as? Data
+        else {
+            throw KeychainError.unexpectedItemData
+        }
+        return (account, data)
     }
 
     public mutating func renameAccount(_ newAccountName: String) throws {

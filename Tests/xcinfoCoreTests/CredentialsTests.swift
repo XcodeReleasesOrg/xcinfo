@@ -1,110 +1,319 @@
 import Dependencies
 import Foundation
+@testable import OlympUs
 import os
 import Testing
+import XCIFoundation
 @testable import xcinfoCore
 
-private final class FakeKeychain: Sendable {
-    let items: OSAllocatedUnfairLock<[String: String]>
-    let failsReading: Bool
+final class FakeVaultStorage: Sendable {
+    private let state: OSAllocatedUnfairLock<(data: Data?, legacy: LegacyKeychainItems)>
+    private let failsReading: Bool
+    let reads = Recorder<Void>()
+    let writes = Recorder<Data>()
+    let deletes = Recorder<Void>()
+    let legacyDeletes = Recorder<Void>()
 
-    init(_ items: [String: String] = [:], failsReading: Bool = false) {
-        self.items = OSAllocatedUnfairLock(initialState: items)
+    init(contents: VaultContents? = nil, legacy: LegacyKeychainItems = LegacyKeychainItems(), failsReading: Bool = false) {
+        state = OSAllocatedUnfairLock(initialState: (contents.map { try! JSONEncoder().encode($0) }, legacy))
         self.failsReading = failsReading
     }
 
-    var client: KeychainClient {
-        KeychainClient(
-            accounts: { [items] service in
-                #expect(service == "xcinfo.appleid")
-                return items.withLock { Array($0.keys) }
-            },
-            readPassword: { [items, failsReading] _, account in
-                guard !failsReading, let password = items.withLock({ $0[account] }) else {
-                    throw CredentialsError.keychainError("missing")
+    var storage: VaultStorage {
+        VaultStorage(
+            read: { [state, reads, failsReading] in
+                reads.append(())
+                if failsReading {
+                    throw KeychainPasswordItem.KeychainError.unhandledError(status: -128)
                 }
-                return password
+                return state.withLock { $0.data }
             },
-            savePassword: { [items] password, _, account in
-                items.withLock { $0[account] = password }
+            write: { [state, writes] data in
+                writes.append(data)
+                state.withLock { $0.data = data }
             },
-            deleteAll: { [items] _ in
-                items.withLock { items in
-                    defer { items.removeAll() }
-                    return items.count
-                }
+            delete: { [state, deletes] in
+                deletes.append(())
+                state.withLock { $0.data = nil }
+            },
+            readLegacy: { [state] in
+                state.withLock { $0.legacy }
+            },
+            deleteLegacy: { [state, legacyDeletes] in
+                legacyDeletes.append(())
+                state.withLock { $0.legacy = LegacyKeychainItems() }
             }
+        )
+    }
+
+    var storedContents: VaultContents? {
+        state.withLock { $0.data }.flatMap { try? JSONDecoder().decode(VaultContents.self, from: $0) }
+    }
+
+    var storedText: String {
+        state.withLock { $0.data }.map { String(decoding: $0, as: UTF8.self) } ?? ""
+    }
+}
+
+extension KeychainClient {
+    static func vault(_ vault: KeychainVault) -> KeychainClient {
+        KeychainClient(
+            load: { try await vault.load() },
+            stage: { change in try await vault.stage(change) },
+            commit: { change in try await vault.commit(change) }
         )
     }
 }
 
+struct KeychainVaultTests {
+    @Test
+    func `the keychain is read once per run`() async throws {
+        let storage = FakeVaultStorage(contents: VaultContents(accountName: "user"))
+        let vault = KeychainVault(storage: storage.storage)
+
+        _ = try await vault.load()
+        try await vault.stage { $0.sessions["user"] = Data("a".utf8) }
+        _ = try await vault.load()
+        try await vault.commit { $0.sessions["user"] = Data("b".utf8) }
+        _ = try await vault.load()
+
+        #expect(storage.reads.values.count == 1)
+        #expect(storage.writes.values.count == 1)
+        #expect(storage.storedContents?.sessions["user"] == Data("b".utf8))
+    }
+
+    @Test
+    func `staged changes are written only on commit and unchanged contents are not written`() async throws {
+        let storage = FakeVaultStorage(contents: VaultContents(accountName: "user"))
+        let vault = KeychainVault(storage: storage.storage)
+
+        try await vault.stage { $0.accountName = "other" }
+        #expect(storage.writes.values.isEmpty)
+        try await vault.commit { _ in }
+        #expect(storage.writes.values.count == 1)
+        try await vault.commit { _ in }
+        #expect(storage.writes.values.count == 1)
+    }
+
+    @Test
+    func `old items are moved into one item without the password`() async throws {
+        let logs = LogRecorder()
+        let storage = FakeVaultStorage(legacy: LegacyKeychainItems(
+            accountName: "user@example.invalid",
+            hadStoredPassword: true,
+            sessions: ["user@example.invalid": OlympUs.AuthenticationAssets.fixtureData],
+            cookies: Data("cookies".utf8)
+        ))
+        let vault = KeychainVault(storage: storage.storage)
+
+        let contents = try await withDependencies { $0.logger = logs.logger() } operation: {
+            try await vault.load()
+        }
+
+        #expect(contents.accountName == "user@example.invalid")
+        #expect(contents.sessions["user@example.invalid"] == OlympUs.AuthenticationAssets.fixtureData)
+        #expect(contents.legacyCookies == Data("cookies".utf8))
+        #expect(storage.writes.values.count == 1)
+        #expect(storage.legacyDeletes.values.count == 1)
+        #expect(logs.messages.contains("Moved the stored Apple ID and session into one Keychain item named 'xcinfo'."))
+        #expect(logs.messages.contains { $0.hasPrefix("Removed the stored Apple ID password from the Keychain") })
+    }
+
+    @Test
+    func `nothing is migrated when there are no old items`() async throws {
+        let storage = FakeVaultStorage()
+        let vault = KeychainVault(storage: storage.storage)
+
+        let contents = try await vault.load()
+
+        #expect(contents == VaultContents())
+        #expect(storage.writes.values.isEmpty)
+        #expect(storage.legacyDeletes.values.isEmpty)
+    }
+
+    @Test
+    func `a denied read is reported and not retried`() async throws {
+        let storage = FakeVaultStorage(contents: VaultContents(accountName: "user"), failsReading: true)
+        let vault = KeychainVault(storage: storage.storage)
+
+        await #expect(throws: KeychainAccessError.self) { try await vault.load() }
+        await #expect(throws: KeychainAccessError.self) { try await vault.commit { $0.accountName = nil } }
+
+        #expect(storage.reads.values.count == 1)
+        #expect(storage.writes.values.isEmpty)
+    }
+
+    @Test
+    func `an empty vault deletes its item`() async throws {
+        let storage = FakeVaultStorage(contents: VaultContents(accountName: "user", sessions: ["user": Data("s".utf8)]))
+        let vault = KeychainVault(storage: storage.storage)
+
+        try await vault.commit { contents in
+            contents.accountName = nil
+            contents.sessions = [:]
+        }
+
+        #expect(storage.deletes.values.count == 1)
+        #expect(storage.storedContents == nil)
+    }
+}
+
 struct CredentialsTests {
-    private func service(keychain: FakeKeychain, prompt: FakePrompt = FakePrompt(), logs: LogRecorder = LogRecorder()) -> CredentialService {
-        withDependencies {
-            $0.keychain = keychain.client
+    private func service(
+        storage: FakeVaultStorage,
+        prompt: FakePrompt = FakePrompt(),
+        logs: LogRecorder = LogRecorder(),
+        environment: [String: String] = [:],
+        isInteractive: Bool = true
+    ) -> (CredentialService, KeychainVault) {
+        let vault = KeychainVault(storage: storage.storage)
+        let service = withDependencies {
+            $0.keychain = .vault(vault)
             $0.prompt = prompt.client
             $0.logger = logs.logger()
         } operation: {
-            CredentialService()
+            CredentialService(environment: environment, isInteractive: isInteractive)
         }
+        return (service, vault)
     }
 
     @Test
-    func `stored credentials are read from the keychain`() throws {
-        let credentials = try service(keychain: FakeKeychain(["user@example.invalid": "secret"])).appleIDCredentials()
+    func `the stored account name is used and only the password is asked for`() async throws {
+        let prompt = FakePrompt(passwords: ["secret"])
+        let (service, _) = service(storage: FakeVaultStorage(contents: VaultContents(accountName: "user@example.invalid")), prompt: prompt)
 
-        #expect(credentials == Credentials(username: "user@example.invalid", password: "secret"))
+        #expect(try await service.accountName() == "user@example.invalid")
+        #expect(try service.password(for: "user@example.invalid") == "secret")
+        #expect(prompt.lines.values.isEmpty)
+        #expect(prompt.secrets.values == ["Password for user@example.invalid:"])
+        #expect(prompt.agreed.values.isEmpty)
     }
 
     @Test
-    func `missing credentials are asked for and stored when agreed`() throws {
-        let keychain = FakeKeychain()
-        let prompt = FakePrompt(answers: ["user@example.invalid"], agree: true, passwords: ["secret"])
+    func `a missing account name is asked for and remembered without the password`() async throws {
+        let storage = FakeVaultStorage()
+        let prompt = FakePrompt(answers: ["user@example.invalid"], passwords: ["secret"])
+        let (service, vault) = service(storage: storage, prompt: prompt)
+
+        #expect(try await service.accountName() == "user@example.invalid")
+        _ = try service.password(for: "user@example.invalid")
+        try await vault.commit { _ in }
+
+        #expect(prompt.lines.values == ["Apple ID:"])
+        #expect(storage.storedContents?.accountName == "user@example.invalid")
+        #expect(!storage.storedText.contains("secret"))
+    }
+
+    @Test
+    func `environment variables provide the account name and password`() async throws {
+        let prompt = FakePrompt()
+        let (service, _) = service(
+            storage: FakeVaultStorage(contents: VaultContents(accountName: "stored@example.invalid")),
+            prompt: prompt,
+            environment: ["XCINFO_APPLE_ID": "env@example.invalid", "XCINFO_APPLE_PASSWORD": "from-env"],
+            isInteractive: false
+        )
+
+        #expect(try await service.accountName() == "env@example.invalid")
+        #expect(try service.password(for: "env@example.invalid") == "from-env")
+        #expect(prompt.secrets.values.isEmpty)
+    }
+
+    @Test
+    func `without a terminal a missing password fails instead of waiting`() async throws {
+        let (service, _) = service(storage: FakeVaultStorage(contents: VaultContents(accountName: "user")), isInteractive: false)
+
+        #expect(try await service.accountName() == "user")
+        #expect(throws: CredentialsError.passwordUnavailable) { try service.password(for: "user") }
+    }
+
+    @Test
+    func `without a terminal a missing account name fails`() async {
+        let (service, _) = service(storage: FakeVaultStorage(), isInteractive: false)
+
+        await #expect(throws: CredentialsError.accountNameUnavailable) { try await service.accountName() }
+    }
+
+    @Test
+    func `an unreadable keychain is reported and the account name is asked for`() async throws {
         let logs = LogRecorder()
+        let prompt = FakePrompt(answers: ["user"])
+        let (service, _) = service(storage: FakeVaultStorage(failsReading: true), prompt: prompt, logs: logs)
 
-        let credentials = try service(keychain: keychain, prompt: prompt, logs: logs).appleIDCredentials()
-
-        #expect(credentials == Credentials(username: "user@example.invalid", password: "secret"))
-        #expect(prompt.lines.values == ["Username:"])
-        #expect(prompt.secrets.values == ["Password:"])
-        #expect(prompt.agreed.values == ["Do you want to store these credentials in the macOS Keychain?"])
-        #expect(keychain.items.withLock { $0 } == ["user@example.invalid": "secret"])
-        #expect(logs.messages.prefix(2) == ["Apple's Developer Download page requires a login.", "Please provide your Apple Developer Program account credentials."])
+        #expect(try await service.accountName() == "user")
+        #expect(logs.events.contains { if case let .message(text, .warning) = $0 { text.contains("The Keychain could not be read") } else { false } })
     }
 
     @Test
-    func `asked credentials are not stored when declined`() throws {
-        let keychain = FakeKeychain()
-        let prompt = FakePrompt(answers: ["user"], agree: false, passwords: ["secret"])
-
-        _ = try service(keychain: keychain, prompt: prompt).appleIDCredentials()
-
-        #expect(keychain.items.withLock { $0 }.isEmpty)
-    }
-
-    @Test
-    func `an unreadable password is asked for again`() throws {
+    func `cleanup deletes the stored account name`() async {
+        let storage = FakeVaultStorage(contents: VaultContents(accountName: "user"))
         let logs = LogRecorder()
-        let prompt = FakePrompt(answers: ["user"], agree: false, passwords: ["new"])
+        let (service, _) = service(storage: storage, logs: logs)
 
-        let credentials = try service(keychain: FakeKeychain(["user": "old"], failsReading: true), prompt: prompt, logs: logs).appleIDCredentials()
+        await service.cleanup()
 
-        #expect(credentials.password == "new")
-        #expect(logs.messages.first == "Could not read password from the Keychain.")
+        #expect(storage.storedContents == nil)
+        #expect(logs.messages == ["Deleted the stored Apple ID from the Keychain."])
     }
 
     @Test
-    func `cleanup deletes the stored credentials`() {
-        let keychain = FakeKeychain(["user": "secret"])
+    func `errors explain how to provide credentials`() {
+        #expect(CredentialsError.passwordUnavailable.localizedDescription.contains("XCINFO_APPLE_PASSWORD"))
+        #expect(CredentialsError.accountNameUnavailable.localizedDescription.contains("XCINFO_APPLE_ID"))
+    }
+}
+
+struct SignInStorageTests {
+    @Test
+    func `a full sign in stores the session but never the password, and reads the keychain once`() async throws {
+        let storage = FakeVaultStorage()
+        let vault = KeychainVault(storage: storage.storage)
+        let keychain = KeychainClient.vault(vault)
         let logs = LogRecorder()
+        let prompt = FakePrompt(answers: ["user", "123456"], passwords: ["correct horse"])
+        let srp = FakeAppleSRPServer(accountName: "user", password: "correct horse")
+        let server = StubServer { request in
+            switch request.url?.path {
+            case "/appleauth/auth/signin":
+                StubResponse(headers: ["X-Apple-HC-Bits": "8", "X-Apple-HC-Challenge": "challenge"])
+            case "/appleauth/auth/signin/init":
+                srp.initResponse(for: request)
+            case "/appleauth/auth/signin/complete":
+                srp.isValidCompletion(request) ? .json("{}", statusCode: 409, headers: ["scnt": "s", "X-Apple-ID-Session-Id": "i"]) : .json("{}", statusCode: 401)
+            case "/olympus/v1/app/config":
+                .json(#"{"authServiceKey":"key"}"#)
+            case "/appleauth/auth":
+                .json(#"{"securityCode":{"length":6}}"#)
+            case "/appleauth/auth/verify/trusteddevice/securitycode":
+                StubResponse(statusCode: 204)
+            case "/appleauth/auth/2sv/trust":
+                StubResponse(headers: ["Set-Cookie": "DES1234=trusted; Path=/; Domain=.apple.com"])
+            case "/services-account/QH65B2/downloadws/listDownloads.action":
+                StubResponse(headers: ["Set-Cookie": "ADCDownloadAuth=token; Path=/; Domain=.apple.com"])
+            default:
+                StubResponse()
+            }
+        }
 
-        service(keychain: keychain, logs: logs).cleanup()
+        try await withDependencies {
+            $0.keychain = keychain
+            $0.prompt = prompt.client
+            $0.logger = logs.logger()
+        } operation: {
+            let credentials = CredentialService(environment: [:], isInteractive: true)
+            let accountName = try await credentials.accountName()
+            let olymp = OlympUs(logger: logs.logger(), session: server.session(), sessionStore: .vault(keychain), prompt: prompt.client)
+            try await AppleAuthenticator(olymp: olymp, logger: logs.logger()).authenticate(username: accountName) {
+                try credentials.password(for: accountName)
+            }
+        }
 
-        #expect(keychain.items.withLock { $0 }.isEmpty)
-        #expect(logs.messages == ["Deleted stored Apple ID credentials from keychain."])
-
-        let empty = LogRecorder()
-        service(keychain: keychain, logs: empty).cleanup()
-        #expect(empty.messages == ["No Apple ID credentials were stored."])
+        #expect(storage.reads.values.count == 1)
+        #expect(storage.writes.values.count == 1)
+        let contents = try #require(storage.storedContents)
+        #expect(contents.accountName == "user")
+        #expect(contents.sessions["user"] != nil)
+        #expect(!storage.storedText.contains("correct horse"))
+        #expect(!logs.messages.contains { $0.contains("correct horse") })
     }
 }

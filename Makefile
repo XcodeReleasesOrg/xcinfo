@@ -7,9 +7,11 @@ export exec_prefix
 export bindir
 
 SWIFT_BUILD_FLAGS=-c release --arch arm64 --arch x86_64
+CODESIGN_IDENTITY ?= -
 
 all:
 	swift build $(SWIFT_BUILD_FLAGS)
+	codesign --force --sign "$(CODESIGN_IDENTITY)" --identifier com.xcodereleases.xcinfo "$$(swift build $(SWIFT_BUILD_FLAGS) --show-bin-path)/xcinfo"
 
 .PHONY: all install clean cleanup
 

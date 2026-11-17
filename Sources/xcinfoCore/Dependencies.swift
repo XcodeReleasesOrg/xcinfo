@@ -20,14 +20,15 @@ public struct XcodeReleasesClient: Sendable {
 
 @DependencyClient
 public struct CredentialsClient: Sendable {
-    public var credentials: @Sendable () throws -> Credentials
-    public var removeAll: @Sendable () -> Void
+    public var accountName: @Sendable () async throws -> String
+    public var password: @Sendable (_ accountName: String) async throws -> String
+    public var removeAll: @Sendable () async -> Void
 }
 
 @DependencyClient
 public struct AuthenticationClient: Sendable {
-    public var authenticate: @Sendable (_ credentials: Credentials) async throws -> Void
-    public var cleanup: @Sendable () -> Void
+    public var authenticate: @Sendable (_ accountName: String, _ password: @escaping @Sendable () async throws -> String) async throws -> Void
+    public var cleanup: @Sendable () async -> Void
 }
 
 @DependencyClient
@@ -62,10 +63,9 @@ public struct FileSystemClient: Sendable {
 
 @DependencyClient
 public struct KeychainClient: Sendable {
-    public var accounts: @Sendable (_ service: String) throws -> [String]
-    public var readPassword: @Sendable (_ service: String, _ account: String) throws -> String
-    public var savePassword: @Sendable (_ password: String, _ service: String, _ account: String) throws -> Void
-    public var deleteAll: @Sendable (_ service: String) throws -> Int
+    public var load: @Sendable () async throws -> VaultContents
+    public var stage: @Sendable (_ change: @escaping @Sendable (inout VaultContents) -> Void) async throws -> Void
+    public var commit: @Sendable (_ change: @escaping @Sendable (inout VaultContents) -> Void) async throws -> Void
 }
 
 @DependencyClient
@@ -90,8 +90,9 @@ extension XcodeReleasesClient: DependencyKey {
 
 extension CredentialsClient: DependencyKey {
     public static let liveValue = CredentialsClient(
-        credentials: { try CredentialService().appleIDCredentials() },
-        removeAll: { CredentialService().cleanup() }
+        accountName: { try await CredentialService().accountName() },
+        password: { accountName in try CredentialService().password(for: accountName) },
+        removeAll: { await CredentialService().cleanup() }
     )
 
     public static let testValue = CredentialsClient()
@@ -99,15 +100,17 @@ extension CredentialsClient: DependencyKey {
 
 extension AuthenticationClient: DependencyKey {
     public static let liveValue = AuthenticationClient(
-        authenticate: { credentials in
+        authenticate: { accountName, password in
             @Dependency(\.logger) var logger
             @Dependency(\.prompt) var prompt
-            let olymp = OlympUs(logger: logger, session: .xcinfo, prompt: prompt)
-            try await AppleAuthenticator(olymp: olymp, logger: logger).authenticate(credentials: credentials)
+            @Dependency(\.keychain) var keychain
+            let olymp = OlympUs(logger: logger, session: .xcinfo, sessionStore: .vault(keychain), prompt: prompt)
+            try await AppleAuthenticator(olymp: olymp, logger: logger).authenticate(username: accountName, password: password)
         },
         cleanup: {
             @Dependency(\.logger) var logger
-            OlympUs(logger: logger, session: .xcinfo).cleanup()
+            @Dependency(\.keychain) var keychain
+            await OlympUs(logger: logger, session: .xcinfo, sessionStore: .vault(keychain)).cleanup()
         }
     )
 
@@ -196,22 +199,9 @@ extension FileSystemClient: DependencyKey {
 
 extension KeychainClient: DependencyKey {
     public static let liveValue = KeychainClient(
-        accounts: { service in
-            try KeychainPasswordItem.passwordItems(forService: service).map(\.account)
-        },
-        readPassword: { service, account in
-            try KeychainPasswordItem(service: service, account: account).readPassword()
-        },
-        savePassword: { password, service, account in
-            try KeychainPasswordItem(service: service, account: account).savePassword(password, overwriteExisting: true)
-        },
-        deleteAll: { service in
-            let items = try KeychainPasswordItem.passwordItems(forService: service)
-            for item in items {
-                try item.deleteItem()
-            }
-            return items.count
-        }
+        load: { try await KeychainVault.shared.load() },
+        stage: { change in try await KeychainVault.shared.stage(change) },
+        commit: { change in try await KeychainVault.shared.commit(change) }
     )
 
     public static let testValue = KeychainClient()

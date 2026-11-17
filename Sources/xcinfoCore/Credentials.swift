@@ -17,60 +17,85 @@ public struct Credentials: Sendable, Equatable {
     }
 }
 
-enum CredentialsError: Error {
+public enum CredentialsError: Error, Equatable, LocalizedError {
     case keychainError(String)
     case invalidPassword
+    case accountNameUnavailable
+    case passwordUnavailable
+
+    public var errorDescription: String? {
+        switch self {
+        case let .keychainError(message):
+            message
+        case .invalidPassword:
+            "The password is empty."
+        case .accountNameUnavailable:
+            "No Apple ID available. Run xcinfo in a terminal or set XCINFO_APPLE_ID."
+        case .passwordUnavailable:
+            "No Apple ID password available. Run xcinfo in a terminal or set XCINFO_APPLE_PASSWORD."
+        }
+    }
 }
 
 struct CredentialService {
-    static let service = "xcinfo.appleid"
+    static let accountNameVariable = "XCINFO_APPLE_ID"
+    static let passwordVariable = "XCINFO_APPLE_PASSWORD"
+
+    var environment: [String: String] = ProcessInfo.processInfo.environment
+    var isInteractive: Bool = isatty(STDIN_FILENO) != 0
 
     @Dependency(\.keychain) private var keychain
     @Dependency(\.logger) private var logger
     @Dependency(\.prompt) private var prompt
 
-    func appleIDCredentials() throws -> Credentials {
-        if let username = try? keychain.accounts(Self.service).first {
-            do {
-                let password = try keychain.readPassword(Self.service, username)
-                return Credentials(username: username, password: password)
-            } catch {
-                logger.warn("Could not read password from the Keychain.")
-            }
+    func accountName() async throws -> String {
+        if let accountName = environment[Self.accountNameVariable], !accountName.isEmpty {
+            return accountName
         }
-
-        logger.log("Apple's Developer Download page requires a login.")
-        logger.emphasized("Please provide your Apple Developer Program account credentials.")
-
-        let username = prompt.readLine("Username:")
-        let password = prompt.readSecret("Password:")
-
-        logger.log("\n")
-        let shouldStoreInKeychain = prompt.agree("Do you want to store these credentials in the macOS Keychain?")
-
-        if shouldStoreInKeychain {
-            do {
-                try keychain.savePassword(password, Self.service, username)
-            } catch {
-                logger.warn("Could not save password to the Keychain.")
-            }
-        }
-
-        return Credentials(username: username, password: password)
-    }
-
-    func cleanup() {
         do {
-            if try keychain.deleteAll(Self.service) > 0 {
-                logger.success("Deleted stored Apple ID credentials from keychain.")
-            } else {
-                logger.log("No Apple ID credentials were stored.")
+            if let accountName = try await keychain.load().accountName {
+                return accountName
             }
         } catch {
-            logger
-                .error(
-                    "Error deleting Keychain entries. Please open Keychain Access.app and remove items named 'xcinfo.appleid'."
-                )
+            logger.warn("\(error)")
+        }
+        guard isInteractive else {
+            throw CredentialsError.accountNameUnavailable
+        }
+        logger.log("Apple's Developer Download page requires a login.")
+        logger.emphasized("Please enter your Apple Developer Program account.")
+        let accountName = prompt.readLine("Apple ID:").trimmingCharacters(in: .whitespaces)
+        guard !accountName.isEmpty else {
+            throw CredentialsError.accountNameUnavailable
+        }
+        try? await keychain.stage { $0.accountName = accountName }
+        return accountName
+    }
+
+    func password(for accountName: String) throws -> String {
+        if let password = environment[Self.passwordVariable], !password.isEmpty {
+            return password
+        }
+        guard isInteractive else {
+            throw CredentialsError.passwordUnavailable
+        }
+        let password = prompt.readSecret("Password for \(accountName):")
+        guard !password.isEmpty else {
+            throw CredentialsError.invalidPassword
+        }
+        return password
+    }
+
+    func cleanup() async {
+        do {
+            if try await keychain.load().accountName != nil {
+                try await keychain.commit { $0.accountName = nil }
+                logger.success("Deleted the stored Apple ID from the Keychain.")
+            } else {
+                logger.log("No Apple ID was stored.")
+            }
+        } catch {
+            logger.error("Error deleting the stored Apple ID. Please open Keychain Access.app and remove the item named 'xcinfo'.")
         }
     }
 }

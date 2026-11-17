@@ -20,7 +20,7 @@ extension XCInfo {
 
         func run() async throws {
             try await globals.run { core, output in
-                core.cleanup()
+                await core.cleanup()
                 if output.options.isJSON {
                     try output.printJSON([String: String]())
                 }

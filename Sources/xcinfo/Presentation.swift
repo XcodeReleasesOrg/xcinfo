@@ -27,6 +27,10 @@ extension Error {
             case .uninstallationFailed:
                 8
             }
+        case is CredentialsError:
+            4
+        case is KeychainAccessError:
+            4
         case is XCAPIError, is DecodingError, is URLError, is CocoaError:
             9
         case let error as Interrupted:
