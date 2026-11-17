@@ -7,7 +7,7 @@ import Foundation
 import XCIFoundation
 
 public enum OlympUsError: Error, Sendable, Equatable, CustomStringConvertible {
-    case missingSessionKey
+    case missingSessionKey(String)
     case signInRequestFailed
     case incorrectCredentials
     case accountLocked
@@ -23,8 +23,8 @@ public enum OlympUsError: Error, Sendable, Equatable, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .missingSessionKey:
-            "Apple's sign-in configuration could not be loaded."
+        case let .missingSessionKey(reason):
+            "Apple's sign-in configuration could not be loaded (\(reason))."
         case .signInRequestFailed:
             "Signing in to Apple failed."
         case .incorrectCredentials:
@@ -305,6 +305,7 @@ public actor OlympUs {
 
     // MARK: - Step 0: service key and hashcash -
 
+    private let signOutURL = URL(string: "https://appstoreconnect.apple.com/logout")!
     private let sessionKeyURL = URL(string: "https://appstoreconnect.apple.com/olympus/v1/app/config")!
     public func getServiceKey(for account: String) async throws -> String {
         _ = await storedAuthenticationAssets(for: account)
@@ -312,14 +313,33 @@ public actor OlympUs {
         if let serviceKey = await storedAuthenticationAssets(for: account)?.serviceKey {
             return serviceKey
         }
+        var reasons: [String] = []
+        do {
+            var request = URLRequest(url: signOutURL)
+            request.httpMethod = "HEAD"
+            let (_, response) = try await session.data(for: request, delegate: RedirectBlocker())
+            logResponse(request, response, Data())
+            if let location = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Location"),
+               let key = URLComponents(string: location)?.queryItems?.first(where: { $0.name == "widgetKey" })?.value,
+               !key.isEmpty {
+                return key
+            }
+            reasons.append("no key in the sign-out redirect, HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
+        } catch {
+            reasons.append("sign-out redirect: \(error.localizedDescription)")
+        }
         var components = URLComponents(url: sessionKeyURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "hostname", value: "itunesconnect.apple.com")]
         do {
-            let (data, _) = try await session.data(from: components.url!)
-            return try JSONDecoder().decode(ServiceKeyResponse.self, from: data).authServiceKey
+            let (data, response) = try await session.data(from: components.url!)
+            if let key = try? JSONDecoder().decode(ServiceKeyResponse.self, from: data).authServiceKey, !key.isEmpty {
+                return key
+            }
+            reasons.append("configuration endpoint: HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
         } catch {
-            throw OlympUsError.missingSessionKey
+            reasons.append("configuration endpoint: \(error.localizedDescription)")
         }
+        throw OlympUsError.missingSessionKey(reasons.joined(separator: "; "))
     }
 
     private let signInURL = URL(string: "https://idmsa.apple.com/appleauth/auth/signin")!
@@ -929,5 +949,16 @@ extension OlympUs {
         for archive in (withAEA.isEmpty ? archives : withAEA).prefix(5) {
             logger.verbose("  \(archive.name): \(archive.formats.map { ".\($0)" }.joined(separator: ", "))")
         }
+    }
+}
+
+final class RedirectBlocker: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest _: URLRequest
+    ) async -> URLRequest? {
+        nil
     }
 }

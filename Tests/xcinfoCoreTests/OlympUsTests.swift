@@ -8,6 +8,7 @@ import XCIFoundation
 
 private enum AppleEndpoint {
     static let config = "/olympus/v1/app/config"
+    static let signOut = "/logout"
     static let signIn = "/appleauth/auth/signin"
     static let signInInit = "/appleauth/auth/signin/init"
     static let signInComplete = "/appleauth/auth/signin/complete"
@@ -109,23 +110,48 @@ struct OlympUsServiceKeyTests {
     }
 
     @Test
-    func `the service key is requested from the app config`() async throws {
+    func `the service key is read from the sign-out redirect`() async throws {
+        let fixture = OlympUsFixture { request in
+            request.url?.path == "/logout"
+                ? StubResponse(statusCode: 302, headers: ["Location": "https://idmsa.apple.com/appleauth/signout?widgetKey=redirect-key&asop=destroy-session"])
+                : .json(#"{"authServiceKey":"config-key"}"#)
+        }
+
+        let key = try await fixture.olymp.getServiceKey(for: "user")
+
+        #expect(key == "redirect-key")
+        let request = try #require(fixture.server.requests.values.first)
+        #expect(request.url?.absoluteString == "https://appstoreconnect.apple.com/logout")
+        #expect(request.httpMethod == "HEAD")
+        #expect(fixture.server.requests.values.count == 1)
+    }
+
+    @Test
+    func `the app config is the fallback for the service key`() async throws {
         let fixture = OlympUsFixture { _ in .json(#"{"authServiceKey":"fresh-key"}"#) }
 
         let key = try await fixture.olymp.getServiceKey(for: "user")
 
         #expect(key == "fresh-key")
-        let request = try #require(fixture.server.requests.values.first)
-        #expect(request.url?.absoluteString == "https://appstoreconnect.apple.com/olympus/v1/app/config?hostname=itunesconnect.apple.com")
+        #expect(fixture.server.requests.values.map { $0.url?.absoluteString } == [
+            "https://appstoreconnect.apple.com/logout",
+            "https://appstoreconnect.apple.com/olympus/v1/app/config?hostname=itunesconnect.apple.com",
+        ])
     }
 
     @Test
     func `a missing service key fails`() async throws {
-        let fixture = OlympUsFixture { _ in .json("{}", statusCode: 500) }
+        let fixture = OlympUsFixture { request in
+            request.url?.path == "/logout" ? StubResponse(statusCode: 200) : .json(#"{"message":"Not Found"}"#, statusCode: 404)
+        }
 
         await #expect(performing: {
             try await fixture.olymp.getServiceKey(for: "user")
-        }, throws: isOlympUsError(.missingSessionKey))
+        }, throws: { error in
+            guard case let OlympUsError.missingSessionKey(reason) = error else { return false }
+            return reason.contains("HTTP 200") && reason.contains("HTTP 404")
+                && (error as? OlympUsError)?.description.contains("configuration endpoint: HTTP 404") == true
+        })
     }
 }
 
@@ -792,6 +818,7 @@ struct AppleAuthenticatorTests {
         try await authenticator.authenticate(username: "user", password: { "secret" })
 
         #expect(fixture.server.requests.values.compactMap(\.url?.path) == [
+            AppleEndpoint.signOut,
             AppleEndpoint.config,
             AppleEndpoint.signIn,
             AppleEndpoint.signInInit,
