@@ -11,9 +11,19 @@ struct TerminalSize: Sendable, Equatable {
     var height: Int
 }
 
-final class TerminalSession {
+protocol TerminalControl: AnyObject {
+    func enter()
+    func leave()
+    func enterRawMode()
+    func leaveRawMode()
+    func discardInput()
+    var modeDescription: String { get }
+}
+
+final class TerminalSession: TerminalControl {
     private var originalAttributes = termios()
     private var isActive = false
+    private var isRaw = false
 
     static var isInteractive: Bool {
         isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0
@@ -22,10 +32,7 @@ final class TerminalSession {
     func enter() {
         guard !isActive else { return }
         tcgetattr(STDIN_FILENO, &originalAttributes)
-        var raw = originalAttributes
-        raw.c_lflag &= ~tcflag_t(ECHO | ICANON | ISIG | IEXTEN)
-        raw.c_iflag &= ~tcflag_t(IXON | ICRNL)
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)
+        enterRawMode()
         write("\u{1B}[?1049h\u{1B}[?25l\u{1B}[H\u{1B}[2J")
         isActive = true
     }
@@ -33,8 +40,33 @@ final class TerminalSession {
     func leave() {
         guard isActive else { return }
         write("\u{1B}[0m\u{1B}[?25h\u{1B}[?1049l")
-        tcsetattr(STDIN_FILENO, TCSAFLUSH, &originalAttributes)
+        leaveRawMode()
         isActive = false
+    }
+
+    func enterRawMode() {
+        var raw = originalAttributes
+        raw.c_lflag &= ~tcflag_t(ECHO | ICANON | ISIG | IEXTEN)
+        raw.c_iflag &= ~tcflag_t(IXON | ICRNL)
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw)
+        isRaw = true
+    }
+
+    func leaveRawMode() {
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &originalAttributes)
+        isRaw = false
+    }
+
+    func discardInput() {
+        tcflush(STDIN_FILENO, TCIFLUSH)
+    }
+
+    var modeDescription: String {
+        var mask = sigset_t()
+        pthread_sigmask(SIG_SETMASK, nil, &mask)
+        let blocked = (1 ..< 32).filter { sigismember(&mask, Int32($0)) == 1 }
+        return "terminal \(isRaw ? "raw" : "cooked"), \(isActive ? "alternate screen" : "normal screen"), "
+            + "main thread \(Thread.isMainThread ? "yes" : "no"), blocked signals \(blocked.isEmpty ? "none" : blocked.map(String.init).joined(separator: ","))"
     }
 
     deinit {

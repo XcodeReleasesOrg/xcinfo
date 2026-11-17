@@ -10,16 +10,13 @@ import xcinfoCore
 public struct TUIActions: Sendable {
     public var load: @Sendable () async throws -> (XcodeList, [XcodeApplication])
     public var perform: @Sendable (TUICommand, TUISession) async -> TUIOutcome
-    public var prepare: @Sendable () async -> Void
 
     public init(
         load: @escaping @Sendable () async throws -> (XcodeList, [XcodeApplication]),
-        perform: @escaping @Sendable (TUICommand, TUISession) async -> TUIOutcome,
-        prepare: @escaping @Sendable () async -> Void = {}
+        perform: @escaping @Sendable (TUICommand, TUISession) async -> TUIOutcome
     ) {
         self.load = load
         self.perform = perform
-        self.prepare = prepare
     }
 }
 
@@ -45,27 +42,32 @@ public struct TUIApp: Sendable {
     }
 
     private func runInTerminal() async {
-        await actions.prepare()
         let terminal = TerminalSession()
         terminal.enter()
         defer { terminal.leave() }
 
         let (inputs, input) = AsyncStream.makeStream(of: TUIInput.self)
+        let gate = KeyReaderGate()
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
                 let reader = TerminalInput()
                 while !Task.isCancelled {
+                    if await gate.isPaused {
+                        try? await Task.sleep(for: .milliseconds(50))
+                        continue
+                    }
                     let keys = reader.readKeys(timeout: .milliseconds(100))
                     input.yield(keys.isEmpty ? .tick : .keys(keys))
                 }
             }
-            await loop(terminal: terminal, inputs: inputs, input: input, group: &group)
+            await loop(terminal: terminal, gate: gate, inputs: inputs, input: input, group: &group)
             group.cancelAll()
         }
     }
 
     private func loop(
         terminal: TerminalSession,
+        gate: KeyReaderGate,
         inputs: AsyncStream<TUIInput>,
         input: AsyncStream<TUIInput>.Continuation,
         group: inout TaskGroup<Void>
@@ -95,6 +97,14 @@ public struct TUIApp: Sendable {
                 model.activity?.apply(output)
             case let .question(question):
                 model.dialog = TUIDialog(question)
+            case let .releaseTerminal(release):
+                model.activity?.apply(.message(release.message, .plain))
+                draw(force: true)
+                await terminal.handOver(release, gate: gate)
+                continue
+            case let .reacquireTerminal(release):
+                await terminal.takeBack(release, gate: gate)
+                lastSize = nil
             case let .finished(outcome):
                 model.activity?.finish(succeeded: outcome.succeeded, message: outcome.message)
                 questions = nil
@@ -208,5 +218,28 @@ extension TUICommand {
         case .quit, .refresh:
             ""
         }
+    }
+}
+
+extension TerminalControl {
+    func handOver(_ release: TerminalRelease, gate: KeyReaderGate) async {
+        await gate.pause()
+        if release.leavesFullScreen {
+            leave()
+        } else {
+            leaveRawMode()
+        }
+        release.done.resume(returning: modeDescription)
+    }
+
+    func takeBack(_ release: TerminalRelease, gate: KeyReaderGate) async {
+        if release.leavesFullScreen {
+            enter()
+        } else {
+            enterRawMode()
+        }
+        discardInput()
+        await gate.resume()
+        release.done.resume(returning: modeDescription)
     }
 }
