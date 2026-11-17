@@ -1,5 +1,5 @@
 //
-//  Copyright © 2022 xcodereleases.com
+//  Copyright © 2026 xcodereleases.com
 //  MIT license - see LICENSE.md
 //
 
@@ -236,7 +236,7 @@ public actor OlympUs {
 
         guard let data else {
             logger.verbose("No stored session found.")
-            restoreCookies(from: await sessionStore.loadLegacyCookies())
+            await restoreCookies(from: sessionStore.loadLegacyCookies())
             return nil
         }
         if let stored = try? JSONDecoder().decode(StoredSession.self, from: data) {
@@ -245,8 +245,11 @@ public actor OlympUs {
             loadedAssets = stored.assets
             savedSession = SavedSessionKey(assets: stored.assets, cookies: cookieKeys)
         } else if let legacyAssets = try? JSONDecoder().decode(AuthenticationAssets.self, from: data) {
-            logger.verbose("Stored session found in the old format. It is saved in the new format after the next sign-in step.")
-            restoreCookies(from: await sessionStore.loadLegacyCookies())
+            logger
+                .verbose(
+                    "Stored session found in the old format. It is saved in the new format after the next sign-in step."
+                )
+            await restoreCookies(from: sessionStore.loadLegacyCookies())
             loadedAssets = legacyAssets
             hasLegacyCookies = true
         } else {
@@ -266,10 +269,13 @@ public actor OlympUs {
         }
         let reasons = [
             savedSession.flatMap { key == $0 ? nil : key.changes(from: $0) },
-            cookiesToClean.isEmpty ? nil : "the stored session still had cookies it no longer needs: \(cookiesToClean.sorted().joined(separator: ", "))",
+            cookiesToClean.isEmpty ? nil : "the stored session still had cookies it no longer needs: \(cookiesToClean.sorted().joined(separator: ", "))"
         ].compactMap { $0 }
-        logger.verbose(savedSession == nil ? "Saving the new session." : "Saving the session because \(reasons.joined(separator: " and ")).")
-        guard let data = try? JSONEncoder().encode(StoredSession(assets: assets, cookies: cookieData())) else { return true }
+        logger
+            .verbose(savedSession == nil ? "Saving the new session." :
+                "Saving the session because \(reasons.joined(separator: " and ")).")
+        guard let data = try? JSONEncoder().encode(StoredSession(assets: assets, cookies: cookieData()))
+        else { return true }
         if hasLegacyCookies {
             await sessionStore.removeLegacyCookies()
             hasLegacyCookies = false
@@ -283,7 +289,10 @@ public actor OlympUs {
         } catch {
             if !hasWarnedAboutSaving {
                 hasWarnedAboutSaving = true
-                logger.warn("Could not save the Apple session in the Keychain (\(error)). The next sign-in will ask for two-factor authentication again.")
+                logger
+                    .warn(
+                        "Could not save the Apple session in the Keychain (\(error)). The next sign-in will ask for two-factor authentication again."
+                    )
             }
             return false
         }
@@ -317,11 +326,11 @@ public actor OlympUs {
         do {
             var request = URLRequest(url: signOutURL)
             request.httpMethod = "HEAD"
-            let (_, response) = try await session.data(for: request, delegate: RedirectBlocker())
-            logResponse(request, response, Data())
+            let (_, response) = try await send(request, delegate: RedirectBlocker())
             if let location = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Location"),
                let key = URLComponents(string: location)?.queryItems?.first(where: { $0.name == "widgetKey" })?.value,
-               !key.isEmpty {
+               !key.isEmpty
+            {
                 return key
             }
             reasons.append("no key in the sign-out redirect, HTTP \((response as? HTTPURLResponse)?.statusCode ?? 0)")
@@ -410,13 +419,16 @@ public actor OlympUs {
 
         let initResponse: SignInInitResponse
         do {
-            var request = signInRequest(url: signInURL.appendingPathComponent("init"), serviceKey: serviceKey, hashcash: nil)
+            var request = signInRequest(
+                url: signInURL.appendingPathComponent("init"),
+                serviceKey: serviceKey,
+                hashcash: nil
+            )
             request.httpBody = try JSONEncoder().encode(SignInInitRequest(
                 a: Data(client.publicKey.bytes()).base64EncodedString(),
                 accountName: accountName
             ))
-            let (data, response) = try await session.data(for: request)
-            logResponse(request, response, data)
+            let (data, response) = try await send(request)
             try Self.checkSignInStatus(response)
             initResponse = try JSONDecoder().decode(SignInInitResponse.self, from: data)
             logger.verbose("Password protocol \(initResponse.protocol.rawValue), \(initResponse.iteration) iterations")
@@ -451,7 +463,10 @@ public actor OlympUs {
             throw OlympUsError.signInRequestFailed
         }
 
-        var completeURL = URLComponents(url: signInURL.appendingPathComponent("complete"), resolvingAgainstBaseURL: false)!
+        var completeURL = URLComponents(
+            url: signInURL.appendingPathComponent("complete"),
+            resolvingAgainstBaseURL: false
+        )!
         completeURL.queryItems = [URLQueryItem(name: "isRememberMeEnabled", value: "false")]
         var request = signInRequest(url: completeURL.url!, serviceKey: serviceKey, hashcash: hashcash)
         request.httpBody = try? JSONEncoder().encode(SignInCompleteRequest(
@@ -464,8 +479,7 @@ public actor OlympUs {
         let data: Data
         let response: HTTPURLResponse
         do {
-            let (responseData, urlResponse) = try await session.data(for: request)
-            logResponse(request, urlResponse, responseData)
+            let (responseData, urlResponse) = try await send(request)
             guard let httpResponse = urlResponse as? HTTPURLResponse else { throw OlympUsError.signInRequestFailed }
             data = responseData
             response = httpResponse
@@ -513,6 +527,20 @@ public actor OlympUs {
         }
 
         let serviceErrors: [ServiceError]?
+    }
+
+    private func send(
+        _ request: URLRequest,
+        delegate: (any URLSessionTaskDelegate)? = nil
+    ) async throws -> (Data, URLResponse) {
+        do {
+            let (data, response) = try await session.data(for: request, delegate: delegate)
+            logResponse(request, response, data)
+            return (data, response)
+        } catch {
+            logger.verbose("\(request.httpMethod ?? "GET") \(request.url?.path ?? ""): \(error.localizedDescription)")
+            throw error
+        }
     }
 
     private func logResponse(_ request: URLRequest, _ response: URLResponse, _ data: Data) {
@@ -573,7 +601,7 @@ public actor OlympUs {
         state = .requestingAuth
         let response: RequestAuthResponse
         do {
-            let (data, _) = try await session.data(for: request(forURL: authURL, assets: assets, method: .get))
+            let (data, _) = try await send(request(forURL: authURL, assets: assets, method: .get))
             response = try JSONDecoder().decode(RequestAuthResponse.self, from: data)
         } catch {
             throw OlympUsError.requestAuthentication
@@ -585,13 +613,17 @@ public actor OlympUs {
         let requiredCodeLength = response.securityCode.length
         let trustedPhoneNumbers = response.trustedPhoneNumbers ?? []
         logger.log("Two-factor authentication is enabled for your Apple ID.")
-        logger.log("Enter the \(requiredCodeLength) digit verification code that Apple shows on one of your trusted Apple devices.")
+        logger
+            .log(
+                "Enter the \(requiredCodeLength) digit verification code that Apple shows on one of your trusted Apple devices."
+            )
         if !trustedPhoneNumbers.isEmpty {
             logger.log("Type 'sms' to get the code by text message on a trusted phone number instead.")
         }
-        let input = try await prompt.ask("Apple ID verification code: ", "Enter \(requiredCodeLength) digits") { value in
-            !(value == "sms" && !trustedPhoneNumbers.isEmpty) && requiredCodeLength != value.count
-        }
+        let input = try await prompt
+            .ask("Apple ID verification code: ", "Enter \(requiredCodeLength) digits") { value in
+                !(value == "sms" && !trustedPhoneNumbers.isEmpty) && requiredCodeLength != value.count
+            }
         guard input == "sms" else {
             return .securityCode(input)
         }
@@ -602,10 +634,11 @@ public actor OlympUs {
         )
         let phoneId = trustedPhoneNumbers[phoneIndex].id
         var request = request(forURL: verifyPhoneURL, assets: assets, method: .put)
-        request.httpBody = try? JSONEncoder().encode(VerifyPhoneRequest(phoneNumber: VerifyPhoneRequest.TrustedNumber(id: phoneId)))
+        request.httpBody = try? JSONEncoder()
+            .encode(VerifyPhoneRequest(phoneNumber: VerifyPhoneRequest.TrustedNumber(id: phoneId)))
 
         do {
-            let (_, response) = try await session.data(for: request)
+            let (_, response) = try await send(request)
             guard let response = response as? HTTPURLResponse, (200 ..< 300).contains(response.statusCode) else {
                 throw OlympUsError.requestSmsFailed
             }
@@ -631,7 +664,7 @@ public actor OlympUs {
         request.httpBody = validationType.body
         let response: URLResponse
         do {
-            (_, response) = try await session.data(for: request)
+            (_, response) = try await send(request)
         } catch {
             throw OlympUsError.deviceTrustFailed
         }
@@ -658,7 +691,7 @@ public actor OlympUs {
         let request = request(forURL: trustURL, assets: assets, method: .get)
         let response: URLResponse
         do {
-            (_, response) = try await session.data(for: request)
+            (_, response) = try await send(request)
         } catch {
             throw OlympUsError.deviceTrustFailed
         }
@@ -684,8 +717,7 @@ public actor OlympUs {
         let request = request(forURL: olympusSessionURL, assets: assets, method: .get)
         let response: URLResponse
         do {
-            let (data, urlResponse) = try await session.data(for: request)
-            logResponse(request, urlResponse, data)
+            let (_, urlResponse) = try await send(request)
             response = urlResponse
         } catch {
             throw OlympUsError.olympusSessionFailed
@@ -721,8 +753,7 @@ public actor OlympUs {
         let response: URLResponse
         let listing: DownloadListing?
         do {
-            let (data, urlResponse) = try await session.data(for: request)
-            logResponse(request, urlResponse, data)
+            let (data, urlResponse) = try await send(request)
             listing = DownloadListing(data: data)
             logArchives(in: listing)
             response = urlResponse
@@ -732,7 +763,7 @@ public actor OlympUs {
         guard
             handle(response: response),
             session.configuration.httpCookieStorage?.cookies?
-            .contains(where: { $0.name == "ADCDownloadAuth" }) == true
+                .contains(where: { $0.name == "ADCDownloadAuth" }) == true
         else {
             throw OlympUsError.downloadAuthFailed
         }
@@ -746,7 +777,10 @@ public actor OlympUs {
             await sessionStore.removeLegacyCookies()
             return try await sessionStore.removeAll() > 0
         } catch {
-            logger.error("Error deleting the Apple session. Please open Keychain Access.app and remove the item named 'xcinfo'.")
+            logger
+                .error(
+                    "Error deleting the Apple session. Please open Keychain Access.app and remove the item named 'xcinfo'."
+                )
             return false
         }
     }
@@ -770,7 +804,8 @@ struct SavedSessionKey: Equatable {
     var cookies: Set<String>
 
     func changes(from saved: SavedSessionKey) -> String {
-        let names = cookies.symmetricDifference(saved.cookies).compactMap { $0.split(separator: "|").dropFirst(2).first.map(String.init) }
+        let names = cookies.symmetricDifference(saved.cookies)
+            .compactMap { $0.split(separator: "|").dropFirst(2).first.map(String.init) }
         let cookieChange = names.isEmpty ? nil : "these cookies changed: \(Set(names).sorted().joined(separator: ", "))"
         let assetChange = assets == saved.assets ? nil : "the session headers changed"
         return [assetChange, cookieChange].compactMap { $0 }.joined(separator: " and ")
@@ -791,7 +826,10 @@ extension OlympUs {
         guard let storage = session.configuration.httpCookieStorage else { return }
         let stale = (storage.cookies ?? []).filter { !$0.name.hasPrefix("DES") }
         stale.forEach(storage.deleteCookie)
-        logger.verbose("Kept \((storage.cookies ?? []).count) trusted-browser cookies for the sign-in, removed \(stale.count) others.")
+        logger
+            .verbose(
+                "Kept \((storage.cookies ?? []).count) trusted-browser cookies for the sign-in, removed \(stale.count) others."
+            )
     }
 
     private func cookieData() -> Data? {
@@ -819,7 +857,10 @@ extension OlympUs {
         var restored: [HTTPCookie] = []
         var dropped: [HTTPCookie] = []
         for cookieProperties in cookies {
-            let properties = Dictionary(uniqueKeysWithValues: cookieProperties.map { (HTTPCookiePropertyKey($0.key), $0.value) })
+            let properties = Dictionary(uniqueKeysWithValues: cookieProperties.map { (
+                HTTPCookiePropertyKey($0.key),
+                $0.value
+            ) })
             guard let cookie = HTTPCookie(properties: properties) else { continue }
             if cookie.isNeededForSession(at: date) {
                 cookieStorage.setCookie(cookie)
@@ -838,7 +879,7 @@ extension OlympUs {
 
 extension HTTPCookie {
     static let sessionCookieNames: Set<String> = [
-        "DSESSIONID", "aasp", "acn01", "dqsid", "itcdq", "itctx", "myacinfo",
+        "DSESSIONID", "aasp", "acn01", "dqsid", "itcdq", "itctx", "myacinfo"
     ]
 
     func hasExpired(at date: Date) -> Bool {
@@ -870,7 +911,8 @@ extension [HTTPCookie] {
     }
 
     func droppedList(at date: Date) -> String {
-        isEmpty ? "none" : map { "\($0.name) on \($0.domain.isEmpty ? "no domain" : $0.domain), \($0.dropReason(at: date) ?? "kept")" }
+        isEmpty ? "none" :
+            map { "\($0.name) on \($0.domain.isEmpty ? "no domain" : $0.domain), \($0.dropReason(at: date) ?? "kept")" }
             .sorted()
             .joined(separator: "; ")
     }
@@ -895,7 +937,8 @@ public struct DownloadListing: Decodable, Equatable, Sendable {
         }
 
         var archivePaths: [String] {
-            (files ?? []).compactMap(\.remotePath).filter { ["xip", "aea"].contains(($0 as NSString).pathExtension.lowercased()) }
+            (files ?? []).compactMap(\.remotePath)
+                .filter { ["xip", "aea"].contains(($0 as NSString).pathExtension.lowercased()) }
         }
     }
 
@@ -924,7 +967,11 @@ public struct DownloadListing: Decodable, Equatable, Sendable {
     public func archiveURLs(inFolderOf url: URL?, named name: String) -> [URL] {
         let folder = url.map { ($0.path as NSString).deletingLastPathComponent }
         let match = downloads.first { download in
-            download.archivePaths.contains { ("/" + $0.trimmingCharacters(in: CharacterSet(charactersIn: "/")) as NSString).deletingLastPathComponent == folder }
+            download.archivePaths
+                .contains {
+                    ("/" + $0.trimmingCharacters(in: CharacterSet(charactersIn: "/")) as NSString)
+                        .deletingLastPathComponent == folder
+                }
         } ?? downloads.first { $0.name?.caseInsensitiveCompare(name) == .orderedSame && !$0.archivePaths.isEmpty }
         return (match?.archivePaths ?? []).map { path in
             Self.downloadHost.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))

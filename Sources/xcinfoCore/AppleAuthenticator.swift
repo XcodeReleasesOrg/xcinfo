@@ -1,5 +1,5 @@
 //
-//  Copyright © 2022 xcodereleases.com
+//  Copyright © 2026 xcodereleases.com
 //  MIT license - see LICENSE.md
 //
 
@@ -19,7 +19,10 @@ final class AppleAuthenticator: Sendable {
     }
 
     @discardableResult
-    func authenticate(username: String, password: @Sendable () async throws -> String) async throws -> DownloadListing? {
+    func authenticate(
+        username: String,
+        password: @Sendable () async throws -> String
+    ) async throws -> DownloadListing? {
         do {
             try await olymp.validateSession(for: username)
             guard let assets = await olymp.storedAuthenticationAssets(for: username) else {
@@ -37,7 +40,14 @@ final class AppleAuthenticator: Sendable {
             try await olymp.sendSecurityCode(validationType: validationType, assets: signIn.assets)
             try await olymp.requestTrust(assets: signIn.assets)
         }
-        try await olymp.getOlympusSession(assets: signIn.assets, for: username)
+        do {
+            try await olymp.getOlympusSession(assets: signIn.assets, for: username)
+        } catch {
+            logger
+                .verbose(
+                    "No App Store Connect session (\(error.localizedDescription)); the download authorization decides whether the sign-in worked."
+                )
+        }
         return try await olymp.getDownloadAuth(assets: signIn.assets)
     }
 }

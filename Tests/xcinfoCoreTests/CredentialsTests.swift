@@ -399,3 +399,69 @@ struct SignInStorageTests {
         #expect(!logs.messages.contains { $0.contains("correct horse") })
     }
 }
+
+struct SignInSessionTests {
+    @Test(arguments: [
+        (StubResponse(statusCode: 500), "GET /olympus/v1/session: HTTP 500"),
+        (StubResponse(statusCode: 401), "GET /olympus/v1/session: HTTP 401"),
+        (StubResponse(error: URLError(.timedOut)), "GET /olympus/v1/session: \(URLError(.timedOut).localizedDescription)"),
+    ])
+    func `a failing App Store Connect session does not stop the sign-in and is logged`(sessionResponse: StubResponse, logged: String) async throws {
+        let logs = LogRecorder()
+        let prompt = FakePrompt(answers: ["123456"])
+        let srp = FakeAppleSRPServer(accountName: "user", password: "correct horse")
+        let server = StubServer { request in
+            switch request.url?.path {
+            case "/logout":
+                StubResponse(statusCode: 302, headers: ["Location": "https://idmsa.apple.com/appleauth/signout?widgetKey=key"])
+            case "/appleauth/auth/signin":
+                StubResponse(headers: ["X-Apple-HC-Bits": "8", "X-Apple-HC-Challenge": "challenge"])
+            case "/appleauth/auth/signin/init":
+                srp.initResponse(for: request)
+            case "/appleauth/auth/signin/complete":
+                srp.isValidCompletion(request) ? .json("{}", statusCode: 409, headers: ["scnt": "s", "X-Apple-ID-Session-Id": "i"]) : .json("{}", statusCode: 401)
+            case "/appleauth/auth":
+                .json(#"{"securityCode":{"length":6}}"#)
+            case "/appleauth/auth/verify/trusteddevice/securitycode":
+                StubResponse(statusCode: 204)
+            case "/appleauth/auth/2sv/trust":
+                StubResponse(statusCode: 204, headers: ["Set-Cookie": "DES1234=trust-cookie-value; Path=/; Domain=.apple.com"])
+            case "/olympus/v1/session":
+                sessionResponse
+            case "/services-account/QH65B2/downloadws/listDownloads.action":
+                StubResponse(headers: ["Set-Cookie": "ADCDownloadAuth=download-cookie-value; Path=/; Domain=.apple.com"])
+            default:
+                StubResponse(statusCode: 404)
+            }
+        }
+        let olymp = OlympUs(logger: logs.logger(), session: server.session(), sessionStore: InMemorySessionStore().store, prompt: prompt.client)
+
+        _ = try await AppleAuthenticator(olymp: olymp, logger: logs.logger()).authenticate(username: "user") { "correct horse" }
+
+        #expect(logs.messages.contains("POST /appleauth/auth/verify/trusteddevice/securitycode: HTTP 204"))
+        #expect(logs.messages.contains("GET /appleauth/auth/2sv/trust: HTTP 204"))
+        #expect(logs.messages.contains(logged))
+        #expect(logs.messages.contains { $0.hasPrefix("No App Store Connect session") })
+        #expect(logs.messages.contains("POST /services-account/QH65B2/downloadws/listDownloads.action: HTTP 200"))
+        #expect(!logs.messages.contains { $0.contains("correct horse") || $0.contains("cookie-value") })
+    }
+
+    @Test
+    func `a failing download authorization still fails the sign-in`() async throws {
+        let logs = LogRecorder()
+        let server = StubServer { request in
+            switch request.url?.path {
+            case "/services-account/QH65B2/downloadws/listDownloads.action":
+                StubResponse(statusCode: 403)
+            default:
+                StubResponse()
+            }
+        }
+        let olymp = OlympUs(logger: logs.logger(), session: server.session(), sessionStore: InMemorySessionStore().store, prompt: FakePrompt().client)
+
+        await #expect(throws: OlympUsError.downloadAuthFailed) {
+            try await olymp.getDownloadAuth(assets: .init(serviceKey: "key", scnt: "s", asid: "i"))
+        }
+        #expect(logs.messages.contains("POST /services-account/QH65B2/downloadws/listDownloads.action: HTTP 403"))
+    }
+}
