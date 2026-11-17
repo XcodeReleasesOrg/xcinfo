@@ -298,3 +298,10 @@ struct HelpTextTests {
         #expect(!extract.contains("code version"))
     }
 }
+
+struct VersionTests {
+    @Test
+    func `the version is 2.0.0`() {
+        #expect(XCInfo.configuration.version == "2.0.0")
+    }
+}
