@@ -777,13 +777,13 @@ extension Core {
         case 0:
             return nil
         case 1:
-            logger.log("Found matching Xcode \(xcodes[0].displayName).")
+            logger.log("Found matching Xcode \(xcodes[0].labeledName).")
             return xcodes.first
         default:
             logger
                 .log("Found multiple possibilities for the requested version '\(version.description)'.")
 
-            let index = try await self.prompt.choose(prompt, xcodes.map(\.displayName))
+            let index = try await self.prompt.choose(prompt, xcodes.map(\.labeledName))
             return xcodes[index]
         }
     }

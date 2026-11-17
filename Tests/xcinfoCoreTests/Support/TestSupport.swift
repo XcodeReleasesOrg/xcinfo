@@ -284,6 +284,7 @@ extension Core {
 extension Xcode {
     static func fixture(
         _ number: String,
+        name: String = "Xcode",
         build: String,
         release: Release = .release,
         date: Date = Date(),
@@ -299,6 +300,7 @@ extension Xcode {
             ? nil
             : Links(download: download.map { Link($0) }, notes: notes.map { Link($0) })
         return Xcode(
+            name: name,
             version: Version(build, number, release),
             date: (components.year!, components.month!, components.day!),
             requires: requires,

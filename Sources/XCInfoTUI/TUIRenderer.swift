@@ -216,7 +216,7 @@ public struct TUIRenderer: Sendable {
         for section in model.sections {
             rows.append(Row(text: "\(section.title) (\(section.entries.count))", entryIndex: nil))
             for entry in section.entries {
-                rows.append(Row(text: entry.xcode.displayName, entryIndex: entryIndex))
+                rows.append(Row(text: entry.title, entryIndex: entryIndex))
                 entryIndex += 1
             }
         }
@@ -237,7 +237,7 @@ public struct TUIRenderer: Sendable {
     func detailLines(_ entry: TUIEntry?, width: Int = .max) -> [String] {
         guard let entry else { return [] }
         let xcode = entry.xcode
-        var lines = [xcode.displayName, ""]
+        var lines = [entry.title, ""]
         let releaseDate = xcode.releaseDate
             .formatted(Date.FormatStyle().year().month(.wide).day().locale(Locale(identifier: "en_US_POSIX")))
         lines.append("Released:  \(releaseDate)")

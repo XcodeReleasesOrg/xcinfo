@@ -225,9 +225,9 @@ extension TUICommand {
     var title: String {
         switch self {
         case let .install(xcode, _):
-            "Installing Xcode \(xcode.displayName)"
+            "Installing Xcode \(xcode.labeledName)"
         case let .download(xcode):
-            "Downloading Xcode \(xcode.displayName)"
+            "Downloading Xcode \(xcode.labeledName)"
         case let .uninstall(application):
             "Uninstalling Xcode \(application.xcode.displayName)"
         case let .switchTo(application):

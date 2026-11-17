@@ -1,11 +1,13 @@
 //
-//  Copyright © 2022 xcodereleases.com
+//  Copyright © 2026 xcodereleases.com
 //  MIT license - see LICENSE.md
 //
 
 import Foundation
 import XCIFoundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable
+
+// annotations.
 
 public struct XcodeApplication: Sendable {
     public init(url: URL, xcode: Xcode) {
@@ -81,7 +83,24 @@ extension Xcode: @retroactive CustomStringConvertible, @retroactive CustomDebugS
         return components.joined(separator: "_")
     }
 
-    public var displayName: String { "\(displayVersion) (\(version.build ?? ""))" }
+    public var displayName: String {
+        "\(displayVersion) (\(version.build ?? ""))"
+    }
+
+    public var architecture: XcodeArchitecture? {
+        let download = links?.download?.url.lastPathComponent ?? ""
+        if name.localizedCaseInsensitiveContains("Apple Silicon") || download.hasSuffix("_Apple_silicon.xip") {
+            return .appleSilicon
+        }
+        if name.localizedCaseInsensitiveContains("Universal") || download.hasSuffix("_Universal.xip") {
+            return .universal
+        }
+        return nil
+    }
+
+    public var labeledName: String {
+        architecture.map { "\(displayName) · \($0.label)" } ?? displayName
+    }
 
     func filename(in applicationsDirectory: URL) -> String {
         let fileManager = FileManager.default
@@ -94,17 +113,25 @@ extension Xcode: @retroactive CustomStringConvertible, @retroactive CustomDebugS
         return filename
     }
 
-    public var description: String { displayName }
-    public var debugDescription: String { displayName }
+    public var description: String {
+        displayName
+    }
 
+    public var debugDescription: String {
+        displayName
+    }
 }
 
 extension Xcode {
-    var isBeta: Bool { version.isBeta }
+    var isBeta: Bool {
+        version.isBeta
+    }
 }
 
 extension Version {
-    var isGM: Bool { release.isGM }
+    var isGM: Bool {
+        release.isGM
+    }
 
     var isGMSeed: Bool {
         guard case .gmSeed = release else { return false }
@@ -262,8 +289,7 @@ public final class XCReleasesAPI: Sendable {
             let response = urlResponse as? HTTPURLResponse,
             (200 ... 299).contains(response.statusCode) else { throw XCAPIError.invalidResponse }
 
-        let xcodes = try JSONDecoder().decode([Xcode].self, from: data)
-        return xcodes
+        return try JSONDecoder().decode([Xcode].self, from: data)
     }
 
     func removeCookies() {
@@ -301,16 +327,28 @@ extension Release {
         switch self {
         case .gm:
             return .gm("")
-        case .gmSeed(let seed):
+        case let .gmSeed(seed):
             return .gm("Seed \(seed)")
-        case .rc(let rc):
+        case let .rc(rc):
             return .rc(String(rc))
-        case .beta(let beta):
+        case let .beta(beta):
             return .beta(String(beta))
-        case .dp(let dp):
+        case let .dp(dp):
             return .dp(String(dp))
         case .release:
             return nil
+        }
+    }
+}
+
+public enum XcodeArchitecture: String, Sendable, Codable, CaseIterable {
+    case appleSilicon
+    case universal
+
+    public var label: String {
+        switch self {
+        case .appleSilicon: "Apple silicon"
+        case .universal: "Universal"
         }
     }
 }

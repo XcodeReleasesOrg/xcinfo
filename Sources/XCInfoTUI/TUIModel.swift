@@ -18,6 +18,13 @@ public struct TUIEntry: Sendable, Equatable {
 
     public var kind: Kind
     public var xcode: Xcode
+
+    var title: String {
+        switch kind {
+        case .installed: xcode.displayName
+        case .available, .notInstallable: xcode.labeledName
+        }
+    }
 }
 
 public struct TUISection: Sendable, Equatable {

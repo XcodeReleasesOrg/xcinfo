@@ -27,7 +27,7 @@ extension XCInfo {
             try await globals.run { core, output in
                 let xcode = try await core.info(version: versionOption.xcodeVersion, shouldUpdate: listOptions.updateList)
                 if output.options.isJSON {
-                    try output.printJSON(xcode)
+                    try output.printJSON(XcodePayload(xcode))
                 } else {
                     xcode.infoLines.forEach(output.print)
                 }
