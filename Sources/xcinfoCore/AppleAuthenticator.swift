@@ -18,14 +18,14 @@ final class AppleAuthenticator: Sendable {
         self.logger = logger
     }
 
-    func authenticate(username: String, password: @Sendable () async throws -> String) async throws {
+    @discardableResult
+    func authenticate(username: String, password: @Sendable () async throws -> String) async throws -> DownloadListing? {
         do {
             try await olymp.validateSession(for: username)
             guard let assets = await olymp.storedAuthenticationAssets(for: username) else {
                 throw OlympUsError.sessionInvalid
             }
-            try await olymp.getDownloadAuth(assets: assets)
-            return
+            return try await olymp.getDownloadAuth(assets: assets)
         } catch OlympUsError.sessionInvalid {
             logger.verbose("Signing in again.")
         }
@@ -38,6 +38,6 @@ final class AppleAuthenticator: Sendable {
             try await olymp.requestTrust(assets: signIn.assets)
         }
         try await olymp.getOlympusSession(assets: signIn.assets, for: username)
-        try await olymp.getDownloadAuth(assets: signIn.assets)
+        return try await olymp.getDownloadAuth(assets: signIn.assets)
     }
 }

@@ -2,6 +2,7 @@ import Foundation
 import os
 import XCIFoundation
 import Dependencies
+import OlympUs
 @preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
 
@@ -221,6 +222,7 @@ extension Core {
         password: (@Sendable (String) async throws -> String)? = nil,
         cleanupCredentials: (@Sendable () async -> Void)? = nil,
         authenticate: (@Sendable (String, @escaping @Sendable () async throws -> String) async throws -> Void)? = nil,
+        downloadListing: DownloadListing? = nil,
         cleanupAuthentication: (@Sendable () async -> Void)? = nil,
         download: (@Sendable (URL, URL, Bool) async throws -> URL)? = nil,
         extract: (@Sendable (URL, URL, String?, Bool) async throws -> URL)? = nil,
@@ -250,7 +252,12 @@ extension Core {
             if let accountName { $0.credentials.accountName = accountName }
             if let password { $0.credentials.password = password }
             if let cleanupCredentials { $0.credentials.removeAll = cleanupCredentials }
-            if let authenticate { $0.authentication.authenticate = authenticate }
+            if let authenticate {
+                $0.authentication.authenticate = { accountName, password in
+                    try await authenticate(accountName, password)
+                    return downloadListing
+                }
+            }
             if let cleanupAuthentication { $0.authentication.cleanup = cleanupAuthentication }
             if let download { $0.downloads.download = download }
             if let extract { $0.extraction.extract = extract }

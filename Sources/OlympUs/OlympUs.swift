@@ -687,14 +687,17 @@ public actor OlympUs {
 
     private let downloadAuthURL =
         URL(string: "https://developer.apple.com/services-account/QH65B2/downloadws/listDownloads.action")!
-    public func getDownloadAuth(assets: AuthenticationAssets) async throws {
+    @discardableResult
+    public func getDownloadAuth(assets: AuthenticationAssets) async throws -> DownloadListing? {
         state = .gettingDownloadAuth
         let request = request(forURL: downloadAuthURL, assets: assets, method: .post)
         let response: URLResponse
+        let listing: DownloadListing?
         do {
             let (data, urlResponse) = try await session.data(for: request)
             logResponse(request, urlResponse, data)
-            logArchives(in: data)
+            listing = DownloadListing(data: data)
+            logArchives(in: listing)
             response = urlResponse
         } catch {
             throw OlympUsError.downloadAuthFailed
@@ -707,6 +710,7 @@ public actor OlympUs {
             throw OlympUsError.downloadAuthFailed
         }
         await persistSession(assets: assets)
+        return listing
     }
 
     public func cleanup() async {
@@ -846,33 +850,68 @@ extension [HTTPCookie] {
     }
 }
 
-struct DownloadListing: Decodable, Equatable {
-    struct Download: Decodable, Equatable {
-        struct File: Decodable, Equatable {
-            let remotePath: String
+public struct DownloadListing: Decodable, Equatable, Sendable {
+    public struct Download: Decodable, Equatable, Sendable {
+        public struct File: Decodable, Equatable, Sendable {
+            public let remotePath: String?
+
+            public init(remotePath: String?) {
+                self.remotePath = remotePath
+            }
         }
 
-        let name: String
-        let files: [File]
+        public let name: String?
+        public let files: [File]?
+
+        public init(name: String?, files: [File]?) {
+            self.name = name
+            self.files = files
+        }
+
+        var archivePaths: [String] {
+            (files ?? []).compactMap(\.remotePath).filter { ["xip", "aea"].contains(($0 as NSString).pathExtension.lowercased()) }
+        }
     }
 
-    let downloads: [Download]
+    public static let downloadHost = URL(string: "https://download.developer.apple.com")!
+
+    public let downloads: [Download]
+
+    public init(downloads: [Download]) {
+        self.downloads = downloads
+    }
+
+    public init?(data: Data) {
+        guard let listing = try? JSONDecoder().decode(DownloadListing.self, from: data) else { return nil }
+        self = listing
+    }
 
     var xcodeArchives: [(name: String, formats: [String])] {
         downloads
-            .filter { $0.name.hasPrefix("Xcode ") && $0.name.dropFirst(6).first?.isNumber == true }
+            .filter { ($0.name ?? "").hasPrefix("Xcode ") && ($0.name ?? "").dropFirst(6).first?.isNumber == true }
             .compactMap { download in
-                let formats = download.files
-                    .map { ($0.remotePath as NSString).pathExtension.lowercased() }
-                    .filter { ["xip", "aea"].contains($0) }
-                return formats.isEmpty ? nil : (download.name, formats)
+                let formats = download.archivePaths.map { ($0 as NSString).pathExtension.lowercased() }
+                return formats.isEmpty ? nil : (download.name ?? "", formats)
             }
+    }
+
+    public func archiveURLs(inFolderOf url: URL?, named name: String) -> [URL] {
+        let folder = url.map { ($0.path as NSString).deletingLastPathComponent }
+        let match = downloads.first { download in
+            download.archivePaths.contains { ("/" + $0.trimmingCharacters(in: CharacterSet(charactersIn: "/")) as NSString).deletingLastPathComponent == folder }
+        } ?? downloads.first { $0.name?.caseInsensitiveCompare(name) == .orderedSame && !$0.archivePaths.isEmpty }
+        return (match?.archivePaths ?? []).map { path in
+            Self.downloadHost.appendingPathComponent(path.trimmingCharacters(in: CharacterSet(charactersIn: "/")))
+        }
     }
 }
 
 extension OlympUs {
-    func logArchives(in data: Data) {
-        guard let listing = try? JSONDecoder().decode(DownloadListing.self, from: data) else { return }
+    func logArchives(in listing: DownloadListing?) {
+        guard let listing else {
+            logger.verbose("Apple's download list could not be read.")
+            return
+        }
         let archives = listing.xcodeArchives
         let withAEA = archives.filter { $0.formats.contains("aea") }
         logger.verbose("Apple lists \(archives.count) Xcode archives, \(withAEA.count) of them as .aea.")
