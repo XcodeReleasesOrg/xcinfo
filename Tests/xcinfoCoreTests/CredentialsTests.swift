@@ -1,3 +1,4 @@
+import CryptoKit
 import Dependencies
 import Foundation
 @testable import OlympUs
@@ -260,6 +261,61 @@ struct CredentialsTests {
     func `errors explain how to provide credentials`() {
         #expect(CredentialsError.passwordUnavailable.localizedDescription.contains("XCINFO_APPLE_PASSWORD"))
         #expect(CredentialsError.accountNameUnavailable.localizedDescription.contains("XCINFO_APPLE_ID"))
+    }
+}
+
+struct PasswordBytesTests {
+    private let passwords = ["  Grüße aus Köln 🎉  ", "plain", "trailing ", String(repeating: "ä", count: 64)]
+
+    @Test
+    func `the derived key uses the exact utf8 bytes of the password`() throws {
+        let salt = Array("salt".utf8)
+        for password in passwords {
+            let digest = Array(SHA256.hash(data: Data(password.utf8)))
+
+            #expect(derivedPasswordKey(password: password, salt: salt, iterations: 10, protocol: .s2k)
+                == pbkdf2SHA256(password: digest, salt: salt, iterations: 10, keyLength: 32))
+        }
+    }
+
+    @Test
+    func `a typed password reaches the sign-in unchanged`() async throws {
+        for password in passwords {
+            let srp = FakeAppleSRPServer(accountName: "user", password: password)
+            let prompt = FakePrompt(passwords: [password])
+            let vault = KeychainVault(storage: FakeVaultStorage(contents: VaultContents(accountName: "user")).storage)
+            let credentials = withDependencies {
+                $0.keychain = .vault(vault)
+                $0.prompt = prompt.client
+                $0.logger = LogRecorder().logger()
+            } operation: {
+                CredentialService(environment: [:], isInteractive: true)
+            }
+            let server = StubServer { request in
+                switch request.url?.path {
+                case "/appleauth/auth/signin/init":
+                    srp.initResponse(for: request)
+                case "/appleauth/auth/signin/complete":
+                    srp.isValidCompletion(request) ? .json("{}", statusCode: 409) : .json("{}", statusCode: 401)
+                default:
+                    StubResponse()
+                }
+            }
+            let olymp = OlympUs(logger: LogRecorder().logger(), session: server.session(), sessionStore: InMemorySessionStore().store, prompt: prompt.client)
+
+            let typed = try credentials.password(for: "user")
+            let result = try await olymp.signIn(accountName: "user", password: typed, serviceKey: "key")
+
+            #expect(typed == password)
+            #expect(result.requiresTwoFactorAuthentication)
+        }
+    }
+
+    @Test
+    func `a password from the environment is used unchanged`() throws {
+        let credentials = CredentialService(environment: ["XCINFO_APPLE_PASSWORD": " Grüße 🎉 "], isInteractive: false)
+
+        #expect(try credentials.password(for: "user") == " Grüße 🎉 ")
     }
 }
 
