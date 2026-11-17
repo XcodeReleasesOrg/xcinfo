@@ -21,7 +21,21 @@ public struct InterruptSignals: Sendable {
         self.signals = signals
     }
 
+    static let isWatching = TaskLocal(wrappedValue: false)
+
     public func run<Result: Sendable>(
+        onInterrupt: @escaping @Sendable (Int32) -> Void,
+        operation: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result {
+        guard !Self.isWatching.get() else {
+            return try await operation()
+        }
+        return try await Self.isWatching.withValue(true) {
+            try await watchSignals(onInterrupt: onInterrupt, operation: operation)
+        }
+    }
+
+    private func watchSignals<Result: Sendable>(
         onInterrupt: @escaping @Sendable (Int32) -> Void,
         operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
