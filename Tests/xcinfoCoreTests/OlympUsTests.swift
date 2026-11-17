@@ -604,14 +604,17 @@ struct OlympUsSessionTests {
     }
 
     @Test
-    func `signing in keeps the trusted browser cookie`() async throws {
+    func `signing in keeps only the trusted browser cookie of an expired session`() async throws {
         let trust = try #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "DES1234", .value: "trusted"]))
+        let expired = try #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "expired"]))
+        let abuse = try #require(HTTPCookie(properties: [.domain: "idmsa.apple.com", .path: "/", .name: "aasp", .value: "old"]))
         let srp = FakeAppleSRPServer(accountName: "user", password: "secret")
-        let fixture = OlympUsFixture(storedAssets: ["user": InMemorySessionStore.session(cookies: [trust])], handler: appleServer(srp: srp))
+        let fixture = OlympUsFixture(storedAssets: ["user": InMemorySessionStore.session(cookies: [trust, expired, abuse])], handler: appleServer(srp: srp))
 
         _ = try await fixture.olymp.signIn(accountName: "user", password: "secret", serviceKey: "key")
 
-        #expect(fixture.cookieNames.contains("DES1234"))
+        #expect(fixture.cookieNames == ["DES1234"])
+        #expect(fixture.logs.messages.contains("Kept 1 trusted-browser cookies for the sign-in, removed 2 others."))
     }
 
     @Test
@@ -692,8 +695,7 @@ struct OlympUsSessionTests {
 
     @Test
     func `errors describe what went wrong`() {
-        #expect(OlympUsError.incorrectCredentials.description.hasPrefix("The Apple ID or password is incorrect."))
-        #expect(OlympUsError.incorrectCredentials.description.contains("xcinfo cleanup"))
+        #expect(OlympUsError.incorrectCredentials.description == "The Apple ID or password is incorrect.")
         #expect(OlympUsError.incorrectVerificationCode.description == "The verification code is incorrect.")
         #expect(OlympUsError.accountLocked.description.contains("iforgot.apple.com"))
     }

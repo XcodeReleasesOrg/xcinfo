@@ -28,7 +28,7 @@ public enum OlympUsError: Error, Sendable, Equatable, CustomStringConvertible {
         case .signInRequestFailed:
             "Signing in to Apple failed."
         case .incorrectCredentials:
-            "The Apple ID or password is incorrect. If the password stored in the Keychain is outdated, run `xcinfo cleanup` and try again."
+            "The Apple ID or password is incorrect."
         case .accountLocked:
             "This Apple ID is locked. Unlock it at iforgot.apple.com."
         case .privacyAcknowledgementRequired:
@@ -366,6 +366,7 @@ public actor OlympUs {
         privateKey: [UInt8]? = nil
     ) async throws -> SignInResult {
         _ = await storedAuthenticationAssets(for: accountName)
+        removeCookiesExceptTrust()
         let hashcash = await hashcash(serviceKey: serviceKey)
         state = .signingIn
 
@@ -769,6 +770,13 @@ extension OlympUs {
 
     private var cookieNames: [String] {
         (session.configuration.httpCookieStorage?.cookies ?? []).map(\.name).sorted()
+    }
+
+    private func removeCookiesExceptTrust() {
+        guard let storage = session.configuration.httpCookieStorage else { return }
+        let stale = (storage.cookies ?? []).filter { !$0.name.hasPrefix("DES") }
+        stale.forEach(storage.deleteCookie)
+        logger.verbose("Kept \((storage.cookies ?? []).count) trusted-browser cookies for the sign-in, removed \(stale.count) others.")
     }
 
     private func cookieData() -> Data? {
