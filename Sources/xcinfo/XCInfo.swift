@@ -108,6 +108,9 @@ struct DownloadOptions: ParsableArguments {
     )
     var allowsSleep: Bool?
 
+    @Flag(name: .customLong("no-verify"), help: "Skip the SHA-1 check of the archive against xcodereleases.com.")
+    var skipsVerification: Bool = false
+
     var disableSleep: Bool {
         preventSleep || allowsSleep == false
     }

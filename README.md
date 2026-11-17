@@ -95,6 +95,8 @@ Exit codes:
 | 64 | Invalid arguments |
 | 130 | Stopped with Ctrl-C (143 for `SIGTERM`) |
 
+After a download, and before installing from `--xip-path`, xcinfo checks the archive's SHA-1 against xcodereleases.com when the list has one ("Verifying"). A mismatch after a download fails with exit code 5 and keeps the file; for a `--xip-path` archive it warns and asks whether to install anyway. `--no-verify` skips the check.
+
 Stopping a download with Ctrl-C saves its progress in `~/Library/Caches/xcinfo/<file>.resume`. The next `download` or `install` of the same version signs in, then resumes where it stopped; if the saved progress can't be used, it starts over. Press Ctrl-C a second time to quit immediately without saving.
 
 ## CI

@@ -262,7 +262,8 @@ extension Xcode {
         download: String? = "https://download.example.invalid/Xcode.xip",
         notes: String? = nil,
         sdks: SDKs? = nil,
-        compilers: Compilers? = nil
+        compilers: Compilers? = nil,
+        sha1: String? = nil
     ) -> Xcode {
         let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
         let links = (download == nil && notes == nil)
@@ -274,7 +275,8 @@ extension Xcode {
             requires: requires,
             sdks: sdks,
             compilers: compilers,
-            links: links
+            links: links,
+            checksums: sha1.map { Checksums(sha1: $0) }
         )
     }
 }

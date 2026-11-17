@@ -30,6 +30,7 @@
 - Queries (`list`, `installed`, `info`) return data; the CLI renders it as text (`Presentation.swift`) or JSON
 - `TerminalRenderer` (XCIFoundation) owns the terminal: stdout for status and results, stderr for warnings and errors, colors only on a terminal without `NO_COLOR`, one updating progress line on a terminal and 10 % milestones when piped, `--quiet` and `--json`
 - Ctrl-C (or `SIGTERM`) during a download goes through `InterruptSignals` (XCIFoundation: `sigaction` plus a self-pipe read as an async sequence): it cancels the download task, the downloader saves the resume data, and the command exits with 128 + signal. After the first signal the default action is restored, so a second Ctrl-C quits at once. Cached resume data is checked (`ResumeData`) before URLSession sees it, because URLSession raises an exception for invalid data
+- Archives are checked against `checksums.sha1` from xcodereleases.com with `ArchiveChecksum`, which streams the file in chunks. A mismatch after a download is `CoreError.checksumMismatch` (exit 5, file kept); for `--xip-path` it is a warning and a confirmation. `--no-verify` skips the check
 - Every failure maps to an exit code in `Error.exitCode`; keep the table in the README and in `xcinfo --help` in sync
 
 ## Behaviour that must not change
