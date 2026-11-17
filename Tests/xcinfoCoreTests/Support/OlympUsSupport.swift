@@ -152,6 +152,8 @@ extension OlympUs.AuthenticationAssets {
     )
 
     static var fixtureData: Data {
-        try! JSONEncoder().encode(fixture)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return try! encoder.encode(fixture)
     }
 }
