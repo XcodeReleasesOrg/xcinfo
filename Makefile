@@ -6,14 +6,16 @@ export prefix
 export exec_prefix
 export bindir
 
+SWIFT_BUILD_FLAGS=-c release --arch arm64 --arch x86_64
+
 all:
-	swift build -c release --arch arm64 --arch x86_64
+	swift build $(SWIFT_BUILD_FLAGS)
 
 .PHONY: all install clean cleanup
 
 install:
 	install -d $(bindir)
-	install -m 0755 .build/apple/Products/Release/xcinfo $(bindir)
+	install -m 0755 "$$(swift build $(SWIFT_BUILD_FLAGS) --show-bin-path)/xcinfo" $(bindir)
 
 clean:
 	swift package clean
