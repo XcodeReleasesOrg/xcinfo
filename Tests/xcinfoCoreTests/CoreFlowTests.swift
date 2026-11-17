@@ -535,6 +535,22 @@ struct CoreInstallTests {
     }
 
     @Test
+    func `a cancelled password question never reaches sudo`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
+        let prompt = FakePrompt(cancelsOnSecret: true)
+        let shell = FakeShell()
+        let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt)
+
+        await #expect(throws: CancellationError.self) {
+            try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveArchive: true), updateVersionList: true)
+        }
+        #expect(prompt.secrets.values.count == 1)
+        #expect(shell.privilegedCalls.isEmpty)
+    }
+
+    @Test
     func `install accepts the password on a later attempt`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()

@@ -613,6 +613,7 @@ extension Core {
 
         for attempt in 1 ... 3 {
             let password = await prompt.readSecret(attempt == 1 ? passwordPrompt : "Sorry, try again. \(passwordPrompt)")
+            try Task.checkCancellation()
             if try await processes.runPrivileged("ls", password, []).exitStatus == EXIT_SUCCESS {
                 return password
             }

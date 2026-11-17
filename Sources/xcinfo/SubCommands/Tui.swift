@@ -38,18 +38,22 @@ extension XCInfo {
                             return (list, installed)
                         }
                     },
-                    perform: { command in
+                    perform: { command, session in
                         do {
-                            try await globals.run { core, _ in
-                                try await perform(command, core: core)
+                            try await withDependencies {
+                                $0.logger = session.logger
+                                $0.prompt = session.prompt
+                            } operation: {
+                                try await perform(command, core: Core())
                             }
-                            return true
+                            return TUIOutcome(succeeded: true, message: "Done.")
                         } catch {
-                            return false
+                            return TUIOutcome(succeeded: false, message: Task.isCancelled ? "Stopped." : error.message)
                         }
                     }
                 ),
-                usesColors: globals.renderer.options.usesColors
+                usesColors: globals.renderer.options.usesColors,
+                showsVerbose: globals.isVerbose
             )
             try await app.run()
         }

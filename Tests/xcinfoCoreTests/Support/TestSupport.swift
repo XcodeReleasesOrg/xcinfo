@@ -178,7 +178,10 @@ final class FakePrompt: Sendable {
     private let agreement: Bool
     private let passwords: OSAllocatedUnfairLock<[String]>
 
-    init(answers: [String] = [], choices: [Int] = [], agree: Bool = true, passwords: [String] = []) {
+    private let cancelsOnSecret: Bool
+
+    init(answers: [String] = [], choices: [Int] = [], agree: Bool = true, passwords: [String] = [], cancelsOnSecret: Bool = false) {
+        self.cancelsOnSecret = cancelsOnSecret
         self.answers = OSAllocatedUnfairLock(initialState: answers)
         choiceIndices = OSAllocatedUnfairLock(initialState: choices)
         agreement = agree
@@ -203,8 +206,11 @@ final class FakePrompt: Sendable {
                 lines.append(prompt)
                 return answers.withLock { $0.isEmpty ? "" : $0.removeFirst() }
             },
-            readSecret: { [secrets, passwords] prompt in
+            readSecret: { [secrets, passwords, cancelsOnSecret] prompt in
                 secrets.append(prompt)
+                if cancelsOnSecret {
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
                 return passwords.withLock { $0.isEmpty ? "" : $0.removeFirst() }
             }
         )
