@@ -258,7 +258,12 @@ public actor OlympUs {
         guard let account = loadedAccount else { return false }
         loadedAssets = assets
         let key = SavedSessionKey(assets: assets, cookies: cookieKeys)
-        guard key != savedSession, let data = try? JSONEncoder().encode(StoredSession(assets: assets, cookies: cookieData())) else { return true }
+        guard key != savedSession else {
+            logger.verbose("The session is unchanged and is not saved again.")
+            return true
+        }
+        logger.verbose(savedSession.map { "Saving the session because \(key.changes(from: $0))." } ?? "Saving the new session.")
+        guard let data = try? JSONEncoder().encode(StoredSession(assets: assets, cookies: cookieData())) else { return true }
         if hasLegacyCookies {
             await sessionStore.removeLegacyCookies()
             hasLegacyCookies = false
@@ -736,6 +741,13 @@ public actor OlympUs {
 struct SavedSessionKey: Equatable {
     var assets: OlympUs.AuthenticationAssets
     var cookies: Set<String>
+
+    func changes(from saved: SavedSessionKey) -> String {
+        let names = cookies.symmetricDifference(saved.cookies).compactMap { $0.split(separator: "|").dropFirst(2).first.map(String.init) }
+        let cookieChange = names.isEmpty ? nil : "these cookies changed: \(Set(names).sorted().joined(separator: ", "))"
+        let assetChange = assets == saved.assets ? nil : "the session headers changed"
+        return [assetChange, cookieChange].compactMap { $0 }.joined(separator: " and ")
+    }
 }
 
 extension OlympUs {
@@ -760,7 +772,7 @@ extension OlympUs {
         let allCookies = session.configuration.httpCookieStorage?.cookies ?? []
         let cookies = allCookies.filter { $0.isNeededForSession(at: date) }
         let dropped = allCookies.filter { !$0.isNeededForSession(at: date) }
-        logger.verbose("Keeping cookies: \(cookies.nameList). Dropping cookies: \(dropped.nameList).")
+        logger.verbose("Keeping cookies: \(cookies.nameList). Dropping cookies: \(dropped.droppedList(at: date)).")
         guard !cookies.isEmpty else { return nil }
         let properties = cookies.compactMap { cookie in
             cookie.properties.map { Dictionary(uniqueKeysWithValues: $0.map { ($0.key.rawValue, $0.value) }) }
@@ -791,7 +803,7 @@ extension OlympUs {
         }
         logger.verbose("Restored \(restored.count) cookies: \(restored.nameList)")
         if !dropped.isEmpty {
-            logger.verbose("Dropped \(dropped.count) stored cookies: \(dropped.nameList)")
+            logger.verbose("Dropped \(dropped.count) stored cookies: \(dropped.droppedList(at: date))")
         }
         return !dropped.isEmpty
     }
@@ -803,14 +815,30 @@ extension HTTPCookie {
     ]
 
     func isNeededForSession(at date: Date) -> Bool {
-        guard domain == "apple.com" || domain.hasSuffix(".apple.com") else { return false }
-        if let expiresDate, expiresDate <= date { return false }
-        return name.hasPrefix("DES") || Self.sessionCookieNames.contains(name)
+        dropReason(at: date) == nil
+    }
+
+    func dropReason(at date: Date) -> String? {
+        if !(domain == "apple.com" || domain.hasSuffix(".apple.com")) {
+            "not an Apple domain"
+        } else if let expiresDate, expiresDate <= date {
+            "expired"
+        } else if !(name.hasPrefix("DES") || Self.sessionCookieNames.contains(name)) {
+            "not needed"
+        } else {
+            nil
+        }
     }
 }
 
 extension [HTTPCookie] {
     var nameList: String {
         isEmpty ? "none" : map(\.name).sorted().joined(separator: ", ")
+    }
+
+    func droppedList(at date: Date) -> String {
+        isEmpty ? "none" : map { "\($0.name) on \($0.domain.isEmpty ? "no domain" : $0.domain), \($0.dropReason(at: date) ?? "kept")" }
+            .sorted()
+            .joined(separator: "; ")
     }
 }

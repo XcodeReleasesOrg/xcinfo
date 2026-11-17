@@ -104,12 +104,14 @@ extension AuthenticationClient: DependencyKey {
             @Dependency(\.logger) var logger
             @Dependency(\.prompt) var prompt
             @Dependency(\.keychain) var keychain
+            HTTPCookieStorage.shared.removeAppleCookies()
             let olymp = OlympUs(logger: logger, session: .xcinfo, sessionStore: .vault(keychain), prompt: prompt)
             try await AppleAuthenticator(olymp: olymp, logger: logger).authenticate(username: accountName, password: password)
         },
         cleanup: {
             @Dependency(\.logger) var logger
             @Dependency(\.keychain) var keychain
+            HTTPCookieStorage.shared.removeAppleCookies()
             await OlympUs(logger: logger, session: .xcinfo, sessionStore: .vault(keychain)).cleanup()
         }
     )
@@ -314,11 +316,19 @@ public extension DependencyValues {
     }
 }
 
+extension HTTPCookieStorage {
+    static let xcinfo: HTTPCookieStorage = URLSessionConfiguration.ephemeral.httpCookieStorage ?? HTTPCookieStorage()
+
+    func removeAppleCookies() {
+        (cookies ?? []).filter { $0.domain == "apple.com" || $0.domain.hasSuffix(".apple.com") }.forEach(deleteCookie)
+    }
+}
+
 extension URLSession {
     static let xcinfo: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieAcceptPolicy = .always
-        configuration.httpCookieStorage = .shared
+        configuration.httpCookieStorage = HTTPCookieStorage.xcinfo
         configuration.timeoutIntervalForRequest = 5
         return URLSession(configuration: configuration)
     }()
@@ -326,7 +336,7 @@ extension URLSession {
     static let xcinfoDownloads: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieAcceptPolicy = .always
-        configuration.httpCookieStorage = .shared
+        configuration.httpCookieStorage = HTTPCookieStorage.xcinfo
         configuration.timeoutIntervalForRequest = 60
         configuration.timeoutIntervalForResource = 60 * 60 * 24
         return URLSession(configuration: configuration)
