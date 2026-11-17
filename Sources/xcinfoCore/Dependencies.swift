@@ -351,18 +351,13 @@ extension URLSession {
 extension FileManager {
     var cachesDirectory: URL {
         let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        var directory = cachesDirectory.appendingPathComponent("xcinfo")
-        do {
-            try FileManager.default.ensureFolderExists(directory)
-        } catch {
-            directory = URL(filePath: "~/.xcinfo")
-            if let _ = try? FileManager.default.ensureFolderExists(directory) {
-                return directory
-            } else {
-                fail(statusCode: 1, errorMessage: "Could create caches directory.")
-            }
+        let directory = cachesDirectory.appendingPathComponent("xcinfo")
+        if (try? FileManager.default.ensureFolderExists(directory)) != nil {
+            return directory
         }
-        return directory
+        let fallback = FileManager.default.temporaryDirectory.appendingPathComponent("xcinfo")
+        try? FileManager.default.ensureFolderExists(fallback)
+        return fallback
     }
 
     func ensureFolderExists(_ folder: URL) throws {

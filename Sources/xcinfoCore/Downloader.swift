@@ -140,12 +140,12 @@ struct Downloader: Sendable {
     }
 
     func cacheURL(for url: URL) -> URL? {
-        let cache = cachesDirectory.appendingPathComponent("xcinfo")
+        try? FileManager.default.createDirectory(at: cachesDirectory, withIntermediateDirectories: true)
+        return cachesDirectory.appendingPathComponent(url.appendingPathExtension("resume").lastPathComponent)
+    }
 
-        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: false, attributes: nil)
-
-        let fileName = url.appendingPathExtension("resume").lastPathComponent
-        return cache.appendingPathComponent(fileName)
+    private func legacyCacheURL(for url: URL) -> URL {
+        cachesDirectory.appendingPathComponent("xcinfo").appendingPathComponent(url.appendingPathExtension("resume").lastPathComponent)
     }
 
     private func saveResumeData(_ resumeData: Data, for url: URL) {
@@ -163,6 +163,7 @@ struct Downloader: Sendable {
     }
 
     func removeCachedResumeData(for url: URL) {
+        try? FileManager.default.removeItem(at: legacyCacheURL(for: url))
         guard let cacheURL = cacheURL(for: url) else {
             return
         }
@@ -171,7 +172,10 @@ struct Downloader: Sendable {
     }
 
     func cachedResumeData(for url: URL) -> ResumeData? {
-        guard let cacheURL = cacheURL(for: url), let data = try? Data(contentsOf: cacheURL) else { return nil }
+        guard
+            let cacheURL = cacheURL(for: url),
+            let data = (try? Data(contentsOf: cacheURL)) ?? (try? Data(contentsOf: legacyCacheURL(for: url)))
+        else { return nil }
         guard let resumeData = ResumeData(data, for: url) else {
             logger.warn("The saved progress of an earlier download could not be used. The download starts over.")
             removeCachedResumeData(for: url)

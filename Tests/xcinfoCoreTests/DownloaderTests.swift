@@ -198,10 +198,26 @@ struct DownloaderTests {
 
         let cacheURL = try #require(fixture.downloader.cacheURL(for: downloadURL))
 
-        #expect(cacheURL == fixture.caches.url.appendingPathComponent("xcinfo/\(downloadURL.lastPathComponent).resume"))
+        #expect(cacheURL == fixture.caches.url.appendingPathComponent("\(downloadURL.lastPathComponent).resume"))
         try Data("resume".utf8).write(to: cacheURL)
         fixture.downloader.removeCachedResumeData(for: downloadURL)
         #expect(!FileManager.default.fileExists(atPath: cacheURL.path))
+    }
+
+    @Test
+    func `resume data from the earlier nested location is still found and removed`() throws {
+        let server = StubServer { _ in StubResponse() }
+        let fixture = try fixture(server: server)
+        let plist = try PropertyListSerialization.data(
+            fromPropertyList: ["NSURLSessionResumeInfoVersion": 2, "NSURLSessionDownloadURL": downloadURL.absoluteString],
+            format: .xml,
+            options: 0
+        )
+        let legacy = try fixture.caches.file("xcinfo/\(downloadURL.lastPathComponent).resume", contents: plist)
+
+        #expect(fixture.downloader.cachedResumeData(for: downloadURL)?.data == plist)
+        fixture.downloader.removeCachedResumeData(for: downloadURL)
+        #expect(!FileManager.default.fileExists(atPath: legacy.path))
     }
 
     @Test(arguments: [403, 404, 500])
