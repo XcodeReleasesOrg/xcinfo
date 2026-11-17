@@ -742,6 +742,8 @@ extension Core {
             }
         case .latest:
             return [knownXcodes[0]]
+        case let .exactly(xcode):
+            return [xcode]
         }
     }
 
