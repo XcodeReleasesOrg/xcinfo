@@ -71,19 +71,16 @@ struct SRPClient: Sendable {
     let group: SRPGroup
     let hash: SRPHash
     let privateKey: BigUInt
+    let publicKey: BigUInt
+    let multiplier: BigUInt
 
     init(group: SRPGroup, hash: SRPHash, privateKey: BigUInt? = nil) {
         self.group = group
         self.hash = hash
-        self.privateKey = privateKey ?? BigUInt(bigEndian: (0 ..< 32).map { _ in UInt8.random(in: .min ... .max) })
-    }
-
-    var publicKey: BigUInt {
-        group.generator.power(privateKey, modulus: group.prime)
-    }
-
-    var multiplier: BigUInt {
-        BigUInt(bigEndian: hash(group.prime.bytes(), group.generator.bytes(paddedTo: group.length)))
+        let privateKey = privateKey ?? BigUInt(bigEndian: (0 ..< 32).map { _ in UInt8.random(in: .min ... .max) })
+        self.privateKey = privateKey
+        publicKey = group.generator.power(privateKey, modulus: group.prime)
+        multiplier = BigUInt(bigEndian: hash(group.prime.bytes(), group.generator.bytes(paddedTo: group.length)))
     }
 
     func passwordVerifierExponent(identity: String, password: [UInt8], salt: [UInt8]) -> BigUInt {

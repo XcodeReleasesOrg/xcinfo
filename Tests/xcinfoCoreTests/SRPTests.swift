@@ -81,6 +81,23 @@ struct BigUIntTests {
     }
 
     @Test(arguments: [SRPGroup.rfc5054_1024, .rfc5054_2048])
+    func `montgomery exponentiation matches square and multiply`(group: SRPGroup) {
+        let base = BigUInt(hex: "60975527035CF2AD1989806F0407210BC81EDC04E2762A56AFD529DDDA2D4393E487CB59D31AC550")!
+        let exponent = BigUInt(hex: "F3A5C7E9B0D2F4A6C8E0B1D3F5A7C9E1")!
+        var expected = BigUInt.one
+        for index in stride(from: exponent.bitWidth - 1, through: 0, by: -1) {
+            expected = (expected * expected) % group.prime
+            if exponent.bit(at: index) {
+                expected = (expected * base) % group.prime
+            }
+        }
+
+        #expect(base.power(exponent, modulus: group.prime) == expected)
+        #expect(group.prime.power(exponent, modulus: group.prime) == .zero)
+        #expect(base.power(.zero, modulus: group.prime) == .one)
+    }
+
+    @Test(arguments: [SRPGroup.rfc5054_1024, .rfc5054_2048])
     func `the srp groups use safe primes`(group: SRPGroup) {
         let prime = group.prime
         let half = (prime - BigUInt.one).shiftedRight(by: 1)
