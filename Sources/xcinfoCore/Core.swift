@@ -25,6 +25,7 @@ public enum CoreError: LocalizedError, Sendable {
     case invalidExtractionOutputURL(URL)
     case checksumMismatch(file: URL, expected: String, actual: String)
     case versionRequired
+    case archiveFormatNotOffered(ArchiveFormat, offered: [String])
     case unknownArchiveVersion(String?)
 
     public var errorDescription: String? {
@@ -53,6 +54,8 @@ public enum CoreError: LocalizedError, Sendable {
             return "The administrator password was rejected three times."
         case .invalidExtractionOutputURL(let output):
             return "Failed to access output directory at \(output.path)."
+        case let .archiveFormatNotOffered(format, offered):
+            return "Apple does not offer this version as .\(format.rawValue)\(offered.isEmpty ? "." : ", only as \(offered.joined(separator: ", ")).") Run the command without --archive-format to take what is offered."
         case .versionRequired:
             return "Give an Xcode version, or an archive with --archive-path."
         case let .unknownArchiveVersion(build):
@@ -81,11 +84,14 @@ public struct Core: Sendable {
     }
 
     public struct DownloadOptions: Sendable {
-        public init(destination: URL, disableSleep: Bool, verifiesChecksum: Bool = true) {
+        public init(destination: URL, disableSleep: Bool, verifiesChecksum: Bool = true, archiveFormat: ArchiveFormat? = nil) {
             self.destination = destination
             self.disableSleep = disableSleep
             self.verifiesChecksum = verifiesChecksum
+            self.archiveFormat = archiveFormat
         }
+
+        public var archiveFormat: ArchiveFormat?
 
         public var destination: URL
         public var disableSleep: Bool
@@ -185,7 +191,11 @@ public struct Core: Sendable {
         }
 
         logger.beginSection("Downloading")
-        let source = DownloadSource(listed: url, offered: listing?.archiveURLs(inFolderOf: url, named: "Xcode \(xcode.displayVersion)"))
+        let source = try DownloadSource(
+            listed: url,
+            offered: listing?.archiveURLs(inFolderOf: url, named: "Xcode \(xcode.displayVersion)"),
+            format: options.archiveFormat
+        )
         if let note = source.note {
             logger.log(note)
         }

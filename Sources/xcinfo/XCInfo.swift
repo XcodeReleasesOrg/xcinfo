@@ -118,6 +118,12 @@ struct DownloadOptions: ParsableArguments {
     )
     var allowsSleep: Bool?
 
+    @Option(
+        name: .customLong("archive-format"),
+        help: "Download this archive format (xip or aea) instead of choosing automatically, which prefers .xip."
+    )
+    var archiveFormat: ArchiveFormat?
+
     @Flag(name: .customLong("no-verify"), help: "Skip the SHA-1 check of the archive against xcodereleases.com.")
     var skipsVerification: Bool = false
 
@@ -184,6 +190,8 @@ struct InstallationOptions: ParsableArguments {
         }
     }
 }
+
+extension ArchiveFormat: ExpressibleByArgument {}
 
 extension URL: @retroactive ExpressibleByArgument {
     public init?(argument: String) {

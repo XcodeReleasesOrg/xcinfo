@@ -207,6 +207,14 @@ struct CommandLineTests {
     }
 
     @Test
+    func `the archive format can be chosen for download and install`() throws {
+        #expect(try parse(XCInfo.Download.self, ["download", "15.0"]).downloadOptions.options.archiveFormat == nil)
+        #expect(try parse(XCInfo.Download.self, ["download", "15.0", "--archive-format", "aea"]).downloadOptions.options.archiveFormat == .aea)
+        #expect(try parse(XCInfo.Install.self, ["install", "15.0", "--archive-format", "xip"]).installationOptions.downloadOptions.options.archiveFormat == .xip)
+        #expect(throws: (any Error).self) { try parse(XCInfo.Download.self, ["download", "15.0", "--archive-format", "dmg"]) }
+    }
+
+    @Test
     func `install accepts the long installation directory option`() throws {
         let install = try parse(XCInfo.Install.self, ["install", "15.0", "--installation-directory", "/tmp/Apps"])
 
