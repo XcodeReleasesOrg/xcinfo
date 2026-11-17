@@ -28,7 +28,7 @@ public enum OlympUsError: Error, Sendable, Equatable, CustomStringConvertible {
         case .signInRequestFailed:
             "Signing in to Apple failed."
         case .incorrectCredentials:
-            "The Apple ID or password is incorrect."
+            "The Apple ID or password is incorrect. If the password stored in the Keychain is outdated, run `xcinfo cleanup` and try again."
         case .accountLocked:
             "This Apple ID is locked. Unlock it at iforgot.apple.com."
         case .privacyAcknowledgementRequired:
@@ -357,7 +357,7 @@ public actor OlympUs {
         let c: String
         let m1: String
         let m2: String
-        let rememberMe = true
+        let rememberMe = false
     }
 
     private struct SignInCompleteResponse: Decodable {
@@ -370,22 +370,24 @@ public actor OlympUs {
         serviceKey: String,
         privateKey: [UInt8]? = nil
     ) async throws -> SignInResult {
+        session.configuration.httpCookieStorage?.removeCookies(since: Date(timeIntervalSinceReferenceDate: 0))
         let hashcash = await hashcash(serviceKey: serviceKey)
         state = .signingIn
-        session.configuration.httpCookieStorage?.removeCookies(since: Date(timeIntervalSinceReferenceDate: 0))
 
         let client = SRPClient(group: srpGroup, hash: .sha256, privateKey: privateKey.map { BigUInt(bigEndian: $0) })
 
         let initResponse: SignInInitResponse
         do {
-            var request = signInRequest(url: signInURL.appendingPathComponent("init"), serviceKey: serviceKey, hashcash: hashcash)
+            var request = signInRequest(url: signInURL.appendingPathComponent("init"), serviceKey: serviceKey, hashcash: nil)
             request.httpBody = try JSONEncoder().encode(SignInInitRequest(
                 a: Data(client.publicKey.bytes()).base64EncodedString(),
                 accountName: accountName
             ))
             let (data, response) = try await session.data(for: request)
+            logResponse(request, response, data)
             try Self.checkSignInStatus(response)
             initResponse = try JSONDecoder().decode(SignInInitResponse.self, from: data)
+            logger.verbose("Password protocol \(initResponse.protocol.rawValue), \(initResponse.iteration) iterations")
         } catch let error as OlympUsError {
             throw error
         } catch {
@@ -418,7 +420,7 @@ public actor OlympUs {
         }
 
         var completeURL = URLComponents(url: signInURL.appendingPathComponent("complete"), resolvingAgainstBaseURL: false)!
-        completeURL.queryItems = [URLQueryItem(name: "isRememberMeEnabled", value: "true")]
+        completeURL.queryItems = [URLQueryItem(name: "isRememberMeEnabled", value: "false")]
         var request = signInRequest(url: completeURL.url!, serviceKey: serviceKey, hashcash: hashcash)
         request.httpBody = try? JSONEncoder().encode(SignInCompleteRequest(
             accountName: accountName,
@@ -431,6 +433,7 @@ public actor OlympUs {
         let response: HTTPURLResponse
         do {
             let (responseData, urlResponse) = try await session.data(for: request)
+            logResponse(request, urlResponse, responseData)
             guard let httpResponse = urlResponse as? HTTPURLResponse else { throw OlympUsError.signInRequestFailed }
             data = responseData
             response = httpResponse
@@ -469,6 +472,24 @@ public actor OlympUs {
             request.addValue(hashcash, forHTTPHeaderField: "X-Apple-HC")
         }
         return request
+    }
+
+    private struct ServiceErrors: Decodable {
+        struct ServiceError: Decodable {
+            let code: String?
+            let message: String?
+        }
+
+        let serviceErrors: [ServiceError]?
+    }
+
+    private func logResponse(_ request: URLRequest, _ response: URLResponse, _ data: Data) {
+        let status = (response as? HTTPURLResponse).map { "HTTP \($0.statusCode)" } ?? "no HTTP response"
+        logger.verbose("\(request.httpMethod ?? "GET") \(request.url?.path ?? ""): \(status)")
+        let errors = (try? JSONDecoder().decode(ServiceErrors.self, from: data))?.serviceErrors ?? []
+        for error in errors {
+            logger.verbose("Apple: \([error.code, error.message].compactMap { $0 }.joined(separator: " "))")
+        }
     }
 
     private static func checkSignInStatus(_ response: URLResponse) throws {

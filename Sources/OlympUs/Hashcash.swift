@@ -10,10 +10,10 @@ struct Hashcash: Sendable, Equatable {
     let bits: Int
     let challenge: String
 
-    func stamp(date: Date) -> String {
+    func stamp(date: Date, timeZone: TimeZone = .current) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.timeZone = timeZone
         formatter.dateFormat = "yyyyMMddHHmmss"
         let prefix = "1:\(bits):\(formatter.string(from: date)):\(challenge)::"
         var counter = 0

@@ -117,7 +117,7 @@ struct SRPClient: Sendable {
         let sessionKey = hash(premasterSecret.bytes())
 
         let hashedPrime = hash(prime.bytes())
-        let hashedGenerator = hash(group.generator.bytes())
+        let hashedGenerator = hash(group.generator.bytes(paddedTo: group.length))
         let xored = zip(hashedPrime, hashedGenerator).map { $0 ^ $1 }
         let clientProof = hash(
             xored,

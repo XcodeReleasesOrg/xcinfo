@@ -178,6 +178,21 @@ struct SRPTests {
     }
 
     @Test
+    func `the client proof hashes the generator padded to the group size`() throws {
+        let serverPublicKey = hex("BD0C61512C692C0CB6D041FA01BB152D4916A1E77AF46AE105393011BAF38964DC46A0670DD125B95A981652236F99D9B681CBF87837EC996C6DA04453728610D0C6DDB58B318885D7D82C7F8DEB75CE7BD4FBAA37089E6F9C6059F388838E7A00030B331EB76840910440B1B27AAEAEEB4012B7D7665238A8E3FB004B117B58")
+        let group = SRPGroup.rfc5054_1024
+        let sha1: ([UInt8]) -> [UInt8] = { Array(Insecure.SHA1.hash(data: $0)) }
+
+        let proof = try client.proof(accountName: "alice", passwordIdentity: "alice", password: Array("password123".utf8), salt: salt, serverPublicKey: serverPublicKey)
+
+        let paddedGenerator = [UInt8](repeating: 0, count: group.length - 1) + [2]
+        let xored = zip(sha1(group.prime.bytes()), sha1(paddedGenerator)).map { $0 ^ $1 }
+        let expected = sha1(xored + sha1(Array("alice".utf8)) + salt + client.publicKey.bytes() + serverPublicKey.bytes() + proof.sessionKey)
+        #expect(proof.clientProof == expected)
+        #expect(proof.expectedServerProof == sha1(client.publicKey.bytes() + proof.clientProof + proof.sessionKey))
+    }
+
+    @Test
     func `a server public key of zero is rejected`() {
         #expect(throws: SRPError.invalidServerPublicKey) {
             try client.proof(accountName: "a", passwordIdentity: "a", password: [1], salt: [1], serverPublicKey: SRPGroup.rfc5054_1024.prime)
@@ -209,7 +224,7 @@ struct HashcashTests {
     func `a stamp has the requested leading zero bits`(bits: Int) {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
 
-        let stamp = Hashcash(bits: bits, challenge: "4d74fb15eb23f465f1f6fcbf534e5877").stamp(date: date)
+        let stamp = Hashcash(bits: bits, challenge: "4d74fb15eb23f465f1f6fcbf534e5877").stamp(date: date, timeZone: TimeZone(identifier: "UTC")!)
 
         #expect(stamp.hasPrefix("1:\(bits):20231114221320:4d74fb15eb23f465f1f6fcbf534e5877::"))
         #expect(Hashcash.hasLeadingZeroBits(bits, in: Array(Insecure.SHA1.hash(data: Data(stamp.utf8)))))

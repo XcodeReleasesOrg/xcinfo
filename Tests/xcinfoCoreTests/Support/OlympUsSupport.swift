@@ -134,7 +134,7 @@ final class FakeAppleSRPServer: Sendable {
         let u = BigUInt(bigEndian: sha256(clientPublicKey.bytes(paddedTo: length) + serverPublicKey.bytes(paddedTo: length)))
         let secret = (clientPublicKey * verifier.power(u, modulus: group.prime)).power(serverPrivateKey, modulus: group.prime)
         let sessionKey = sha256(secret.bytes())
-        let xored = zip(sha256(group.prime.bytes()), sha256(group.generator.bytes())).map { $0 ^ $1 }
+        let xored = zip(sha256(group.prime.bytes()), sha256(group.generator.bytes(paddedTo: length))).map { $0 ^ $1 }
         let expected = sha256(xored + sha256(Array(accountName.utf8)) + salt + clientPublicKey.bytes() + serverPublicKey.bytes() + sessionKey)
         return Array(m1) == expected
     }
