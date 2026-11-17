@@ -284,3 +284,17 @@ struct CommandLineTests {
         #expect(URL(fileURLWithPath: "/Applications").defaultValueDescription == "/Applications")
     }
 }
+
+struct HelpTextTests {
+    @Test
+    func `list filters and extract explain themselves`() {
+        let list = XCInfo.helpMessage(for: XCInfo.List.self, columns: 300)
+        let extract = XCInfo.helpMessage(for: XCInfo.Extract.self, columns: 300)
+
+        #expect(list.contains("--only-gm               List only versions marked GM."))
+        #expect(list.contains("--only-releases         List only versions marked as final releases."))
+        #expect(extract.contains("The Xcode archive to extract (.xip or .aea)."))
+        #expect(extract.contains("The folder to extract Xcode into."))
+        #expect(!extract.contains("code version"))
+    }
+}

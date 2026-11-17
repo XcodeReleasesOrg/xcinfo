@@ -8,7 +8,16 @@ import Foundation
 import XCIFoundation
 import xcinfoCore
 
-extension Core.ListFilter: EnumerableFlag {}
+extension Core.ListFilter: EnumerableFlag {
+    public static func help(for value: Self) -> ArgumentHelp? {
+        switch value {
+        case .onlyGM:
+            "List only versions marked GM. xcodereleases.com no longer marks new releases as GM, so this finds only older versions."
+        case .onlyReleases:
+            "List only versions marked as final releases. Older versions marked GM are not included; use --only-gm for them."
+        }
+    }
+}
 
 extension XCInfo {
     struct List: AsyncParsableCommand {

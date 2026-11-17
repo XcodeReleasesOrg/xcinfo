@@ -175,7 +175,7 @@ struct DownloadOptions: ParsableArguments {
 struct ExtractionOptions: ParsableArguments {
     @Option(
         name: [.long, .short],
-        help: "The directory to install the code version in.",
+        help: "The folder to extract Xcode into.",
         completion: .directory
     )
     var installationDirectory: URL = .init(fileURLWithPath: "/Applications")

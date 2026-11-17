@@ -11,10 +11,11 @@ import xcinfoCore
 extension XCInfo {
     struct Extract: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Extract an Xcode archive (.xip or .aea)"
+            abstract: "Extract an Xcode archive (.xip or .aea)",
+            discussion: "Only extracts the archive: no download, checksum check or setup."
         )
 
-        @Argument(completion: .file(extensions: ArchiveFormat.fileExtensions))
+        @Argument(help: "The Xcode archive to extract (.xip or .aea).", completion: .file(extensions: ArchiveFormat.fileExtensions))
         var source: URL
 
         @OptionGroup
