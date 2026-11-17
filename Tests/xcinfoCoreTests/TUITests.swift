@@ -198,7 +198,7 @@ struct TUIRendererTests {
         #expect(lines[2].hasPrefix("› 16.0 (16A1)"))
         #expect(lines[3].hasPrefix("Available (30)"))
         #expect(lines[4].hasPrefix("  1.0 (1A1)"))
-        #expect(lines.last?.hasPrefix(" ↑↓ move   d download   u uninstall   r refresh   q quit") == true)
+        #expect(lines.last?.hasPrefix(" ↑↓ move   s switch   d download   u uninstall   r refresh   q quit") == true)
     }
 
     @Test

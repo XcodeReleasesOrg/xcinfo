@@ -158,7 +158,7 @@ public struct TUIApp: Sendable {
                         return
                     case .refresh:
                         model = await load(status: "Refreshed.", keepingSelection: model.selection)
-                    case .install, .download, .uninstall:
+                    case .install, .download, .uninstall, .switchTo:
                         let box = TUIQuestionBox(input: input)
                         let (cancelSignal, cancel) = AsyncStream.makeStream(of: Void.self)
                         questions = box
@@ -215,6 +215,8 @@ extension TUICommand {
             ["Identify", "Sign in", "Download", "Verify"]
         case .uninstall:
             ["Uninstall"]
+        case .switchTo:
+            ["Switch"]
         case .quit, .refresh:
             []
         }
@@ -228,6 +230,8 @@ extension TUICommand {
             "Downloading Xcode \(xcode.displayName)"
         case let .uninstall(application):
             "Uninstalling Xcode \(application.xcode.displayName)"
+        case let .switchTo(application):
+            "Switching to Xcode \(application.xcode.displayName)"
         case .quit, .refresh:
             ""
         }

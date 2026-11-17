@@ -23,6 +23,7 @@ public enum CoreError: LocalizedError, Sendable {
     case incorrectSuperUserPassword
     case uninstallationFailed(String)
     case invalidExtractionOutputURL(URL)
+    case noInstalledXcode(String?)
     case checksumMismatch(file: URL, expected: String, actual: String)
     case versionRequired
     case destinationExists(URL, reason: String)
@@ -59,6 +60,8 @@ public enum CoreError: LocalizedError, Sendable {
             return "Apple does not offer this version as .\(format.rawValue)\(offered.isEmpty ? "." : ", only as \(offered.joined(separator: ", ")).") Run the command without --archive-format to take what is offered."
         case let .destinationExists(url, reason):
             return "\(url.path) already exists, and \(reason). Move or delete it, or run the command again with --overwrite to move it to the Trash and download anew."
+        case let .noInstalledXcode(version):
+            return version.map { "No installed Xcode matches '\($0)'. Run xcinfo installed to see the installed versions." } ?? "No installed Xcode was found."
         case .versionRequired:
             return "Give an Xcode version, or an archive with --archive-path."
         case let .unknownArchiveVersion(build):
@@ -389,6 +392,54 @@ public struct Core: Sendable {
         return app
     }
 
+    public struct SwitchOptions: Sendable {
+        public init(skipSymlinkCreation: Bool = false, skipXcodeSelection: Bool = false) {
+            self.skipSymlinkCreation = skipSymlinkCreation
+            self.skipXcodeSelection = skipXcodeSelection
+        }
+
+        public var skipSymlinkCreation: Bool
+        public var skipXcodeSelection: Bool
+    }
+
+    @discardableResult
+    public func switchXcode(to version: String?, options: SwitchOptions, updateVersionList: Bool) async throws -> XcodeApplication {
+        let knownVersions = try await list(shouldUpdate: updateVersionList)
+        let xcodes = try await findInstalledXcodes(for: version, knownVersions: knownVersions).sorted(by: >)
+        guard !xcodes.isEmpty else {
+            throw CoreError.noInstalledXcode(version)
+        }
+        let selected: XcodeApplication
+        if xcodes.count > 1 {
+            let width = xcodes.map(\.xcode.displayName.count).max() ?? 0
+            let choices = xcodes.map { "\($0.xcode.displayName.paddedWithSpaces(to: width)) – \($0.url.path)" }
+            selected = xcodes[await prompt.choose("Please choose the Xcode to switch to: ", choices)]
+        } else {
+            selected = xcodes[0]
+        }
+        try await switchXcode(to: selected, options: options)
+        return selected
+    }
+
+    public func switchXcode(to application: XcodeApplication, options: SwitchOptions) async throws {
+        logger.beginSection("Switching to Xcode \(application.xcode.displayName)")
+        let symlinkURL = fileSystem.applicationsDirectory().appendingPathComponent("Xcode.app")
+        if options.skipSymlinkCreation {
+            logger.verbose("Leaving \(symlinkURL.path) unchanged.")
+        } else if application.url.standardizedFileURL == symlinkURL.standardizedFileURL {
+            logger.log("\(symlinkURL.path) is this Xcode itself, so there is no link to change.")
+        } else {
+            try await createSymbolicLink(to: application.url)
+        }
+        if options.skipXcodeSelection {
+            logger.verbose("Leaving the xcode-select selection unchanged.")
+        } else {
+            let password = try await getPassword(reason: "Selecting Xcode needs administrator rights (sudo) to run xcode-select.")
+            try await selectXcode(at: application.url, password: password)
+        }
+        logger.success("Switched to Xcode \(application.xcode.displayName) at \(application.url.path).")
+    }
+
     @discardableResult
     public func uninstall(_ version: String?, updateVersionList: Bool, deletePermanently: Bool = false) async throws -> XcodeApplication? {
         let knownVersions: [Xcode] = try await list(shouldUpdate: updateVersionList)
@@ -617,8 +668,10 @@ extension Core {
         }
     }
 
-    private func getPassword() async throws -> String {
-        logger.log("Installing Xcode needs administrator rights (sudo) to accept the license, enable developer mode and select the new Xcode.")
+    private func getPassword(
+        reason: String = "Installing Xcode needs administrator rights (sudo) to accept the license, enable developer mode and select the new Xcode."
+    ) async throws -> String {
+        logger.log(reason)
         let passwordPrompt = "Mac administrator password for \(NSUserName()) (sudo):"
 
         for attempt in 1 ... 3 {
