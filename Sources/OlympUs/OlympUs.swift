@@ -28,7 +28,11 @@ public enum OlympUsError: Error, Sendable, Equatable, CustomStringConvertible {
         case .signInRequestFailed:
             "Signing in to Apple failed."
         case .incorrectCredentials:
-            "The Apple ID or password is incorrect."
+            """
+            Apple rejected the password for this Apple ID.
+            Use the password of your Apple ID, not your Mac password.
+            Repeated failed sign-ins can lock your Apple ID, so check the password before trying again.
+            """
         case .accountLocked:
             "This Apple ID is locked. Unlock it at iforgot.apple.com."
         case .privacyAcknowledgementRequired:
@@ -548,12 +552,12 @@ public actor OlympUs {
 
         let requiredCodeLength = response.securityCode.length
         let trustedPhoneNumbers = response.trustedPhoneNumbers ?? []
-        logger.log("Two-factor authentication is enabled for your account.")
-        logger.log("Please enter the \(requiredCodeLength) digit verification code shown on one of your trusted devices.")
+        logger.log("Two-factor authentication is enabled for your Apple ID.")
+        logger.log("Enter the \(requiredCodeLength) digit verification code that Apple shows on one of your trusted Apple devices.")
         if !trustedPhoneNumbers.isEmpty {
-            logger.log("Type 'sms' to receive a verification code on a trusted phone number.")
+            logger.log("Type 'sms' to get the code by text message on a trusted phone number instead.")
         }
-        let input = prompt.ask("Apple ID Verification Code: ", "Invalid code length") { value in
+        let input = prompt.ask("Apple ID verification code: ", "Enter \(requiredCodeLength) digits") { value in
             !(value == "sms" && !trustedPhoneNumbers.isEmpty) && requiredCodeLength != value.count
         }
         guard input == "sms" else {
@@ -561,7 +565,7 @@ public actor OlympUs {
         }
 
         let phoneIndex = prompt.choose(
-            "Please choose your trusted device: ",
+            "Choose the trusted phone number for the text message: ",
             trustedPhoneNumbers.map(\.numberWithDialCode)
         )
         let phoneId = trustedPhoneNumbers[phoneIndex].id
@@ -577,8 +581,8 @@ public actor OlympUs {
             throw OlympUsError.requestSmsFailed
         }
         let smsCode = prompt.ask(
-            "Please enter the received verification code:",
-            "Invalid code length"
+            "Verification code from the text message: ",
+            "Enter \(requiredCodeLength) digits"
         ) { value in
             requiredCodeLength != value.count
         }

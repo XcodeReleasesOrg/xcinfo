@@ -186,7 +186,7 @@ struct CredentialsTests {
         #expect(try await service.accountName() == "user@example.invalid")
         #expect(try service.password(for: "user@example.invalid") == "secret")
         #expect(prompt.lines.values.isEmpty)
-        #expect(prompt.secrets.values == ["Password for user@example.invalid:"])
+        #expect(prompt.secrets.values == ["Apple ID password for user@example.invalid (not your Mac password):"])
         #expect(prompt.agreed.values.isEmpty)
     }
 
@@ -200,7 +200,7 @@ struct CredentialsTests {
         _ = try service.password(for: "user@example.invalid")
         try await vault.commit { _ in }
 
-        #expect(prompt.lines.values == ["Apple ID:"])
+        #expect(prompt.lines.values == ["Apple ID (email):"])
         #expect(storage.storedContents?.accountName == "user@example.invalid")
         #expect(!storage.storedText.contains("secret"))
     }

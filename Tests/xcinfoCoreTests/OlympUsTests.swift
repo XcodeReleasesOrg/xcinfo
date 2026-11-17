@@ -284,14 +284,14 @@ struct OlympUsTwoFactorTests {
         let validation = try await fixture.olymp.requestAuthentication(assets: assets)
 
         #expect(validation == .securityCode("123456"))
-        #expect(prompt.asked.values == ["Apple ID Verification Code: "])
+        #expect(prompt.asked.values == ["Apple ID verification code: "])
         let request = try #require(fixture.server.requests(to: AppleEndpoint.auth).first)
         #expect(request.httpMethod == "GET")
         #expect(request.value(forHTTPHeaderField: "X-Apple-Widget-Key") == "service-key")
         #expect(request.value(forHTTPHeaderField: "scnt") == "scnt-value")
         #expect(request.value(forHTTPHeaderField: "X-Apple-ID-Session-Id") == "session-id")
         #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
-        #expect(fixture.logs.messages.contains("Please enter the 6 digit verification code shown on one of your trusted devices."))
+        #expect(fixture.logs.messages.contains("Enter the 6 digit verification code that Apple shows on one of your trusted Apple devices."))
     }
 
     @Test
@@ -313,7 +313,7 @@ struct OlympUsTwoFactorTests {
         _ = try await fixture.olymp.requestAuthentication(assets: assets)
 
         #expect(validators.values == [
-            "Apple ID Verification Code: |Invalid code length|12345=true,123456=false,1234567=true,sms=false",
+            "Apple ID verification code: |Enter 6 digits|12345=true,123456=false,1234567=true,sms=false",
         ])
     }
 
@@ -352,7 +352,7 @@ struct OlympUsTwoFactorTests {
 
         #expect(validation == .verificationCode(2, "654321"))
         #expect(prompt.chosen.values == [["+1 (•••) •••-••11", "+49 ••• ••••22"]])
-        #expect(prompt.asked.values == ["Apple ID Verification Code: ", "Please enter the received verification code:"])
+        #expect(prompt.asked.values == ["Apple ID verification code: ", "Verification code from the text message: "])
         let request = try #require(fixture.server.requests(to: AppleEndpoint.verifyPhone).first)
         #expect(request.httpMethod == "PUT")
         let body = try json(request)
@@ -695,7 +695,9 @@ struct OlympUsSessionTests {
 
     @Test
     func `errors describe what went wrong`() {
-        #expect(OlympUsError.incorrectCredentials.description == "The Apple ID or password is incorrect.")
+        #expect(OlympUsError.incorrectCredentials.description.contains("Apple rejected the password for this Apple ID."))
+        #expect(OlympUsError.incorrectCredentials.description.contains("not your Mac password"))
+        #expect(OlympUsError.incorrectCredentials.description.contains("can lock your Apple ID"))
         #expect(OlympUsError.incorrectVerificationCode.description == "The verification code is incorrect.")
         #expect(OlympUsError.accountLocked.description.contains("iforgot.apple.com"))
     }
