@@ -145,10 +145,10 @@ struct OlympUsSignInTests {
         #expect(result.requiresTwoFactorAuthentication)
         #expect(result.assets == OlympUs.AuthenticationAssets(serviceKey: "key", scnt: "scnt-value", asid: "session-id", authenticationType: "hsa2"))
         let completion = try #require(fixture.server.requests(to: AppleEndpoint.signInComplete).first)
-        #expect(completion.url?.query == "isRememberMeEnabled=true")
+        #expect(completion.url?.query == "isRememberMeEnabled=false")
         let body = try json(completion)
         #expect(body["accountName"] as? String == "user@example.invalid")
-        #expect(body["rememberMe"] as? Bool == true)
+        #expect(body["rememberMe"] as? Bool == false)
         #expect(body["m2"] is String)
     }
 
@@ -178,10 +178,15 @@ struct OlympUsSignInTests {
             #expect(request.httpMethod == "POST")
             #expect(request.value(forHTTPHeaderField: "X-Apple-Widget-Key") == "key")
             #expect(request.value(forHTTPHeaderField: "X-Requested-With") == "XMLHttpRequest")
-            let stamp = try #require(request.value(forHTTPHeaderField: "X-Apple-HC"))
-            #expect(stamp.hasPrefix("1:8:20231114221320:challenge::"))
-            #expect(Hashcash.hasLeadingZeroBits(8, in: Array(Insecure.SHA1.hash(data: Data(stamp.utf8)))))
         }
+        #expect(fixture.server.requests(to: AppleEndpoint.signInInit).first?.value(forHTTPHeaderField: "X-Apple-HC") == nil)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMddHHmmss"
+        let localDate = formatter.string(from: Date(timeIntervalSince1970: 1_700_000_000))
+        let stamp = try #require(fixture.server.requests(to: AppleEndpoint.signInComplete).first?.value(forHTTPHeaderField: "X-Apple-HC"))
+        #expect(stamp.hasPrefix("1:8:\(localDate):challenge::"))
+        #expect(Hashcash.hasLeadingZeroBits(8, in: Array(Insecure.SHA1.hash(data: Data(stamp.utf8)))))
     }
 
     @Test
@@ -193,7 +198,25 @@ struct OlympUsSignInTests {
 
         _ = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
 
-        #expect(fixture.server.requests(to: AppleEndpoint.signInInit).first?.value(forHTTPHeaderField: "X-Apple-HC") == nil)
+        #expect(fixture.server.requests(to: AppleEndpoint.signInComplete).first?.value(forHTTPHeaderField: "X-Apple-HC") == nil)
+    }
+
+    @Test
+    func `verbose output shows each sign in step without secrets`() async throws {
+        let fixture = OlympUsFixture(handler: appleServer(srp: srp, completion: { _, _ in
+            .json(#"{"serviceErrors":[{"code":"-20101","message":"Your Apple ID or password was incorrect."}]}"#, statusCode: 401)
+        }))
+
+        await #expect(performing: {
+            try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
+        }, throws: isOlympUsError(.incorrectCredentials))
+
+        let messages = fixture.logs.messages
+        #expect(messages.contains("POST /appleauth/auth/signin/init: HTTP 200"))
+        #expect(messages.contains("Password protocol s2k, 1000 iterations"))
+        #expect(messages.contains("POST /appleauth/auth/signin/complete: HTTP 401"))
+        #expect(messages.contains("Apple: -20101 Your Apple ID or password was incorrect."))
+        #expect(!messages.contains { $0.contains("correct horse") || $0.contains("challenge-token") })
     }
 
     @Test
@@ -596,7 +619,8 @@ struct OlympUsSessionTests {
 
     @Test
     func `errors describe what went wrong`() {
-        #expect(OlympUsError.incorrectCredentials.description == "The Apple ID or password is incorrect.")
+        #expect(OlympUsError.incorrectCredentials.description.hasPrefix("The Apple ID or password is incorrect."))
+        #expect(OlympUsError.incorrectCredentials.description.contains("xcinfo cleanup"))
         #expect(OlympUsError.incorrectVerificationCode.description == "The verification code is incorrect.")
         #expect(OlympUsError.accountLocked.description.contains("iforgot.apple.com"))
     }
