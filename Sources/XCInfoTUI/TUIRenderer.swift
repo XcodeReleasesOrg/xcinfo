@@ -64,7 +64,7 @@ public struct TUIRenderer: Sendable {
         let offset = min(max(0, selectedRow - bodyHeight / 2), max(0, rows.count - bodyHeight))
         let visibleRows = Array(rows.dropFirst(offset).prefix(bodyHeight))
 
-        let details = detailWidth > 0 ? detailLines(model.selectedEntry) : []
+        let details = detailWidth > 0 ? detailLines(model.selectedEntry, width: detailWidth) : []
 
         var lines = [style(" xcinfo — Xcode versions".padded(to: width), .title)]
         for index in 0 ..< bodyHeight {
@@ -234,7 +234,7 @@ public struct TUIRenderer: Sendable {
         return selected ? style(text, .selected) : text
     }
 
-    func detailLines(_ entry: TUIEntry?) -> [String] {
+    func detailLines(_ entry: TUIEntry?, width: Int = .max) -> [String] {
         guard let entry else { return [] }
         let xcode = entry.xcode
         var lines = [xcode.displayName, ""]
@@ -244,7 +244,7 @@ public struct TUIRenderer: Sendable {
         lines.append("Requires:  macOS \(xcode.requires)")
         switch entry.kind {
         case let .installed(url):
-            lines.append("Installed: \(url.path)")
+            lines += "Installed: \(url.path)".pathWrapped(to: width, indent: 11)
         case .available:
             lines.append("Status:    available")
         case .notInstallable:
@@ -260,7 +260,16 @@ public struct TUIRenderer: Sendable {
                 .map { "  \($0) \(compilers[$0]?.first?.number ?? ""): \(compilers[$0]?.first?.build ?? "")" }
         }
         let links = [("Download", xcode.links?.download?.url), ("Release notes", xcode.links?.notes?.url)]
-            .compactMap { label, url in url.map { "  \(label): \($0.absoluteString)" } }
+            .compactMap { label, url in
+                url.map { url in
+                    let inline = "  \(label): \(url.absoluteString)"
+                    return inline.count <= width ? [inline] : ["  \(label):"] + "    \(url.absoluteString)".pathWrapped(
+                        to: width,
+                        indent: 4
+                    )
+                }
+            }
+            .flatMap(\.self)
         if !links.isEmpty {
             lines += ["", "Links"] + links
         }
@@ -320,6 +329,20 @@ public struct TUIRenderer: Sendable {
 }
 
 extension String {
+    func pathWrapped(to width: Int, indent: Int) -> [String] {
+        guard count > width, width > indent + 8 else { return [self] }
+        var lines: [String] = []
+        var rest = Substring(self)
+        while rest.count > width {
+            let limit = rest.index(rest.startIndex, offsetBy: width)
+            let minimum = rest.index(rest.startIndex, offsetBy: indent + 1)
+            let end = rest[minimum ..< limit].lastIndex(of: "/").map { rest.index(after: $0) } ?? limit
+            lines.append(String(rest[..<end]))
+            rest = Substring(String(repeating: " ", count: indent)) + rest[end...]
+        }
+        return lines + [String(rest)]
+    }
+
     func wrapped(to width: Int, indent: Int) -> [String] {
         guard count > width, width > indent + 4 else { return [self] }
         var lines: [String] = []
