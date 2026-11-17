@@ -91,7 +91,7 @@ If the setup after the extraction does not finish, xcinfo says where the extract
 
 ### switch
 
-`xcinfo switch 16.0` points `/Applications/Xcode.app` to another installed Xcode and selects it with `xcode-select`, which asks for the Mac administrator password. It takes a version, a build number (`xcinfo switch 16A242d`) or `latest`; without one, or with several matching copies, it asks. `--no-symlink` and `--no-xcode-select` skip either change.
+`xcinfo switch 16.0` points `/Applications/Xcode.app` to another installed Xcode and selects it with `xcode-select`, which asks for the Mac administrator password. It takes a version, a build number (`xcinfo switch 16A242d`) or `latest`; without one, or with several matching copies, it asks. It runs `xcode-select` first and changes the link only after that worked, so a refused or cancelled password changes nothing. `--no-symlink` and `--no-xcode-select` skip either change.
 
 ### uninstall
 
