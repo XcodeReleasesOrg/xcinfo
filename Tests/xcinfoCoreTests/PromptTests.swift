@@ -25,37 +25,37 @@ final class ScriptedConsole: Sendable {
 
 struct PromptTests {
     @Test
-    func `ask repeats until the answer is valid`() {
+    func `ask repeats until the answer is valid`() throws {
         let script = ScriptedConsole(["123", "123456"])
 
-        let answer = script.console.ask("Code:", invalidMessage: "Invalid code length") { $0.count != 6 }
+        let answer = try script.console.ask("Code:", invalidMessage: "Invalid code length") { $0.count != 6 }
 
         #expect(answer == "123456")
         #expect(script.written == "Code:\nInvalid code length\n?  ")
     }
 
     @Test
-    func `choose lists numbered choices and accepts a number`() {
+    func `choose lists numbered choices and accepts a number`() throws {
         let script = ScriptedConsole(["2"])
 
-        let index = script.console.choose("Pick one: ", choices: ["first", "second"])
+        let index = try script.console.choose("Pick one: ", choices: ["first", "second"])
 
         #expect(index == 1)
         #expect(script.written == "1. first\n2. second\nPick one: ")
     }
 
     @Test
-    func `choose accepts the text of a choice`() {
+    func `choose accepts the text of a choice`() throws {
         let script = ScriptedConsole(["second"])
 
-        #expect(script.console.choose("Pick one: ", choices: ["first", "second"]) == 1)
+        #expect(try script.console.choose("Pick one: ", choices: ["first", "second"]) == 1)
     }
 
     @Test
-    func `choose repeats on an invalid choice`() {
+    func `choose repeats on an invalid choice`() throws {
         let script = ScriptedConsole(["3", "1"])
 
-        let index = script.console.choose("Pick one: ", choices: ["first", "second"])
+        let index = try script.console.choose("Pick one: ", choices: ["first", "second"])
 
         #expect(index == 0)
         #expect(script.written.contains("You must choose one of [1, 2, first, second].\n?  "))
@@ -68,35 +68,36 @@ struct PromptTests {
         (["No"], false),
         (["maybe", "yes"], true),
     ])
-    func `agree accepts yes and no`(input: [String], expected: Bool) {
+    func `agree accepts yes and no`(input: [String], expected: Bool) throws {
         let script = ScriptedConsole(input)
 
-        #expect(script.console.agree("Continue?") == expected)
+        #expect(try script.console.agree("Continue?") == expected)
         #expect(script.written.hasPrefix("Continue?  "))
     }
 
     @Test
-    func `agree asks again on an invalid answer`() {
+    func `agree asks again on an invalid answer`() throws {
         let script = ScriptedConsole(["maybe", "n"])
 
-        _ = script.console.agree("Continue?")
+        _ = try script.console.agree("Continue?")
 
         #expect(script.written == "Continue?  Please enter \"yes\" or \"no\".\nContinue?  ")
     }
 
     @Test
-    func `the end of the input stops asking`() {
+    func `the end of the input stops asking`() throws {
         let script = ScriptedConsole([])
 
-        #expect(!script.console.agree("Continue?"))
-        #expect(script.console.ask("Code:", invalidMessage: "Invalid") { $0.isEmpty } == "")
+        #expect(throws: PromptUnavailable(question: "Continue?")) { try script.console.agree("Continue?") }
+        #expect(throws: PromptUnavailable(question: "Code:")) { try script.console.ask("Code:", invalidMessage: "Invalid") { $0.isEmpty } }
+        #expect(throws: PromptUnavailable(question: "Pick: ", choices: ["a", "b"])) { try script.console.choose("Pick: ", choices: ["a", "b"]) }
     }
 
     @Test
-    func `read line shows the prompt on the same line`() {
+    func `read line shows the prompt on the same line`() throws {
         let script = ScriptedConsole(["user@example.invalid"])
 
-        #expect(script.console.readLine("Username:") == "user@example.invalid")
+        #expect(try script.console.readLine("Username:") == "user@example.invalid")
         #expect(script.written == "Username: ")
     }
 }

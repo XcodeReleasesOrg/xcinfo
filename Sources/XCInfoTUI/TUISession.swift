@@ -97,23 +97,25 @@ public struct TUISession: Sendable {
         prompt = PromptClient(
             ask: { message, invalidMessage, isInvalid in
                 let answer = await questions.ask(.text(prompt: message, isSecret: false, invalidMessage: invalidMessage, isInvalid: isInvalid))
-                guard case let .text(text) = answer else { return "" }
+                guard case let .text(text) = answer else { throw CancellationError() }
                 return text
             },
             choose: { message, choices in
-                guard case let .choice(index) = await questions.ask(.choice(prompt: message, choices: choices)) else { return 0 }
+                guard case let .choice(index) = await questions.ask(.choice(prompt: message, choices: choices)) else { throw CancellationError() }
                 return index
             },
             agree: { message in
-                guard case let .confirm(agreed) = await questions.ask(.confirm(prompt: message)) else { return false }
+                guard case let .confirm(agreed) = await questions.ask(.confirm(prompt: message)) else { throw CancellationError() }
                 return agreed
             },
             readLine: { message in
-                guard case let .text(text) = await questions.ask(.text(prompt: message, isSecret: false, invalidMessage: nil, isInvalid: { _ in false })) else { return "" }
+                let answer = await questions.ask(.text(prompt: message, isSecret: false, invalidMessage: nil, isInvalid: { _ in false }))
+                guard case let .text(text) = answer else { throw CancellationError() }
                 return text
             },
             readSecret: { message in
-                guard case let .text(text) = await questions.ask(.text(prompt: message, isSecret: true, invalidMessage: nil, isInvalid: { _ in false })) else { return "" }
+                let answer = await questions.ask(.text(prompt: message, isSecret: true, invalidMessage: nil, isInvalid: { _ in false }))
+                guard case let .text(text) = answer else { throw CancellationError() }
                 return text
             }
         )

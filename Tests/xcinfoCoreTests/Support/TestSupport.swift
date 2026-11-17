@@ -130,8 +130,10 @@ final class FakeShell: Sendable {
 
     let calls = Recorder<ShellCall>()
     private let handler: Handler
+    private let isRoot: Bool
 
-    init(handler: @escaping Handler = { _ in (0, "", "") }) {
+    init(isRoot: Bool = false, handler: @escaping Handler = { _ in (0, "", "") }) {
+        self.isRoot = isRoot
         self.handler = handler
     }
 
@@ -157,7 +159,8 @@ final class FakeShell: Sendable {
                 calls.append(call)
                 let result = handler(call)
                 return ProcessResult(exitStatus: result.exitStatus, stdout: result.stdout, stderr: result.stderr)
-            }
+            },
+            isRunningAsRoot: { [isRoot] in isRoot }
         )
     }
 

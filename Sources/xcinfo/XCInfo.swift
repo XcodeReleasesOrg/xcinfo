@@ -18,8 +18,8 @@ struct XCInfo: AsyncParsableCommand {
         discussion: """
         Exit codes: 0 success, 1 unexpected error, 3 version not found, 4 sign-in failed, \
         5 download failed, 6 extraction failed, 7 installation failed, 8 uninstallation failed, \
-        9 xcodereleases.com or cache unavailable, 130 stopped with Ctrl-C (a paused download resumes \
-        on the next run). Invalid arguments exit with 64.
+        9 xcodereleases.com or cache unavailable, 10 an answer was needed with --non-interactive or after the input ended, \
+        130 stopped with Ctrl-C (a paused download resumes on the next run). Invalid arguments exit with 64.
         """,
         version: version,
         subcommands: [
@@ -64,6 +64,12 @@ struct DefaultOptions: ParsableArguments {
     @Flag(name: .customLong("json"), help: "Print the result as JSON, without progress or status messages.")
     var isJSON: Bool = false
 
+    @Flag(
+        name: .customLong("non-interactive"),
+        help: "Never ask: fail with exit code 10 where xcinfo would ask a question. Set XCINFO_APPLE_ID and XCINFO_APPLE_PASSWORD for sign-in."
+    )
+    var isNonInteractive: Bool = false
+
     var renderer: TerminalRenderer {
         TerminalRenderer(options: .detect(isVerbose: isVerbose, isQuiet: isQuiet, isJSON: isJSON, allowsColors: useANSI))
     }
@@ -75,6 +81,9 @@ struct DefaultOptions: ParsableArguments {
         do {
             return try await withDependencies {
                 $0.logger = renderer.logger
+                if isNonInteractive {
+                    $0.prompt = .unavailable
+                }
             } operation: {
                 try await operation(Core(), renderer)
             }

@@ -24,7 +24,7 @@ struct TUISessionTests {
     }
 
     @Test
-    func `a secret question opens a dialog and returns the typed answer`() async {
+    func `a secret question opens a dialog and returns the typed answer`() async throws {
         let (inputs, input) = AsyncStream.makeStream(of: TUIInput.self)
         let box = TUIQuestionBox(input: input)
         let session = TUISession(input: input, questions: box)
@@ -39,11 +39,11 @@ struct TUISessionTests {
         #expect(isSecret)
         await box.answer(.text("secret"))
 
-        #expect(await password == "secret")
+        #expect(try await password == "secret")
     }
 
     @Test
-    func `choices and questions return the selected answer`() async {
+    func `choices and questions return the selected answer`() async throws {
         let (inputs, input) = AsyncStream.makeStream(of: TUIInput.self)
         let box = TUIQuestionBox(input: input)
         let session = TUISession(input: input, questions: box)
@@ -52,16 +52,16 @@ struct TUISessionTests {
         async let index = session.prompt.choose("Choose:", ["a", "b"])
         _ = await next(&iterator)
         await box.answer(.choice(1))
-        #expect(await index == 1)
+        #expect(try await index == 1)
 
         async let agreed = session.prompt.agree("Sure?")
         _ = await next(&iterator)
         await box.answer(.confirm(true))
-        #expect(await agreed)
+        #expect(try await agreed)
     }
 
     @Test
-    func `cancelling answers the open question and every later one without asking`() async {
+    func `cancelling ends the open question and every later one without asking`() async {
         let (inputs, input) = AsyncStream.makeStream(of: TUIInput.self)
         let box = TUIQuestionBox(input: input)
         let session = TUISession(input: input, questions: box)
@@ -71,9 +71,14 @@ struct TUISessionTests {
         _ = await next(&iterator)
         await box.cancel()
 
-        #expect(await password == "")
-        #expect(await session.prompt.agree("Install from this archive anyway?") == false)
-        #expect(await session.prompt.choose("Choose:", ["a"]) == 0)
+        do {
+            _ = try await password
+            Issue.record("Expected a cancellation")
+        } catch {
+            #expect(error is CancellationError)
+        }
+        await #expect(throws: CancellationError.self) { try await session.prompt.agree("Install from this archive anyway?") }
+        await #expect(throws: CancellationError.self) { try await session.prompt.choose("Choose:", ["a"]) }
     }
 
     @Test

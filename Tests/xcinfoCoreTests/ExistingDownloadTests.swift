@@ -35,6 +35,7 @@ struct ExistingDownloadTests {
                     try Data("xar!fresh".utf8).write(to: fresh)
                     return fresh
                 },
+                prompt: FakePrompt(agree: false),
                 applicationsDirectory: caches.url
             )
             core.signingTrust = trust

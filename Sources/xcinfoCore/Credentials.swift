@@ -59,7 +59,7 @@ struct CredentialService {
             throw CredentialsError.accountNameUnavailable
         }
         logger.log("Downloading Xcode needs a sign-in to Apple's Developer Portal with the Apple ID of your developer account.")
-        let accountName = await prompt.readLine("Apple ID (email):").trimmingCharacters(in: .whitespaces)
+        let accountName = try await prompt.readLine("Apple ID (email):").trimmingCharacters(in: .whitespaces)
         guard !accountName.isEmpty else {
             throw CredentialsError.accountNameUnavailable
         }
@@ -74,7 +74,7 @@ struct CredentialService {
                 return try await attempt().accountName
             } catch let error as KeychainAccessError where error.canBeRetried && isInteractive {
                 logger.warn(error.description)
-                let choice = await prompt.choose(
+                let choice = try await prompt.choose(
                     "xcinfo could not read its Keychain item. What should it do?",
                     ["Try the Keychain again", "Sign in anew", "Cancel"]
                 )
@@ -102,7 +102,7 @@ struct CredentialService {
             throw CredentialsError.passwordUnavailable
         }
         logger.log("Apple needs a new sign-in. xcinfo does not store your Apple ID password, so it asks for it now.")
-        let password = await prompt.readSecret("Apple ID password for \(accountName) (not your Mac password):")
+        let password = try await prompt.readSecret("Apple ID password for \(accountName) (not your Mac password):")
         guard !password.isEmpty else {
             throw CredentialsError.invalidPassword
         }
