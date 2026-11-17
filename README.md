@@ -83,7 +83,7 @@ $ brew install xcinfo
 | r | Refresh the list |
 | q, Esc, Ctrl-C | Quit |
 
-Install, download and uninstall leave the full-screen view while they run, so sign-in, two-factor codes and the administrator password can be typed as usual. Press Return afterwards to go back to the list.
+Install, download and uninstall run inside the full-screen view. Questions open as dialogs: the Apple ID, the Apple ID password, two-factor codes, the Mac administrator password for sudo, and confirmations. Password fields show only dots. The activity view shows each step, progress bars and warnings; Esc or Ctrl-C stops the running action (a download keeps its progress and resumes next time). Press Return afterwards to go back to the list.
 
 ### Signing in to Apple
 
