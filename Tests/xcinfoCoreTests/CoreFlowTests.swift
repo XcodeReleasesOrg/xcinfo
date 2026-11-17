@@ -660,6 +660,31 @@ struct CoreExtractTests {
     }
 }
 
+struct CoreExtractionNameTests {
+    @Test
+    func `the app name avoids a clash in the chosen installation folder, not in Applications`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let destination = try TemporaryDirectory()
+        _ = try destination.file("Xcode_15.0.app/Contents/Info.plist")
+        let source = try caches.file("Xcode_15.xip")
+        let filenames = Recorder<String>()
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            extract: { _, destination, filename, _ in
+                filenames.append(filename ?? "-")
+                return destination.appendingPathComponent(filename ?? "Xcode.app")
+            },
+            applicationsDirectory: applications.url
+        )
+
+        _ = try await core.extractXIP(source: source, options: .init(destination: destination.url), xcode: .fixture("15.0", build: "15A240d"))
+
+        #expect(filenames.values == ["Xcode_15.0-2.app"])
+    }
+}
+
 struct CoreUninstallTests {
     private let xcodes = [
         Xcode.fixture("16.0", build: "16A1"),
@@ -688,10 +713,70 @@ struct CoreUninstallTests {
 
         try await core.uninstall("16", updateVersionList: true)
 
+        let trashed = caches.url.appendingPathComponent("Trash/Xcode-16.app")
         #expect(!FileManager.default.fileExists(atPath: app16.path))
+        #expect(FileManager.default.fileExists(atPath: trashed.path))
         #expect(FileManager.default.fileExists(atPath: app15.path))
-        #expect(prompt.agreed.values == ["Are you sure you want to uninstall Xcode 16.0 (16A1)?"])
-        #expect(logs.messages.last == "16.0 (16A1) uninstalled.")
+        #expect(prompt.agreed.values == ["Move Xcode 16.0 (16A1) at \(app16.path) to the Trash?"])
+        #expect(logs.messages.last == "Moved Xcode 16.0 (16A1) to the Trash: \(trashed.path)")
+    }
+
+    @Test
+    func `delete permanently removes the xcode without the trash`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let app = try applications.fakeXcode(named: "Xcode-16.app", build: "16A1")
+        let logs = LogRecorder()
+        let prompt = FakePrompt(agree: true)
+        let xcodes = xcodes
+        let core = Core.test(
+            logs: logs,
+            cachesDirectory: caches.url,
+            listXcodes: { xcodes },
+            shell: .installedXcodes([app]),
+            prompt: prompt,
+            applicationsDirectory: applications.url,
+            trashItem: { _ in
+                Issue.record("Must not use the Trash")
+                return nil
+            }
+        )
+
+        try await core.uninstall("16", updateVersionList: true, deletePermanently: true)
+
+        #expect(!FileManager.default.fileExists(atPath: app.path))
+        #expect(prompt.agreed.values == ["Permanently delete Xcode 16.0 (16A1) at \(app.path)? This cannot be undone."])
+        #expect(logs.messages.last == "Deleted Xcode 16.0 (16A1) at \(app.path).")
+    }
+
+    @Test
+    func `an xcode that cannot be trashed is kept and the error suggests delete permanently`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let app = try applications.fakeXcode(named: "Xcode-16.app", build: "16A1")
+        let xcodes = xcodes
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            listXcodes: { xcodes },
+            shell: .installedXcodes([app]),
+            prompt: FakePrompt(agree: true),
+            applicationsDirectory: applications.url,
+            trashItem: { _ in throw CocoaError(.featureUnsupported) }
+        )
+
+        await #expect {
+            try await core.uninstall("16", updateVersionList: true)
+        } throws: { error in
+            isCoreError(error) {
+                if case let .uninstallationFailed(message) = $0 {
+                    message.contains("Could not move \(app.path) to the Trash") && message.contains("--delete-permanently")
+                } else {
+                    false
+                }
+            }
+        }
+        #expect(FileManager.default.fileExists(atPath: app.path))
     }
 
     @Test

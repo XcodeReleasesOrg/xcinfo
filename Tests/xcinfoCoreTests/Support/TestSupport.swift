@@ -226,14 +226,23 @@ extension Core {
         shell: FakeShell? = nil,
         prompt: FakePrompt? = nil,
         applicationsDirectory: URL,
-        revealInFinder: (@Sendable (URL) -> Void)? = nil
+        revealInFinder: (@Sendable (URL) -> Void)? = nil,
+        trashItem: (@Sendable (URL) throws -> URL?)? = nil
     ) -> Core {
         withDependencies {
             $0.logger = logs.logger(isVerbose: isVerbose)
             $0.fileSystem = FileSystemClient(
                 cachesDirectory: { cachesDirectory },
                 applicationsDirectory: { applicationsDirectory },
-                temporaryDirectory: { cachesDirectory }
+                temporaryDirectory: { _ in cachesDirectory },
+                trashItem: trashItem ?? { url in
+                    let trash = cachesDirectory.appendingPathComponent("Trash")
+                    try FileManager.default.createDirectory(at: trash, withIntermediateDirectories: true)
+                    let trashed = trash.appendingPathComponent(url.lastPathComponent)
+                    try FileManager.default.moveItem(at: url, to: trashed)
+                    return trashed
+                },
+                removeItem: { try FileManager.default.removeItem(at: $0) }
             )
             if let listXcodes { $0.xcodeReleases.listXcodes = listXcodes }
             if let removeCookies { $0.xcodeReleases.removeCookies = removeCookies }
