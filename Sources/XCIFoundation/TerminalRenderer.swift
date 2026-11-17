@@ -146,7 +146,7 @@ public struct TerminalRenderer: Sendable {
     }
 }
 
-private extension String {
+public extension String {
     var unstyled: String {
         replacingOccurrences(of: "\u{1B}\\[[0-9;]*m", with: "", options: .regularExpression)
     }

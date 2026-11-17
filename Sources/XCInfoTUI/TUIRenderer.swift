@@ -25,6 +25,16 @@ public struct TUIRenderer: Sendable {
         }
 
         let bodyHeight = height - 3
+        if let activity = model.activity {
+            var lines = [style(" xcinfo — \(activity.title)".truncated(to: width).padded(to: width), .title)]
+            lines += activityBody(activity, width: width, height: bodyHeight)
+            lines.append((model.status ?? "").truncated(to: width).padded(to: width))
+            lines.append(style(activityHelp(activity).truncated(to: width).padded(to: width), .dim))
+            if let dialog = model.dialog {
+                overlay(box(dialog, width: width), on: &lines, height: height)
+            }
+            return lines
+        }
         let listWidth = width >= 90 ? max(32, width * 2 / 5) : width
         let detailWidth = width - listWidth - 3
 
@@ -51,6 +61,59 @@ public struct TUIRenderer: Sendable {
             overlay(box(dialog, width: width), on: &lines, height: height)
         }
         return lines
+    }
+
+    func activityBody(_ activity: TUIActivity, width: Int, height: Int) -> [String] {
+        var footer: [String] = []
+        if let progress = activity.progress {
+            let barWidth = max(10, min(40, width - 30))
+            let display = ProgressDisplay(ratio: progress.fraction, width: barWidth)
+            let bar = usesColors ? display.representation : display.representation.unstyled
+            footer = ["", " \(progress.title): \(bar) \(progress.detail ?? "")"]
+        }
+        let available = max(0, height - footer.count)
+        let shown = activity.lines.suffix(available).map { line -> String in
+            let text = " " + prefix(for: line.kind) + line.text
+            return style(text.truncated(to: width).padded(to: width), style(for: line.kind))
+        }
+        let filler = Array(repeating: String(repeating: " ", count: width), count: max(0, available - shown.count))
+        return shown + filler + footer.map { line in
+            line.unstyledWidth > width ? line.truncated(to: width) : line + String(repeating: " ", count: width - line.unstyledWidth)
+        }
+    }
+
+    func activityHelp(_ activity: TUIActivity) -> String {
+        switch activity.state {
+        case .running:
+            " Esc or Ctrl-C to stop"
+        case .stopping:
+            " Stopping…"
+        case .finished:
+            " Return to go back to the list"
+        }
+    }
+
+    private func prefix(for kind: TUIActivity.Line.Kind) -> String {
+        switch kind {
+        case .section: ""
+        case .plain: "  "
+        case .success: "  "
+        case .warning: "  ⚠ "
+        case .error: "  ✗ "
+        case .check(.running): "  … "
+        case .check(.passed): "  ✓ "
+        case .check(.failed): "  ✗ "
+        }
+    }
+
+    private func style(for kind: TUIActivity.Line.Kind) -> Style {
+        switch kind {
+        case .section: .heading
+        case .plain, .check(.running), .check(.passed): .plain
+        case .success: .success
+        case .warning: .warning
+        case .error, .check(.failed): .error
+        }
     }
 
     func box(_ dialog: TUIDialog, width: Int) -> [String] {
@@ -152,6 +215,10 @@ public struct TUIRenderer: Sendable {
         case selected
         case dim
         case dialog
+        case plain
+        case success
+        case warning
+        case error
     }
 
     private func style(_ text: String, _ style: Style) -> String {
@@ -167,6 +234,14 @@ public struct TUIRenderer: Sendable {
             "2"
         case .dialog:
             "1"
+        case .plain:
+            "0"
+        case .success:
+            "32"
+        case .warning:
+            "33"
+        case .error:
+            "31"
         }
         return "\u{1B}[\(code)m\(text)\u{1B}[0m"
     }
@@ -174,7 +249,7 @@ public struct TUIRenderer: Sendable {
 
 extension String {
     var unstyledWidth: Int {
-        replacingOccurrences(of: "\u{1B}\\[[0-9;]*m", with: "", options: .regularExpression).count
+        unstyled.count
     }
 
     func truncated(to width: Int) -> String {

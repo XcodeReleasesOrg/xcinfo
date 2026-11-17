@@ -36,6 +36,7 @@ public struct TUIModel: Sendable, Equatable {
     public var selection = 0
     public var status: String?
     public var dialog: TUIDialog?
+    public var activity: TUIActivity?
 
     public init(sections: [TUISection], status: String? = nil) {
         self.sections = sections
