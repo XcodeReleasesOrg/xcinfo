@@ -75,7 +75,8 @@ $ brew install xcinfo
 `download` and `install` sign in to the Apple Developer Portal with SRP, like Xcode does, so the password is never sent.
 
 - xcinfo keeps one Keychain item named `xcinfo` with your Apple ID account name and the Apple session. It never stores your password: it asks for it only when Apple needs a new sign-in.
-- Of Apple's cookies, the session keeps only those needed to reuse it, authorize downloads and skip two-factor authentication on this Mac (`myacinfo`, `DES…`, `ADCDownloadAuth`, `DSESSIONID`, `dqsid`, `itctx`, `itcdq`, `acn01`, `aasp`) and drops expired ones. `-v` lists which cookies were kept and dropped.
+- Of Apple's cookies, the session keeps only those needed to reuse it, authorize downloads and skip two-factor authentication on this Mac (`myacinfo`, `DES…`, `ADCDownloadAuth`, `DSESSIONID`, `dqsid`, `itctx`, `itcdq`, `acn01`, `aasp`) and drops expired ones. `-v` lists which cookies were kept and dropped, and why.
+- Apple's cookies are held in memory during a run and saved only in that Keychain item. Older versions also left them in `~/Library/HTTPStorages/xcinfo.binarycookies`; xcinfo removes the Apple cookies from that file on its next sign-in or `cleanup`.
 - The prompts name the password they want: `Apple ID password for <account> (not your Mac password):` for the sign-in, `Mac administrator password for <user> (sudo):` when `install` needs administrator rights. Two-factor codes come from a trusted Apple device, or by text message after typing `sms`.
 - If Apple rejects the password, xcinfo stops and does not retry. Repeated failed sign-ins can lock your Apple ID.
 - The item is read once per run. macOS asks you to allow access when the item was created by a different build of xcinfo. Builds signed with the same identity keep that approval: `make CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" install`.

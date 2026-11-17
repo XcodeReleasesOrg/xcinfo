@@ -219,13 +219,26 @@ struct DownloaderTests {
     }
 
     @Test
-    func `downloads use long timeouts and the shared cookies`() {
+    func `downloads use long timeouts and share in-memory cookies with the sign-in`() {
         let configuration = URLSession.xcinfoDownloads.configuration
 
         #expect(configuration.timeoutIntervalForRequest == 60)
         #expect(configuration.timeoutIntervalForResource == 60 * 60 * 24)
-        #expect(configuration.httpCookieStorage === HTTPCookieStorage.shared)
-        #expect(URLSession.xcinfo.configuration.httpCookieStorage === HTTPCookieStorage.shared)
+        #expect(configuration.httpCookieStorage === HTTPCookieStorage.xcinfo)
+        #expect(URLSession.xcinfo.configuration.httpCookieStorage === HTTPCookieStorage.xcinfo)
+        #expect(HTTPCookieStorage.xcinfo !== HTTPCookieStorage.shared)
+    }
+
+    @Test
+    func `removing apple cookies keeps other cookies`() throws {
+        let storage = try #require(URLSessionConfiguration.ephemeral.httpCookieStorage)
+        for (name, domain) in [("myacinfo", ".apple.com"), ("dqsid", "appstoreconnect.apple.com"), ("other", "example.com")] {
+            storage.setCookie(try #require(HTTPCookie(properties: [.name: name, .value: "1", .domain: domain, .path: "/"])))
+        }
+
+        storage.removeAppleCookies()
+
+        #expect(storage.cookies?.map(\.name) == ["other"])
     }
 }
 
