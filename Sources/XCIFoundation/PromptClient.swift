@@ -42,8 +42,7 @@ public struct ConsolePrompt: Sendable {
     public static let standard = ConsolePrompt(
         read: { Swift.readLine() },
         write: { text, terminator in
-            print(text, terminator: terminator)
-            fflush(nil)
+            FileHandle.standardError.write(Data((text + terminator).utf8))
         }
     )
 
