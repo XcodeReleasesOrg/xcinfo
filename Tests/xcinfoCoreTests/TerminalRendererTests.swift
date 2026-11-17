@@ -113,9 +113,11 @@ struct TerminalRendererTests {
         let renderer = captured.renderer(terminal)
 
         renderer.render(.progress(OutputProgress(title: "Downloading", fraction: 0.5, detail: "1 GB remaining")))
-        renderer.render(.progress(OutputProgress(title: "Downloading", fraction: 1, detail: "done")))
+        renderer.render(.progress(OutputProgress(title: "Downloading", fraction: 1, detail: "0 bytes remaining")))
+        renderer.render(.progress(OutputProgress(title: "Downloading", fraction: 1, detail: "done", isFinished: true)))
 
         #expect(captured.output == "\r\u{1B}[KDownloading: [██████████          ] 50.0% 1 GB remaining"
+            + "\r\u{1B}[KDownloading: [████████████████████] 100.0% 0 bytes remaining"
             + "\r\u{1B}[KDownloading: [████████████████████] 100.0% done\n")
     }
 
@@ -127,7 +129,7 @@ struct TerminalRendererTests {
         renderer.render(.progress(OutputProgress(title: "Extracting", fraction: 0.05)))
         renderer.render(.progress(OutputProgress(title: "Extracting", fraction: 0.1, isMilestone: true)))
         renderer.render(.progress(OutputProgress(title: "Extracting", fraction: 0.15)))
-        renderer.render(.progress(OutputProgress(title: "Extracting", fraction: 1, detail: "done")))
+        renderer.render(.progress(OutputProgress(title: "Extracting", fraction: 1, detail: "done", isFinished: true)))
 
         #expect(captured.output == "Extracting: 10 %\nExtracting: 100 %, done\n")
     }

@@ -261,7 +261,7 @@ public struct Core: Sendable {
 
         let start = ContinuousClock.now
         defer {
-            logger.verbose("Extraction time: \(start.duration(to: .now).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated)))")
+            logger.verbose("Extraction time: \(start.duration(to: .now).englishDescription)")
         }
 
         do {
