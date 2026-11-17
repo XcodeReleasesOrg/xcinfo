@@ -64,7 +64,7 @@ private func perform(_ command: TUICommand, core: Core) async throws {
         try await core.install(
             options: .init(
                 version: .version(xcode.version.build ?? xcode.displayVersion),
-                xipFile: nil,
+                archiveFile: nil,
                 downloadOptions: .init(destination: downloadsDirectory, disableSleep: true),
                 extractionOptions: .init(destination: URL(fileURLWithPath: "/Applications"))
             ),

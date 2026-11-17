@@ -39,8 +39,8 @@ public enum CoreError: LocalizedError, Sendable {
             return "No Xcode found for given version '\(version)'."
         case let .extractionFailed(error):
             return error.localizedDescription
-        case let .unsupportedFile(fileExtension):
-            return "'\(fileExtension)' is not supported."
+        case let .unsupportedFile(name):
+            return "\(name) is not a .xip or .aea archive."
         case .installationFailed:
             return "Xcode could not be installed."
         case let .gatekeeperVerificationFailed(url):
@@ -99,29 +99,29 @@ public struct Core: Sendable {
     public struct InstallationOptions: Sendable {
         public init(
             version: XcodeVersion,
-            xipFile: URL?,
+            archiveFile: URL?,
             downloadOptions: Core.DownloadOptions,
             extractionOptions: Core.ExtractionOptions,
             skipSymlinkCreation: Bool = false,
             skipXcodeSelection: Bool = false,
-            shouldPreserveXIP: Bool = false
+            shouldPreserveArchive: Bool = false
         ) {
             self.version = version
-            self.xipFile = xipFile
+            self.archiveFile = archiveFile
             self.downloadOptions = downloadOptions
             self.extractionOptions = extractionOptions
             self.skipSymlinkCreation = skipSymlinkCreation
             self.skipXcodeSelection = skipXcodeSelection
-            self.shouldPreserveXIP = shouldPreserveXIP
+            self.shouldPreserveArchive = shouldPreserveArchive
         }
 
         public var version: XcodeVersion
-        public var xipFile: URL?
+        public var archiveFile: URL?
         public var downloadOptions: DownloadOptions
         public var extractionOptions: ExtractionOptions
         public var skipSymlinkCreation = false
         public var skipXcodeSelection = false
-        public var shouldPreserveXIP = true
+        public var shouldPreserveArchive = true
     }
 
     @Dependency(\.logger) private var logger
@@ -195,6 +195,10 @@ public struct Core: Sendable {
     }
 
     private func checksumMismatch(of archive: URL, xcode: Xcode) async throws -> CoreError? {
+        if ArchiveFormat(contentsOf: archive) == .aea {
+            logger.log("xcodereleases.com lists no SHA-1 for the .aea archive. Its Apple signature is checked during extraction instead.")
+            return nil
+        }
         guard let expected = xcode.checksums?.sha1?.lowercased(), !expected.isEmpty else {
             logger.verbose("xcodereleases.com has no checksum for Xcode \(xcode.displayVersion); skipping the SHA-1 check.")
             return nil
@@ -213,7 +217,7 @@ public struct Core: Sendable {
 
         let downloadResult: DownloadResult
 
-        if let url = options.xipFile {
+        if let url = options.archiveFile {
             let xcode = try await identifyVersion(options.version, updateVersionList: updateVersionList)
             if options.downloadOptions.verifiesChecksum, let mismatch = try await checksumMismatch(of: url, xcode: xcode) {
                 logger.warn(mismatch.localizedDescription)
@@ -230,13 +234,13 @@ public struct Core: Sendable {
             )
         }
 
-        let applicationURL = try await extractXIP(
+        let applicationURL = try await extractArchive(
             source: downloadResult.url,
             options: options.extractionOptions,
             xcode: downloadResult.xcode
         )
 
-        if !options.shouldPreserveXIP, options.xipFile == nil {
+        if !options.shouldPreserveArchive, options.archiveFile == nil {
             try deleteDownload(at: downloadResult.url)
         }
 
@@ -303,16 +307,17 @@ public struct Core: Sendable {
     }
 
     @discardableResult
-    public func extractXIP(
+    public func extractArchive(
         source: URL,
         options: ExtractionOptions,
         xcode: Xcode? = nil
     ) async throws -> URL {
         logger.beginSection("Extracting")
 
-        guard source.pathExtension.lowercased() == "xip" else {
-            throw CoreError.unsupportedFile(source.pathExtension)
+        guard let format = ArchiveFormat(contentsOf: source) else {
+            throw CoreError.unsupportedFile(source.lastPathComponent)
         }
+        logger.verbose("\(source.lastPathComponent) is a .\(format.rawValue) archive.")
 
         let start = ContinuousClock.now
         defer {

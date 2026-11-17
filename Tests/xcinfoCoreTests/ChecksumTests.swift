@@ -5,8 +5,8 @@ import XCIFoundation
 @testable import xcinfoCore
 
 struct ChecksumTests {
-    private let content = Data("xip-content".utf8)
-    private let sha1 = "307e331cd13ea697d5f12845f57b419311533123"
+    private let content = Data("xar!xip-content".utf8)
+    private let sha1 = "8e4a6d65179ce1b5a3ad04a1c6472a744c410621"
     private let wrongSHA1 = "0000000000000000000000000000000000000000"
 
     private func downloadingCore(logs: LogRecorder, caches: TemporaryDirectory, archive: URL, sha1: String?) -> Core {
@@ -80,6 +80,20 @@ struct ChecksumTests {
     }
 
     @Test
+    func `an aea archive is never compared with the xip checksum`() async throws {
+        let caches = try TemporaryDirectory()
+        let archive = try caches.file("Xcode.aea", contents: Data("AEA1signed".utf8))
+        let logs = LogRecorder()
+        let core = downloadingCore(logs: logs, caches: caches, archive: archive, sha1: sha1)
+
+        let (_, url) = try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+
+        #expect(url == archive)
+        #expect(logs.progress.isEmpty)
+        #expect(logs.messages.contains("xcodereleases.com lists no SHA-1 for the .aea archive. Its Apple signature is checked during extraction instead."))
+    }
+
+    @Test
     func `no verify skips the check`() async throws {
         let caches = try TemporaryDirectory()
         let archive = try caches.file("Xcode.xip", contents: content)
@@ -119,12 +133,12 @@ struct ChecksumTests {
         )
         let options = Core.InstallationOptions(
             version: .version("15.0"),
-            xipFile: archive,
+            archiveFile: archive,
             downloadOptions: .init(destination: caches.url, disableSleep: false),
             extractionOptions: .init(destination: applications.url),
             skipSymlinkCreation: true,
             skipXcodeSelection: true,
-            shouldPreserveXIP: true
+            shouldPreserveArchive: true
         )
 
         if agrees {
