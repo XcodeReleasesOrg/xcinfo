@@ -225,7 +225,7 @@ extension Core {
         downloadListing: DownloadListing? = nil,
         cleanupAuthentication: (@Sendable () async -> Void)? = nil,
         download: (@Sendable (URL, URL, Bool) async throws -> URL)? = nil,
-        extract: (@Sendable (URL, URL, String?, Bool) async throws -> URL)? = nil,
+        extract: (@Sendable (URL, URL, String?) async throws -> URL)? = nil,
         shell: FakeShell? = nil,
         prompt: FakePrompt? = nil,
         applicationsDirectory: URL,

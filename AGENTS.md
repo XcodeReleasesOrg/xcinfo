@@ -10,7 +10,6 @@
   - `xcinfoCore`: all behaviour. `Core` is the entry point; every side effect goes through a client in `Dependencies.swift`, read with `@Dependency`
   - `OlympUs`: Apple ID sign-in and developer portal session (an `actor`)
   - `XCIFoundation`: `Logger`, Keychain access and small extensions
-  - `XCUnxip`: Objective-C header for the private `PKSignedContainer` (legacy extraction via `--use-system-unxip`)
 - Dependency injection uses swift-dependencies (no TCA). One client per concern (`xcodeReleases`, `credentials`, `authentication`, `downloads`, `extraction`, `processes`, `fileSystem`, `keychain`, `workspace`, `logger`, `prompt`), declared with `@DependencyClient` and `DependencyKey` (`liveValue` and an unimplemented `testValue`). Use the built-in `\.continuousClock` and `\.date` for time
 - Dependencies come through SPM only. In `Package.swift`, list `dependencies` alphabetically by URL and give every Swift target `swiftSettings` (warnings are errors)
 - `XCModel` (`xcodereleases/data`) is pinned to a revision because the model moved to another repository; updating it is a separate change, not a drive-by bump

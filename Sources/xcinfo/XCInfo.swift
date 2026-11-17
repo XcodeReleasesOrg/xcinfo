@@ -146,10 +146,14 @@ struct ExtractionOptions: ParsableArguments {
     )
     var installationDirectory: URL = .init(fileURLWithPath: "/Applications")
 
-    @Flag(
-        help: "Uses system (much slower) version of unxip for .xip archives."
-    )
+    @Flag(help: .hidden)
     var useSystemUnxip: Bool = false
+
+    func reportDeprecations(to output: TerminalRenderer) {
+        if useSystemUnxip {
+            output.render(.message("--use-system-unxip is no longer needed: xcinfo always extracts .xip archives with its built-in unxip.", .warning))
+        }
+    }
 }
 
 struct InstallationOptions: ParsableArguments {

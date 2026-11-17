@@ -178,7 +178,6 @@ struct CommandLineTests {
         #expect(options.extractionOptions.installationDirectory.path == "/tmp/Apps")
         #expect(options.downloadOptions.downloadDirectory.path == "/tmp/Downloads")
         #expect(options.extractionOptions.useSystemUnxip)
-        #expect(options.extractionOptions.options.useLegacyUnxip)
         #expect(options.extractionOptions.options.destination.path == "/tmp/Apps")
         #expect(options.shouldPreserveArchive)
         #expect(options.skipSymlinkCreation)
@@ -212,6 +211,12 @@ struct CommandLineTests {
         #expect(try parse(XCInfo.Download.self, ["download", "15.0", "--archive-format", "aea"]).downloadOptions.options.archiveFormat == .aea)
         #expect(try parse(XCInfo.Install.self, ["install", "15.0", "--archive-format", "xip"]).installationOptions.downloadOptions.options.archiveFormat == .xip)
         #expect(throws: (any Error).self) { try parse(XCInfo.Download.self, ["download", "15.0", "--archive-format", "dmg"]) }
+    }
+
+    @Test
+    func `use system unxip is still accepted but hidden`() throws {
+        #expect(try parse(XCInfo.Extract.self, ["extract", "/tmp/Xcode.xip", "--use-system-unxip"]).extractionOptions.useSystemUnxip)
+        #expect(!XCInfo.Extract.helpMessage().contains("use-system-unxip"))
     }
 
     @Test

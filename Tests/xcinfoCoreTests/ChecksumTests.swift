@@ -122,7 +122,7 @@ struct ChecksumTests {
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            extract: { source, destination, filename, _ in
+            extract: { source, destination, filename in
                 extractions.append(source.lastPathComponent)
                 return destination.appendingPathComponent(filename ?? "Xcode.app")
             },

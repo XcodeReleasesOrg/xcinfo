@@ -134,6 +134,7 @@ Xcode comes as `.xip` and, from Xcode 27.3, also as Apple Encrypted Archive (`.a
 - `install --archive-path <file>` needs no version: xcinfo reads the build from the extracted app and looks it up on xcodereleases.com. A version given as well is used, with a warning if the archive contains another build.
 - Downloads take the format from Apple's download list: the `.xip` when Apple offers both, the `.aea` when that is all there is. `--archive-format xip|aea` forces one; if Apple does not offer it, the command stops and says what is offered. Without a list, a missing `.xip` (HTTP 404) is retried as the `.aea` at the same path, and the output says that this address was derived.
 - If the archive is already in the download folder, xcinfo checks it first (SHA-1 for a `.xip`, Apple signature for an `.aea`) and uses it instead of downloading again. A file it cannot confirm is never replaced silently: on a terminal xcinfo asks, otherwise it stops; `--overwrite` moves the old file to the Trash and downloads anew.
+- `.xip` archives are always extracted with the built-in unxip. `--use-system-unxip` is still accepted but only prints that it is no longer needed.
 - `--archive-path` and `--preserve-archive` replace `--xip-path` and `--preserve-xip`, which still work.
 - `-v` during a download lists which Xcode archives Apple offers and which of them as `.aea`.
 

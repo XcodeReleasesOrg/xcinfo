@@ -110,13 +110,11 @@ public struct Core: Sendable {
     }
 
     public struct ExtractionOptions: Sendable {
-        public init(destination: URL, useLegacyUnxip: Bool = false) {
+        public init(destination: URL) {
             self.destination = destination
-            self.useLegacyUnxip = useLegacyUnxip
         }
 
         public var destination: URL
-        public var useLegacyUnxip: Bool
     }
 
     public struct InstallationOptions: Sendable {
@@ -472,8 +470,7 @@ public struct Core: Sendable {
             let destinationURL = try await extraction.extract(
                 source,
                 options.destination,
-                appFilename,
-                options.useLegacyUnxip
+                appFilename
             )
             logger.success("Extracted to \(destinationURL.path)")
             return destinationURL
