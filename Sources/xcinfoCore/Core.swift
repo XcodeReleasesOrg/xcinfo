@@ -95,8 +95,10 @@ public struct Core: Sendable {
             disableSleep: Bool,
             verifiesChecksum: Bool = true,
             archiveFormat: ArchiveFormat? = nil,
-            overwritesExistingFile: Bool = false
+            overwritesExistingFile: Bool = false,
+            architecture: XcodeArchitecture? = nil
         ) {
+            self.architecture = architecture
             self.overwritesExistingFile = overwritesExistingFile
             self.destination = destination
             self.disableSleep = disableSleep
@@ -106,6 +108,7 @@ public struct Core: Sendable {
 
         public var archiveFormat: ArchiveFormat?
         public var overwritesExistingFile: Bool
+        public var architecture: XcodeArchitecture?
 
         public var destination: URL
         public var disableSleep: Bool
@@ -183,7 +186,7 @@ public struct Core: Sendable {
         options: DownloadOptions,
         updateVersionList: Bool
     ) async throws -> (Xcode, URL) {
-        let xcode = try await identifyVersion(version, updateVersionList: updateVersionList)
+        let xcode = try await identifyVersion(version, updateVersionList: updateVersionList, variant: .automatic(options.architecture))
 
         guard let url = xcode.links?.download?.url else {
             throw CoreError.invalidDownloadURL
@@ -331,7 +334,11 @@ public struct Core: Sendable {
         }
 
         if let url = options.archiveFile {
-            let xcode = try await identifyVersion(version, updateVersionList: updateVersionList)
+            let xcode = try await identifyVersion(
+                version,
+                updateVersionList: updateVersionList,
+                variant: .automatic(options.downloadOptions.architecture)
+            )
             if options.downloadOptions.verifiesChecksum, let mismatch = try await checksumMismatch(of: url, xcode: xcode) {
                 logger.warn(mismatch.localizedDescription)
                 guard try await prompt.agree("Install from this archive anyway?") else {
@@ -575,9 +582,17 @@ public struct XcodeList: Sendable {
 }
 
 extension Core {
-    private func identifyVersion(_ version: XcodeVersion, updateVersionList: Bool) async throws -> Xcode {
+    private enum VariantChoice {
+        case ask
+        case automatic(XcodeArchitecture?)
+    }
+
+    private func identifyVersion(_ version: XcodeVersion, updateVersionList: Bool, variant: VariantChoice = .ask) async throws -> Xcode {
         logger.beginSection("Identifying")
-        let availableXcodes = try await findXcodes(for: version, shouldUpdate: updateVersionList)
+        var availableXcodes = try await findXcodes(for: version, shouldUpdate: updateVersionList)
+        if case let .automatic(requested) = variant {
+            availableXcodes = choosingVariant(of: availableXcodes, requested: requested)
+        }
 
         guard
             let xcode = try await chooseXcode(
@@ -772,6 +787,25 @@ extension Core {
             }
         }
         return (fullVersion, betaVersion)
+    }
+
+    private func choosingVariant(of xcodes: [Xcode], requested: XcodeArchitecture?) -> [Xcode] {
+        guard xcodes.contains(where: { xcode in xcodes.contains { $0.isVariant(of: xcode) } }) else { return xcodes }
+        let preferred = requested ?? (processes.isAppleSilicon() ? .appleSilicon : .universal)
+        let chosen = xcodes.filter { xcode in
+            guard let architecture = xcode.architecture, architecture != preferred else { return true }
+            return !xcodes.contains { $0.isVariant(of: xcode) && $0.architecture == preferred }
+        }
+        if chosen.count < xcodes.count {
+            let reason = switch (requested, preferred) {
+            case (.some, .appleSilicon): "as requested with --apple-silicon"
+            case (.some, .universal): "as requested with --universal"
+            case (nil, .appleSilicon): "because this Mac has Apple silicon; use --universal for the other one"
+            case (nil, .universal): "because this Mac has an Intel processor; use --apple-silicon for the other one"
+            }
+            logger.log("Using the \(preferred.label) download \(reason).")
+        }
+        return chosen
     }
 
     private func chooseXcode(version: XcodeVersion, from xcodes: [Xcode], prompt: String) async throws -> Xcode? {

@@ -85,4 +85,100 @@ struct ArchitectureTests {
 
         #expect(downloaded.values == ["Xcode_26.6_Universal.xip"])
     }
+
+    @Test(arguments: [
+        (true, XcodeArchitecture?.none, XcodeArchitecture.appleSilicon, "Using the Apple silicon download because this Mac has Apple silicon; use --universal for the other one."),
+        (false, nil, .universal, "Using the Universal download because this Mac has an Intel processor; use --apple-silicon for the other one."),
+        (true, .universal, .universal, "Using the Universal download as requested with --universal."),
+        (false, .appleSilicon, .appleSilicon, "Using the Apple silicon download as requested with --apple-silicon."),
+    ])
+    func `download picks the variant for this Mac without asking`(
+        isAppleSilicon: Bool,
+        requested: XcodeArchitecture?,
+        expected: XcodeArchitecture,
+        message: String
+    ) async throws {
+        let caches = try TemporaryDirectory()
+        let downloads = try TemporaryDirectory()
+        let logs = LogRecorder()
+        let downloaded = Recorder<String>()
+        let core = Core.test(
+            logs: logs,
+            cachesDirectory: caches.url,
+            listXcodes: { [appleSilicon, universal, .fixture("26.5", build: "17F42")] },
+            accountName: { "appleid@example.invalid" },
+            password: { _ in "secret" },
+            authenticate: { _, _ in },
+            download: { url, destination, _ in
+                downloaded.append(url.lastPathComponent)
+                return destination.appendingPathComponent(url.lastPathComponent)
+            },
+            isAppleSilicon: isAppleSilicon,
+            prompt: FakePrompt(),
+            applicationsDirectory: caches.url
+        )
+
+        let (xcode, _) = try await core.download(
+            version: .version("26.6"),
+            options: .init(destination: downloads.url, disableSleep: false, architecture: requested),
+            updateVersionList: true
+        )
+
+        #expect(xcode.architecture == expected)
+        #expect(downloaded.values == [expected == .appleSilicon ? "Xcode_26.6_Apple_silicon.xip" : "Xcode_26.6_Universal.xip"])
+        #expect(logs.messages.contains(message))
+        #expect(logs.messages.contains("Found matching Xcode \(xcode.labeledName)."))
+    }
+
+    @Test
+    func `info still asks between variants`() async throws {
+        let caches = try TemporaryDirectory()
+        let prompt = FakePrompt(choices: [0])
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            listXcodes: { [appleSilicon, universal] },
+            prompt: prompt,
+            applicationsDirectory: caches.url
+        )
+
+        _ = try await core.info(version: .version("26.6"), shouldUpdate: true)
+
+        #expect(prompt.chosen.values.count == 1)
+    }
+
+    @Test
+    func `variant flags are parsed for download and install`() throws {
+        #expect(try XCInfo.Download.parse(["26.6"]).downloadOptions.options.architecture == nil)
+        #expect(try XCInfo.Download.parse(["26.6", "--universal"]).downloadOptions.options.architecture == .universal)
+        #expect(try XCInfo.Install.parse(["26.6", "--apple-silicon"]).installationOptions.downloadOptions.options.architecture == .appleSilicon)
+        #expect(throws: (any Error).self) {
+            try XCInfo.Download.parse(["26.6", "--universal", "--apple-silicon"])
+        }
+    }
+
+    @Test
+    func `with non-interactive the variant is chosen without failing`() async throws {
+        let caches = try TemporaryDirectory()
+        let downloaded = Recorder<String>()
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            listXcodes: { [appleSilicon, universal] },
+            accountName: { "appleid@example.invalid" },
+            password: { _ in "secret" },
+            authenticate: { _, _ in },
+            download: { url, destination, _ in
+                downloaded.append(url.lastPathComponent)
+                return destination.appendingPathComponent(url.lastPathComponent)
+            },
+            isAppleSilicon: true,
+            promptClient: .unavailable,
+            applicationsDirectory: caches.url
+        )
+
+        _ = try await core.download(version: .version("26.6"), options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+
+        #expect(downloaded.values == ["Xcode_26.6_Apple_silicon.xip"])
+    }
 }

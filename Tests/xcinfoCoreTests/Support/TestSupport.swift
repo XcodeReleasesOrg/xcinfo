@@ -160,7 +160,8 @@ final class FakeShell: Sendable {
                 let result = handler(call)
                 return ProcessResult(exitStatus: result.exitStatus, stdout: result.stdout, stderr: result.stderr)
             },
-            isRunningAsRoot: { [isRoot] in isRoot }
+            isRunningAsRoot: { [isRoot] in isRoot },
+            isAppleSilicon: { true }
         )
     }
 
@@ -236,6 +237,7 @@ extension Core {
         download: (@Sendable (URL, URL, Bool) async throws -> URL)? = nil,
         extract: (@Sendable (URL, URL, String?) async throws -> URL)? = nil,
         shell: FakeShell? = nil,
+        isAppleSilicon: Bool? = nil,
         prompt: FakePrompt? = nil,
         promptClient: PromptClient? = nil,
         applicationsDirectory: URL,
@@ -272,6 +274,7 @@ extension Core {
             if let download { $0.downloads.download = download }
             if let extract { $0.extraction.extract = extract }
             if let shell { $0.processes = shell.client }
+            if let isAppleSilicon { $0.processes.isAppleSilicon = { isAppleSilicon } }
             if let prompt { $0.prompt = prompt.client }
             if let promptClient { $0.prompt = promptClient }
             if let revealInFinder { $0.workspace.revealInFinder = { revealInFinder($0) } }
