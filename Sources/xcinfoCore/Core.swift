@@ -167,7 +167,7 @@ public struct Core: Sendable {
     public init() {}
 
     public func info(version: XcodeVersion, shouldUpdate: Bool) async throws -> Xcode {
-        try await identifyVersion(version, updateVersionList: shouldUpdate)
+        try await identifyVersion(version, updateVersionList: shouldUpdate, question: "Please choose a version:")
     }
 
     public func installedXcodes(shouldUpdate: Bool) async throws -> [XcodeApplication] {
@@ -186,7 +186,21 @@ public struct Core: Sendable {
         options: DownloadOptions,
         updateVersionList: Bool
     ) async throws -> (Xcode, URL) {
-        let xcode = try await identifyVersion(version, updateVersionList: updateVersionList, variant: .automatic(options.architecture))
+        try await download(version: version, options: options, updateVersionList: updateVersionList, question: "Please choose the version to download:")
+    }
+
+    private func download(
+        version: XcodeVersion,
+        options: DownloadOptions,
+        updateVersionList: Bool,
+        question: String
+    ) async throws -> (Xcode, URL) {
+        let xcode = try await identifyVersion(
+            version,
+            updateVersionList: updateVersionList,
+            question: question,
+            variant: .automatic(options.architecture)
+        )
 
         guard let url = xcode.links?.download?.url else {
             throw CoreError.invalidDownloadURL
@@ -337,6 +351,7 @@ public struct Core: Sendable {
             let xcode = try await identifyVersion(
                 version,
                 updateVersionList: updateVersionList,
+                question: "Please choose the version to install:",
                 variant: .automatic(options.downloadOptions.architecture)
             )
             if options.downloadOptions.verifiesChecksum, let mismatch = try await checksumMismatch(of: url, xcode: xcode) {
@@ -350,7 +365,8 @@ public struct Core: Sendable {
             downloadResult = try await download(
                 version: version,
                 options: options.downloadOptions,
-                updateVersionList: updateVersionList
+                updateVersionList: updateVersionList,
+                question: "Please choose the version to install:"
             )
         }
 
@@ -597,7 +613,12 @@ extension Core {
         case automatic(XcodeArchitecture?)
     }
 
-    private func identifyVersion(_ version: XcodeVersion, updateVersionList: Bool, variant: VariantChoice = .ask) async throws -> Xcode {
+    private func identifyVersion(
+        _ version: XcodeVersion,
+        updateVersionList: Bool,
+        question: String,
+        variant: VariantChoice = .ask
+    ) async throws -> Xcode {
         logger.beginSection("Identifying")
         var availableXcodes = try await findXcodes(for: version, shouldUpdate: updateVersionList)
         if case let .automatic(requested) = variant {
@@ -608,7 +629,7 @@ extension Core {
             let xcode = try await chooseXcode(
                 version: version,
                 from: availableXcodes,
-                prompt: "Please choose the version you want to install: "
+                prompt: question + " "
             )
         else {
             throw CoreError.versionNotFound(version)

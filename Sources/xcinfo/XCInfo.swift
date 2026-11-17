@@ -83,6 +83,8 @@ struct DefaultOptions: ParsableArguments {
                 $0.logger = renderer.logger
                 if isNonInteractive {
                     $0.prompt = .unavailable
+                } else if isJSON || isatty(STDIN_FILENO) == 0 {
+                    $0.prompt.choose = PromptClient.unavailable.choose
                 }
             } operation: {
                 try await operation(Core(), renderer)

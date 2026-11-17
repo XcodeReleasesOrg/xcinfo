@@ -17,11 +17,11 @@ struct NonInteractiveTests {
 
     @Test
     func `an unanswerable question names the question and the choices and exits with 10`() {
-        let error = PromptUnavailable(question: "Please choose the version you want to install: ", choices: ["15.0 (15A240d)", "15.0.1 (15A507)"])
+        let error = PromptUnavailable(question: "Please choose a version: ", choices: ["15.0 (15A240d)", "15.0.1 (15A507)"])
 
         #expect(error.exitCode == 10)
         let description = error.localizedDescription
-        #expect(description.contains("\"Please choose the version you want to install:\""))
+        #expect(description.contains("\"Please choose a version:\""))
         #expect(description.contains("  15.0 (15A240d)\n  15.0.1 (15A507)"))
         #expect(description.contains("--non-interactive"))
     }
@@ -47,7 +47,7 @@ struct NonInteractiveTests {
             applicationsDirectory: caches.url
         )
 
-        await #expect(throws: PromptUnavailable(question: "Please choose the version you want to install: ", choices: ["15.0 Beta 1 (15A240d)", "15.0 Beta 2 (15A507)"])) {
+        await #expect(throws: PromptUnavailable(question: "Please choose a version: ", choices: ["15.0 Beta 1 (15A240d)", "15.0 Beta 2 (15A507)"])) {
             try await core.info(version: .version("15 beta"), shouldUpdate: true)
         }
     }
@@ -101,5 +101,49 @@ struct NonInteractiveTests {
         #expect(shell.privilegedCalls.allSatisfy { $0.password == "" })
         #expect(logs.messages.contains("Running as root, so the privileged steps run without sudo."))
         #expect(!logs.messages.contains { $0.contains("needs administrator rights") })
+    }
+}
+
+struct QuestionWordingTests {
+    @Test(arguments: [
+        (CredentialsError.accountNameUnavailable, Int32(10)),
+        (.passwordUnavailable, 10),
+        (.invalidPassword, 4),
+        (.keychainError("denied"), 4),
+    ])
+    func `missing credentials exit like any other unanswerable question`(error: CredentialsError, code: Int32) {
+        #expect(error.exitCode == code)
+    }
+
+    @Test
+    func `the version question names what the command does`() async throws {
+        let caches = try TemporaryDirectory()
+        let xcodes = [Xcode.fixture("15.0", build: "15A1", release: .beta(1)), .fixture("15.0", build: "15A2", release: .beta(2))]
+        let prompt = FakePrompt(choices: [0])
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            listXcodes: { xcodes },
+            accountName: { "appleid@example.invalid" },
+            password: { _ in "secret" },
+            authenticate: { _, _ in },
+            download: { url, destination, _ in destination.appendingPathComponent(url.lastPathComponent) },
+            promptClient: PromptClient(
+                ask: { _, _, _ in "" },
+                choose: { question, _ in
+                    prompt.asked.append(question)
+                    return 0
+                },
+                agree: { _ in true },
+                readLine: { _ in "" },
+                readSecret: { _ in "" }
+            ),
+            applicationsDirectory: caches.url
+        )
+
+        _ = try await core.info(version: .version("15 beta"), shouldUpdate: true)
+        _ = try await core.download(version: .version("15 beta"), options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+
+        #expect(prompt.asked.values == ["Please choose a version: ", "Please choose the version to download: "])
     }
 }

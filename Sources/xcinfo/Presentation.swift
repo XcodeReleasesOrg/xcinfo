@@ -32,8 +32,13 @@ extension Error {
             case .uninstallationFailed:
                 8
             }
-        case is CredentialsError:
-            4
+        case let error as CredentialsError:
+            switch error {
+            case .accountNameUnavailable, .passwordUnavailable:
+                10
+            case .keychainError, .invalidPassword:
+                4
+            }
         case is KeychainAccessError:
             4
         case is XCAPIError, is DecodingError, is URLError, is CocoaError:
