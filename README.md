@@ -21,8 +21,8 @@ SUBCOMMANDS:
 ```
 
 ## Requirements
-- macOS 10.15 (Catalina)
-- Swift 5.1
+- macOS 13 (Ventura)
+- Swift 6.4 (to build from source)
 
 ## Installation
 
