@@ -25,16 +25,14 @@ public struct OutputProgress: Sendable, Equatable {
     public var fraction: Double
     public var detail: String?
     public var isMilestone: Bool
+    public var isFinished: Bool
 
-    public init(title: String, fraction: Double, detail: String? = nil, isMilestone: Bool = false) {
+    public init(title: String, fraction: Double, detail: String? = nil, isMilestone: Bool = false, isFinished: Bool = false) {
         self.title = title
         self.fraction = fraction
         self.detail = detail
         self.isMilestone = isMilestone
-    }
-
-    public var isFinished: Bool {
-        fraction >= 1
+        self.isFinished = isFinished
     }
 }
 
