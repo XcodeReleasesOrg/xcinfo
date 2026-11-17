@@ -50,6 +50,7 @@
 - Resizes are picked up by checking the size on every tick, not with a signal handler. Every exit path, Ctrl-C included, restores the terminal
 - Actions run inside the full-screen view as a child task: Core's output events and questions arrive through `TUISession` (logger and an async `PromptClient`) in the same input stream as the keys. Questions open `TUIDialog`s; secrets are shown as dots and not kept after Return. Esc or Ctrl-C cancels the action task; a cancelled question answers every later one with "cancelled", and sudo is never run with an empty password
 - macOS does not show its Keychain dialog while the terminal UI is in raw mode. The terminal UI therefore reads the Keychain lazily, once, when a download or install first needs it: it hands the terminal back in cooked mode for the read (`TUISession.withTerminalReleased`), pauses key reading, and returns to raw mode with pending input discarded. "Try the Keychain again" after a refused read leaves the full-screen view completely. `-v` or `XCINFO_DEBUG_KEYCHAIN=1` logs the terminal state used for the read
+- Verified by hand on 2026-11-17: an install inside the terminal UI (release build), with the Keychain dialog appearing at the first action, download or verification, extraction with progress and the setup steps
 - `SIGTERM` and `SIGHUP` end the UI through `InterruptSignals` and restore the terminal
 
 ## Apple sign-in
