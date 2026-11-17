@@ -64,13 +64,16 @@ private let downloadsDirectory = URL(fileURLWithPath: "\(NSHomeDirectory())/Down
 
 private func perform(_ command: TUICommand, core: Core) async throws {
     switch command {
-    case let .install(xcode):
+    case let .install(xcode, installOptions):
+        try FileManager.default.createDirectory(at: installOptions.folderURL, withIntermediateDirectories: true)
         try await core.install(
             options: .init(
                 version: .version(xcode.version.build ?? xcode.displayVersion),
                 archiveFile: nil,
                 downloadOptions: .init(destination: downloadsDirectory, disableSleep: true),
-                extractionOptions: .init(destination: URL(fileURLWithPath: "/Applications"))
+                extractionOptions: .init(destination: installOptions.folderURL),
+                skipSymlinkCreation: !installOptions.createsSymlink,
+                skipXcodeSelection: !installOptions.selectsXcode
             ),
             updateVersionList: false
         )

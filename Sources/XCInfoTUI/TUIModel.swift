@@ -26,7 +26,7 @@ public struct TUISection: Sendable, Equatable {
 public enum TUICommand: Sendable, Equatable {
     case quit
     case refresh
-    case install(Xcode)
+    case install(Xcode, TUIInstallOptions)
     case download(Xcode)
     case uninstall(XcodeApplication)
 }
@@ -37,6 +37,7 @@ public struct TUIModel: Sendable, Equatable {
     public var status: String?
     public var dialog: TUIDialog?
     public var activity: TUIActivity?
+    public var installSetup: TUIInstallSetup?
 
     public init(sections: [TUISection], status: String? = nil) {
         self.sections = sections
@@ -69,6 +70,18 @@ public struct TUIModel: Sendable, Equatable {
     }
 
     public mutating func handle(_ key: Key, pageSize: Int = 10) -> TUICommand? {
+        if var setup = installSetup {
+            switch setup.handle(key) {
+            case let .start(options):
+                installSetup = nil
+                return .install(setup.xcode, options)
+            case .cancel:
+                installSetup = nil
+            case nil:
+                installSetup = setup
+            }
+            return nil
+        }
         let count = entries.count
         switch key {
         case .up, .character("k"):
@@ -110,7 +123,8 @@ public struct TUIModel: Sendable, Equatable {
         guard let entry = selectedEntry else { return nil }
         switch (action, entry.kind) {
         case (.install, .available):
-            return .install(entry.xcode)
+            installSetup = TUIInstallSetup(xcode: entry.xcode)
+            return nil
         case (.download, .available), (.download, .installed):
             return .download(entry.xcode)
         case let (.uninstall, .installed(url)):
