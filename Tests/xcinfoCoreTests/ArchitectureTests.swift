@@ -61,4 +61,28 @@ struct ArchitectureTests {
         #expect(found.architecture == .universal)
         #expect(prompt.chosen.values == [["26.6 (17F113) · Apple silicon", "26.6 (17F113) · Universal"]])
     }
+
+    @Test
+    func `the terminal UI downloads exactly the selected entry`() async throws {
+        let caches = try TemporaryDirectory()
+        let downloaded = Recorder<String>()
+        let candidate = Xcode.fixture("26.6", build: "17F113", release: .rc(2), download: Self.base + "Xcode_26.6_Release_Candidate_2_Universal.xip")
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            listXcodes: { [appleSilicon, universal, candidate] },
+            accountName: { "appleid@example.invalid" },
+            password: { _ in "secret" },
+            authenticate: { _, _ in },
+            download: { url, destination, _ in
+                downloaded.append(url.lastPathComponent)
+                return destination.appendingPathComponent(url.lastPathComponent)
+            },
+            applicationsDirectory: caches.url
+        )
+
+        _ = try await core.download(version: .exactly(universal), options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+
+        #expect(downloaded.values == ["Xcode_26.6_Universal.xip"])
+    }
 }

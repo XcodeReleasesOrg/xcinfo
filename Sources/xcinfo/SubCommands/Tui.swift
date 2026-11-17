@@ -69,7 +69,7 @@ private func perform(_ command: TUICommand, core: Core) async throws {
         try FileManager.default.createDirectory(at: installOptions.folderURL, withIntermediateDirectories: true)
         try await core.install(
             options: .init(
-                version: .version(xcode.version.build ?? xcode.displayVersion),
+                version: .exactly(xcode),
                 archiveFile: nil,
                 downloadOptions: .init(destination: downloadsDirectory, disableSleep: true),
                 extractionOptions: .init(destination: installOptions.folderURL),
@@ -80,7 +80,7 @@ private func perform(_ command: TUICommand, core: Core) async throws {
         )
     case let .download(xcode):
         try await core.download(
-            version: .version(xcode.version.build ?? xcode.displayVersion),
+            version: .exactly(xcode),
             options: .init(destination: downloadsDirectory, disableSleep: true),
             updateVersionList: false
         )
