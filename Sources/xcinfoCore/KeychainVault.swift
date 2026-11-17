@@ -27,9 +27,19 @@ public struct VaultContents: Codable, Equatable, Sendable {
 
 public struct KeychainAccessError: Error, CustomStringConvertible, Sendable {
     public var underlying: String
+    public var status: OSStatus?
+
+    public init(underlying: String, status: OSStatus? = nil) {
+        self.underlying = underlying
+        self.status = status
+    }
 
     public var description: String {
-        "The Keychain could not be read (\(underlying)). Allow xcinfo to access its Keychain item named 'xcinfo'."
+        "The Keychain item 'xcinfo' could not be read: \(underlying)."
+    }
+
+    public var canBeRetried: Bool {
+        status == errSecAuthFailed || status == errSecUserCanceled || status == errSecInteractionNotAllowed
     }
 }
 
@@ -142,7 +152,8 @@ public actor KeychainVault {
         do {
             data = try storage.read()
         } catch {
-            let accessError = KeychainAccessError(underlying: "\(error)")
+            let status: OSStatus? = if case let KeychainPasswordItem.KeychainError.unhandledError(status) = error { status } else { nil }
+            let accessError = KeychainAccessError(underlying: "\(error)", status: status)
             readError = accessError
             throw accessError
         }
@@ -171,6 +182,13 @@ public actor KeychainVault {
             }
         }
         return migrated
+    }
+
+    public func reload() throws -> VaultContents {
+        readError = nil
+        contents = nil
+        written = nil
+        return try load()
     }
 
     public func stage(_ change: @Sendable (inout VaultContents) -> Void) throws {
