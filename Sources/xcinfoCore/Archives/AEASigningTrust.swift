@@ -1,6 +1,6 @@
 //
 //  Copyright © 2026 xcodereleases.com
-//  LGPL-3.0 license - see LICENSE.md
+//  LGPL-3.0 license - see COPYING.LESSER
 //
 
 import CryptoKit
