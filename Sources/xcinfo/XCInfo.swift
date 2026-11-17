@@ -141,8 +141,11 @@ struct ExtractionOptions: ParsableArguments {
 }
 
 struct InstallationOptions: ParsableArguments {
-    @OptionGroup
-    var versionOptions: VersionOptions
+    @Argument(
+        help: "A version number of an Xcode version or `latest`. Optional with --archive-path, which reads it from the archive.",
+        transform: XcodeVersion.init
+    )
+    var xcodeVersion: XcodeVersion?
 
     @Option(
         name: [.customLong("archive-path"), .customLong("xip-path")],
@@ -174,6 +177,12 @@ struct InstallationOptions: ParsableArguments {
         help: "Skip selecting the new Xcode version as the current Command Line Tools."
     )
     var skipXcodeSelection: Bool = false
+
+    mutating func validate() throws {
+        if xcodeVersion == nil, archiveFile == nil {
+            throw ValidationError("Missing expected argument '<xcode-version>'. Give an Xcode version, or an archive with --archive-path.")
+        }
+    }
 }
 
 extension URL: @retroactive ExpressibleByArgument {

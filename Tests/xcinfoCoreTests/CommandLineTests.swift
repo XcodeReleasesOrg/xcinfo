@@ -149,7 +149,7 @@ struct CommandLineTests {
         let install = try parse(XCInfo.Install.self, ["install", "latest"])
         let options = install.installationOptions
 
-        #expect(options.versionOptions.xcodeVersion.description == "latest")
+        #expect(options.xcodeVersion?.description == "latest")
         #expect(options.archiveFile == nil)
         #expect(options.extractionOptions.installationDirectory == URL(fileURLWithPath: "/Applications"))
         #expect(!options.extractionOptions.useSystemUnxip)
@@ -195,6 +195,15 @@ struct CommandLineTests {
 
         #expect(options.archiveFile?.path == "/tmp/Xcode.aea")
         #expect(options.shouldPreserveArchive)
+    }
+
+    @Test
+    func `install takes the version from the archive when none is given`() throws {
+        let options = try parse(XCInfo.Install.self, ["install", "--archive-path", "/tmp/Xcode.aea"]).installationOptions
+
+        #expect(options.xcodeVersion == nil)
+        #expect(options.archiveFile?.path == "/tmp/Xcode.aea")
+        #expect(throws: (any Error).self) { try parse(XCInfo.Install.self, ["install"]) }
     }
 
     @Test
