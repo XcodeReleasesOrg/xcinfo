@@ -124,6 +124,12 @@ struct DownloadOptions: ParsableArguments {
     )
     var archiveFormat: ArchiveFormat?
 
+    @Flag(
+        name: .customLong("overwrite"),
+        help: "Move an existing archive that cannot be confirmed as the right download to the Trash and download it anew."
+    )
+    var overwritesExistingFile: Bool = false
+
     @Flag(name: .customLong("no-verify"), help: "Skip the SHA-1 check of the archive against xcodereleases.com.")
     var skipsVerification: Bool = false
 

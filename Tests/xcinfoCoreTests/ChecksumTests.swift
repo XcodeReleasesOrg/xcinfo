@@ -42,7 +42,7 @@ struct ChecksumTests {
         let logs = LogRecorder()
         let core = downloadingCore(logs: logs, caches: caches, archive: archive, sha1: isUppercase ? sha1.uppercased() : sha1)
 
-        let (_, url) = try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+        let (_, url) = try await core.download(version: .latest, options: .init(destination: caches.url.appendingPathComponent("Downloads"), disableSleep: false), updateVersionList: true)
 
         #expect(url == archive)
         #expect(logs.messages.contains("SHA-1 \(sha1) matches xcodereleases.com."))
@@ -55,7 +55,7 @@ struct ChecksumTests {
         let core = downloadingCore(logs: LogRecorder(), caches: caches, archive: archive, sha1: wrongSHA1)
 
         await #expect {
-            try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+            try await core.download(version: .latest, options: .init(destination: caches.url.appendingPathComponent("Downloads"), disableSleep: false), updateVersionList: true)
         } throws: { error in
             guard case let CoreError.checksumMismatch(file, expected, actual) = error else { return false }
             return file == archive && expected == wrongSHA1 && actual == sha1
@@ -73,7 +73,7 @@ struct ChecksumTests {
         let logs = LogRecorder()
         let core = downloadingCore(logs: logs, caches: caches, archive: archive, sha1: nil)
 
-        _ = try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+        _ = try await core.download(version: .latest, options: .init(destination: caches.url.appendingPathComponent("Downloads"), disableSleep: false), updateVersionList: true)
 
         #expect(logs.messages.contains("xcodereleases.com has no checksum for Xcode 15.0; skipping the SHA-1 check."))
         #expect(logs.progress.isEmpty)
@@ -86,7 +86,7 @@ struct ChecksumTests {
         let logs = LogRecorder()
         let core = downloadingCore(logs: logs, caches: caches, archive: archive, sha1: sha1)
 
-        let (_, url) = try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+        let (_, url) = try await core.download(version: .latest, options: .init(destination: caches.url.appendingPathComponent("Downloads"), disableSleep: false), updateVersionList: true)
 
         #expect(url == archive)
         #expect(logs.progress.isEmpty)
@@ -102,7 +102,7 @@ struct ChecksumTests {
 
         _ = try await core.download(
             version: .latest,
-            options: .init(destination: caches.url, disableSleep: false, verifiesChecksum: false),
+            options: .init(destination: caches.url.appendingPathComponent("Downloads"), disableSleep: false, verifiesChecksum: false),
             updateVersionList: true
         )
 
@@ -134,7 +134,7 @@ struct ChecksumTests {
         let options = Core.InstallationOptions(
             version: .version("15.0"),
             archiveFile: archive,
-            downloadOptions: .init(destination: caches.url, disableSleep: false),
+            downloadOptions: .init(destination: caches.url.appendingPathComponent("Downloads"), disableSleep: false),
             extractionOptions: .init(destination: applications.url),
             skipSymlinkCreation: true,
             skipXcodeSelection: true,
