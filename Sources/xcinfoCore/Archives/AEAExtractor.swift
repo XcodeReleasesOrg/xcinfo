@@ -85,7 +85,7 @@ private struct AppleArchiveExtraction {
         }
         guard let authData = context.authData else { throw AEAError.untrusted("The archive has no signing certificate chain.") }
         let signingKey = try trust.signingKey(from: AEAAuthData(authData))
-        logger.verbose("The archive is signed by a certificate that leads to the trusted root.")
+        logger.verbose("The archive is signed by a certificate that leads to \(trust.rootName).")
         try context.setSigningPublicKey(signingKey)
 
         guard let decrypted = ArchiveByteStream.decryptionStream(readingFrom: counted, encryptionContext: context) else {
@@ -102,7 +102,7 @@ private struct AppleArchiveExtraction {
     }
 }
 
-private final class ProgressReportingStream: ArchiveByteStreamProtocol {
+final class ProgressReportingStream: ArchiveByteStreamProtocol {
     let inner: ArchiveByteStream
     let size: Int64
     let report: @Sendable (Double) -> Void
@@ -170,7 +170,7 @@ extension Extractor {
         let target = temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: target) }
-        logger.verbose("Extracting aea to \(target.path)")
+        logger.verbose("Extracting the .aea archive into a temporary folder: \(target.path)")
 
         try await AEAExtractor(trust: trust, archiveUtility: archiveUtility, logger: logger).extract(source, into: target)
         logger.progress(OutputProgress(title: "Extracting", fraction: 1, isFinished: true))

@@ -49,11 +49,13 @@ struct AEAAuthData: Sendable, Equatable {
 struct AEASigningTrust: Sendable {
     static let apple = AEASigningTrust(
         anchors: [],
+        rootName: "Apple Root CA - G3",
         rootSHA256: "63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179",
         intermediateCommonName: "Apple Platform Signing ECC CA 1 - G1"
     )
 
     let anchors: [Data]
+    let rootName: String
     let rootSHA256: String
     let intermediateCommonName: String
 
@@ -79,7 +81,7 @@ struct AEASigningTrust: Sendable {
         else { throw AEAError.untrusted("The signing certificate chain is incomplete.") }
         let rootHash = SHA256.hash(data: SecCertificateCopyData(root) as Data).map { String(format: "%02x", $0) }.joined()
         guard rootHash == rootSHA256 else {
-            throw AEAError.untrusted("The signing certificate does not lead to the expected root certificate.")
+            throw AEAError.untrusted("The signing certificate does not lead to \(rootName).")
         }
         var name: CFString?
         SecCertificateCopyCommonName(chain[1], &name)

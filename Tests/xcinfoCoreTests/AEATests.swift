@@ -1,5 +1,7 @@
+import AppleArchive
 import CryptoKit
 import Foundation
+import System
 import Testing
 import XCIFoundation
 @testable import xcinfoCore
@@ -16,6 +18,7 @@ private enum AEAFixture {
             let der = try #require(Data(base64Encoded: body, options: .ignoreUnknownCharacters))
             return AEASigningTrust(
                 anchors: [der],
+                rootName: "XCInfo Test Root",
                 rootSHA256: SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined(),
                 intermediateCommonName: "XCInfo Test Signing CA"
             )
@@ -113,6 +116,8 @@ struct AEAExtractionTests {
         #expect(try String(contentsOf: app.appendingPathComponent("Contents/payload.txt"), encoding: .utf8) == "payload\n")
         #expect(fixture.logs.progress.last == OutputProgress(title: "Extracting", fraction: 1, isFinished: true))
         #expect(fixture.leftovers.isEmpty)
+        #expect(fixture.logs.messages.contains("The archive is signed by a certificate that leads to XCInfo Test Root."))
+        #expect(fixture.logs.messages.contains { $0.hasPrefix("Extracting the .aea archive into a temporary folder: ") })
         let source = fixture.directory.url.appendingPathComponent("signed.aea")
         #expect(try Data(contentsOf: source) == Data(contentsOf: AEAFixture.url("signed.aea")))
     }
@@ -205,5 +210,25 @@ struct AEAExtractionTests {
             guard case AEAError.unexpectedContents = error else { return false }
             return true
         }
+    }
+}
+
+struct AEAProgressTests {
+    @Test
+    func `progress follows the read position through a large file`() throws {
+        let directory = try TemporaryDirectory()
+        let file = try directory.file("large.bin", contents: Data(repeating: 7, count: 4 * 1024 * 1024))
+        let reports = Recorder<Double>()
+        let inner = try #require(ArchiveByteStream.fileStream(path: FilePath(file.path), mode: .readOnly, options: [], permissions: FilePermissions(rawValue: 0o644)))
+        let stream = ProgressReportingStream(inner: inner, size: 4 * 1024 * 1024) { reports.append($0) }
+        let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: 64 * 1024, alignment: 1)
+        defer { buffer.deallocate() }
+
+        while try stream.read(into: buffer) > 0 {}
+        try inner.close()
+
+        #expect(reports.values.count >= 64)
+        #expect(reports.values == reports.values.sorted())
+        #expect(reports.values.last == 1)
     }
 }
