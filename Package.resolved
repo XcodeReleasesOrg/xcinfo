@@ -64,30 +64,12 @@
       }
     },
     {
-      "identity" : "swift-custom-dump",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/pointfreeco/swift-custom-dump",
-      "state" : {
-        "revision" : "3efbfba0e4e56c7187cc19137ee16b7c95346b79",
-        "version" : "1.1.0"
-      }
-    },
-    {
       "identity" : "unxip",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/saagarjha/unxip",
       "state" : {
         "revision" : "aeb6160a8a8e8b2bdc2e0b9f747a4b941046c624",
         "version" : "3.0.0"
-      }
-    },
-    {
-      "identity" : "xctest-dynamic-overlay",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/pointfreeco/xctest-dynamic-overlay",
-      "state" : {
-        "revision" : "23cbf2294e350076ea4dbd7d5d047c1e76b03631",
-        "version" : "1.0.2"
       }
     }
   ],

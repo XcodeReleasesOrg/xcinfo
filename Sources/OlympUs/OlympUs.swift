@@ -172,6 +172,40 @@ public class URLSessionDelegateProxy: NSObject, URLSessionDownloadDelegate {
 
 extension OlympUs.AuthenticationAssets: Codable {}
 
+public struct AuthenticationSessionStore {
+    public var load: (_ account: String) throws -> Data
+    public var save: (_ data: Data, _ account: String) throws -> Void
+    public var removeAll: () throws -> Int
+
+    public init(
+        load: @escaping (String) throws -> Data,
+        save: @escaping (Data, String) throws -> Void,
+        removeAll: @escaping () throws -> Int
+    ) {
+        self.load = load
+        self.save = save
+        self.removeAll = removeAll
+    }
+}
+
+public extension AuthenticationSessionStore {
+    static let keychain = AuthenticationSessionStore(
+        load: { account in
+            try KeychainPasswordItem(service: "xcinfo.session", account: account).readData()
+        },
+        save: { data, account in
+            try KeychainPasswordItem(service: "xcinfo.session", account: account).saveData(data, overwriteExisting: true)
+        },
+        removeAll: {
+            let items = try KeychainPasswordItem.passwordItems(forService: "xcinfo.session")
+            for item in items {
+                try item.deleteItem()
+            }
+            return items.count
+        }
+    )
+}
+
 public class OlympUs {
     private var disposeBag = Set<AnyCancellable>()
     private let logger: Logger
@@ -183,10 +217,22 @@ public class OlympUs {
     }
 
     public let session: URLSession
+    private let userDefaults: UserDefaults
+    private let sessionStore: AuthenticationSessionStore
+    private let prompt: PromptClient
 
-    public init(logger: Logger, session: URLSession) {
+    public init(
+        logger: Logger,
+        session: URLSession,
+        userDefaults: UserDefaults = .standard,
+        sessionStore: AuthenticationSessionStore = .keychain,
+        prompt: PromptClient = .live
+    ) {
         self.logger = logger
         self.session = session
+        self.userDefaults = userDefaults
+        self.sessionStore = sessionStore
+        self.prompt = prompt
         restoreCookies()
     }
 
@@ -203,12 +249,8 @@ public class OlympUs {
     }
 
     public func storedAuthenticationAssets(for account: String) -> AuthenticationAssets? {
-        let item = KeychainPasswordItem(
-            service: "xcinfo.session",
-            account: account
-        )
         do {
-            let codedAssets = try item.readData()
+            let codedAssets = try sessionStore.load(account)
             return try JSONDecoder().decode(AuthenticationAssets.self, from: codedAssets)
         } catch {
             return nil
@@ -217,13 +259,9 @@ public class OlympUs {
 
     @discardableResult
     private func storeAuthenticationAssets(assets: AuthenticationAssets, for account: String) -> Bool {
-        let item = KeychainPasswordItem(
-            service: "xcinfo.session",
-            account: account
-        )
         do {
             let data = try JSONEncoder().encode(assets)
-            try item.saveData(data, overwriteExisting: true)
+            try sessionStore.save(data, account)
             return true
         } catch {
             return false
@@ -392,18 +430,16 @@ public class OlympUs {
                             "Please enter a \(requiredCodeLength) digit verification code generated on one of your trusted devices."
                         )
                     self.logger.log("Type '\("sms".magenta)' to receive a verification code on a trusted phone number.")
-                    let input = ask("Apple ID Verification Code: ", type: String.self) { settings in
-                        settings.addInvalidCase("Invalide code length") { value in
-                            value != "sms" && requiredCodeLength != value.count
-                        }
+                    let input = self.prompt.ask("Apple ID Verification Code: ", "Invalide code length") { value in
+                        value != "sms" && requiredCodeLength != value.count
                     }
                     switch input {
                     case "sms":
-                        let phoneId = choose("Please choose your trusted device: ", type: Int.self) { settings in
-                            for number in response.trustedPhoneNumbers {
-                                settings.addChoice(number.numberWithDialCode) { number.id }
-                            }
-                        }
+                        let phoneIndex = self.prompt.choose(
+                            "Please choose your trusted device: ",
+                            response.trustedPhoneNumbers.map(\.numberWithDialCode)
+                        )
+                        let phoneId = response.trustedPhoneNumbers[phoneIndex].id
                         var request = self.request(forURL: self.verifyPhoneURL, assets: assets, method: .put)
                         let body = VerifyPhoneRequest(phoneNumber: VerifyPhoneRequest.TrustedNumber(id: phoneId))
                         let data = try? JSONEncoder().encode(body)
@@ -416,13 +452,11 @@ public class OlympUs {
                                     promise(.failure(.requestSmsFailed))
                                 }
                             }, receiveValue: { _ in
-                                let smsCode = ask(
+                                let smsCode = self.prompt.ask(
                                     "Please enter the received verification code:",
-                                    type: String.self
-                                ) { settings in
-                                    settings.addInvalidCase("Invalid code length") { value in
-                                        requiredCodeLength != value.count
-                                    }
+                                    "Invalid code length"
+                                ) { value in
+                                    requiredCodeLength != value.count
                                 }
                                 self.logger.log("\n")
                                 promise(.success(.verificationCode(phoneId, smsCode)))
@@ -603,11 +637,7 @@ public class OlympUs {
 
     private func removeDownloadSessionInfo() {
         do {
-            let items = try KeychainPasswordItem.passwordItems(forService: "xcinfo.session")
-            if !items.isEmpty {
-                for item in items {
-                    try item.deleteItem()
-                }
+            if try sessionStore.removeAll() > 0 {
                 logger.success("Deleted Apple developer portal session info from keychain.")
             } else {
                 logger.log("No Apple developer portal session info was stored.")
@@ -642,16 +672,14 @@ extension OlympUs {
     private func storeCookies() {
         guard let cookies = session.configuration.httpCookieStorage?.cookies else { return }
 
-        let userDefaults = UserDefaults.standard
-        let cookiesArray = cookies.compactMap { $0.properties }
+                let cookiesArray = cookies.compactMap { $0.properties }
         userDefaults.set(cookiesArray, forKey: "cookies")
     }
 
     private func restoreCookies() {
         guard let cookieStorage = session.configuration.httpCookieStorage else { return }
 
-        let userDefaults = UserDefaults.standard
-
+        
         if let cookies = userDefaults.array(forKey: "cookies") as? [[HTTPCookiePropertyKey: Any]] {
             for cookieProperties in cookies {
                 if let cookie = HTTPCookie(properties: cookieProperties) {
@@ -662,6 +690,6 @@ extension OlympUs {
     }
 
     private func removeCookies() {
-        UserDefaults.standard.removeObject(forKey: "cookies")
+        userDefaults.removeObject(forKey: "cookies")
     }
 }

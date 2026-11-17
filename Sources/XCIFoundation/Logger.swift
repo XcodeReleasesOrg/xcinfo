@@ -8,9 +8,11 @@ import Rainbow
 
 public struct Logger {
     public private(set) var isVerbose: Bool
+    private let output: (String) -> Void
 
-    public init(isVerbose: Bool) {
+    public init(isVerbose: Bool, output: @escaping (String) -> Void = { print($0) }) {
         self.isVerbose = isVerbose
+        self.output = output
     }
 
     public func beginSection(_ message: String) {
@@ -53,7 +55,7 @@ public struct Logger {
         if onSameLine {
             msg.insert(contentsOf: "\u{1B}[1A\u{1B}[K", at: msg.startIndex)
         }
-        print(msg)
+        output(msg)
         if onSameLine {
             fflush(__stdoutp)
         }

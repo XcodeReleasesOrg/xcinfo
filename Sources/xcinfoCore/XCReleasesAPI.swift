@@ -86,10 +86,14 @@ extension Xcode: CustomStringConvertible, CustomDebugStringConvertible {
     var displayName: String { "\(displayVersion) (\(version.build ?? ""))" }
 
     var filename: String {
+        filename(in: URL(fileURLWithPath: "/Applications"))
+    }
+
+    func filename(in applicationsDirectory: URL) -> String {
         let fileManager = FileManager.default
         var filename = "Xcode_\(namedVersion).app"
         var counter = 1
-        while fileManager.fileExists(atPath: "/Applications/\(filename)") {
+        while fileManager.fileExists(atPath: applicationsDirectory.appendingPathComponent(filename).path) {
             counter += 1
             filename = "Xcode_\(namedVersion)-\(counter).app"
         }
