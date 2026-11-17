@@ -119,7 +119,11 @@ extension DownloadClient: DependencyKey {
                 cachesDirectory: fileSystem.cachesDirectory(),
                 clock: clock
             )
-            return try await downloader.download(url: url, destination: destination, disableSleep: disableSleep)
+            return try await InterruptSignals().run { _ in
+                logger.warn("Stopping the download and saving its progress. Press Ctrl-C again to quit immediately.")
+            } operation: {
+                try await downloader.download(url: url, destination: destination, disableSleep: disableSleep)
+            }
         }
     )
 

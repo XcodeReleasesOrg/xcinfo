@@ -93,6 +93,9 @@ Exit codes:
 | 8 | Uninstallation failed |
 | 9 | xcodereleases.com or the cached list is unavailable |
 | 64 | Invalid arguments |
+| 130 | Stopped with Ctrl-C (143 for `SIGTERM`) |
+
+Stopping a download with Ctrl-C saves its progress in `~/Library/Caches/xcinfo/<file>.resume`. The next `download` or `install` of the same version signs in, then resumes where it stopped; if the saved progress can't be used, it starts over. Press Ctrl-C a second time to quit immediately without saving.
 
 ## CI
 - no-ansi flag to suppress colored output

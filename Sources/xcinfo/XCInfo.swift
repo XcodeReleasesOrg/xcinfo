@@ -16,7 +16,8 @@ struct XCInfo: AsyncParsableCommand {
         discussion: """
         Exit codes: 0 success, 1 unexpected error, 3 version not found, 4 sign-in failed, \
         5 download failed, 6 extraction failed, 7 installation failed, 8 uninstallation failed, \
-        9 xcodereleases.com or cache unavailable. Invalid arguments exit with 64.
+        9 xcodereleases.com or cache unavailable, 130 stopped with Ctrl-C (a paused download resumes \
+        on the next run). Invalid arguments exit with 64.
         """,
         version: version,
         subcommands: [

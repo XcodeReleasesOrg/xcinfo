@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import XCIFoundation
 @preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
 
@@ -282,6 +283,26 @@ struct CoreDownloadTests {
             try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
         } throws: { error in
             isCoreError(error) { if case let .downloadFailed(description) = $0 { description == apiError.description } else { false } }
+        }
+    }
+
+    @Test
+    func `an interrupted download is passed on so the command exits with the signal`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let xcodes = [xcode]
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            listXcodes: { xcodes },
+            getCredentials: { Credentials(username: "user", password: "secret") },
+            authenticate: { _ in },
+            download: { _, _, _ in throw Interrupted(signal: SIGINT) },
+            applicationsDirectory: applications.url
+        )
+
+        await #expect(throws: Interrupted(signal: SIGINT)) {
+            try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
         }
     }
 }
