@@ -277,10 +277,10 @@ struct CredentialsTests {
         let logs = LogRecorder()
         let (service, _) = service(storage: storage, logs: logs)
 
-        await service.cleanup()
+        #expect(await service.cleanup())
 
         #expect(storage.storedContents == nil)
-        #expect(logs.messages == ["Deleted the stored Apple ID from the Keychain."])
+        #expect(logs.messages.isEmpty)
     }
 
     @Test

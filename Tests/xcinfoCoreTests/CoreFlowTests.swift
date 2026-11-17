@@ -927,8 +927,13 @@ struct CoreUninstallTests {
 }
 
 struct CoreCleanupTests {
-    @Test
-    func `cleanup removes credentials, sessions and cookies`() async throws {
+    @Test(arguments: [
+        (true, true, "Deleted the Keychain item 'xcinfo' with the Apple ID and the Apple session."),
+        (true, false, "Deleted the Apple ID from the Keychain item 'xcinfo'."),
+        (false, true, "Deleted the Apple session from the Keychain item 'xcinfo'."),
+        (false, false, "No Apple ID or Apple session was stored."),
+    ])
+    func `cleanup removes credentials, sessions and cookies in one report`(account: Bool, session: Bool, message: String) async throws {
         let directory = try TemporaryDirectory()
         let logs = LogRecorder()
         let calls = Recorder<String>()
@@ -936,8 +941,8 @@ struct CoreCleanupTests {
             logs: logs,
             cachesDirectory: directory.url,
             removeCookies: { calls.append("cookies") },
-            cleanupCredentials: { calls.append("credentials") },
-            cleanupAuthentication: { calls.append("authentication") },
+            cleanupCredentials: { calls.append("credentials"); return account },
+            cleanupAuthentication: { calls.append("authentication"); return session },
             applicationsDirectory: directory.url
         )
 
@@ -946,7 +951,8 @@ struct CoreCleanupTests {
         #expect(calls.values == ["credentials", "authentication", "cookies"])
         #expect(logs.messages == [
             "\nCleanup",
-            "Removed stored cookies.",
+            message,
+            "Removed Apple cookies left by older versions, if there were any.",
             "Downloaded archives, saved download progress and the cached list of Xcode versions were kept.",
         ])
     }

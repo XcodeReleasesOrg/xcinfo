@@ -109,16 +109,14 @@ struct CredentialService {
         return password
     }
 
-    func cleanup() async {
+    func cleanup() async -> Bool {
         do {
-            if try await keychain.load().accountName != nil {
-                try await keychain.commit { $0.accountName = nil }
-                logger.success("Deleted the stored Apple ID from the Keychain.")
-            } else {
-                logger.log("No Apple ID was stored.")
-            }
+            guard try await keychain.load().accountName != nil else { return false }
+            try await keychain.commit { $0.accountName = nil }
+            return true
         } catch {
             logger.error("Error deleting the stored Apple ID. Please open Keychain Access.app and remove the item named 'xcinfo'.")
+            return false
         }
     }
 }

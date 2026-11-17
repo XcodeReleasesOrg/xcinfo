@@ -22,13 +22,13 @@ public struct XcodeReleasesClient: Sendable {
 public struct CredentialsClient: Sendable {
     public var accountName: @Sendable () async throws -> String
     public var password: @Sendable (_ accountName: String) async throws -> String
-    public var removeAll: @Sendable () async -> Void
+    public var removeAll: @Sendable () async -> Bool = { false }
 }
 
 @DependencyClient
 public struct AuthenticationClient: Sendable {
     public var authenticate: @Sendable (_ accountName: String, _ password: @escaping @Sendable () async throws -> String) async throws -> DownloadListing?
-    public var cleanup: @Sendable () async -> Void
+    public var cleanup: @Sendable () async -> Bool = { false }
 }
 
 @DependencyClient
@@ -115,7 +115,7 @@ extension AuthenticationClient: DependencyKey {
             @Dependency(\.logger) var logger
             @Dependency(\.keychain) var keychain
             HTTPCookieStorage.shared.removeAppleCookies()
-            await OlympUs(logger: logger, session: .xcinfo, sessionStore: .vault(keychain)).cleanup()
+            return await OlympUs(logger: logger, session: .xcinfo, sessionStore: .vault(keychain)).cleanup()
         }
     )
 

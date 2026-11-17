@@ -740,19 +740,14 @@ public actor OlympUs {
         return listing
     }
 
-    public func cleanup() async {
+    @discardableResult
+    public func cleanup() async -> Bool {
         do {
             await sessionStore.removeLegacyCookies()
-            if try await sessionStore.removeAll() > 0 {
-                logger.success("Deleted Apple developer portal session info from keychain.")
-            } else {
-                logger.log("No Apple developer portal session info was stored.")
-            }
+            return try await sessionStore.removeAll() > 0
         } catch {
-            logger
-                .error(
-                    "Error deleting Keychain entries. Please open Keychain Access.app and remove the item named 'xcinfo'."
-                )
+            logger.error("Error deleting the Apple session. Please open Keychain Access.app and remove the item named 'xcinfo'.")
+            return false
         }
     }
 

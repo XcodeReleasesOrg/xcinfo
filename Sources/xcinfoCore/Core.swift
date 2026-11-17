@@ -562,11 +562,21 @@ public struct Core: Sendable {
 
     public func cleanup() async {
         logger.beginSection("Cleanup")
-        await credentials.removeAll()
-        await authentication.cleanup()
+        let removedAccount = await credentials.removeAll()
+        let removedSession = await authentication.cleanup()
         xcodeReleases.removeCookies()
 
-        logger.success("Removed stored cookies.")
+        switch (removedAccount, removedSession) {
+        case (true, true):
+            logger.success("Deleted the Keychain item 'xcinfo' with the Apple ID and the Apple session.")
+        case (true, false):
+            logger.success("Deleted the Apple ID from the Keychain item 'xcinfo'.")
+        case (false, true):
+            logger.success("Deleted the Apple session from the Keychain item 'xcinfo'.")
+        case (false, false):
+            logger.log("No Apple ID or Apple session was stored.")
+        }
+        logger.log("Removed Apple cookies left by older versions, if there were any.")
         logger.log("Downloaded archives, saved download progress and the cached list of Xcode versions were kept.")
     }
 }
