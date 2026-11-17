@@ -58,3 +58,18 @@ struct TUIOverlayTests {
         #expect(text.columns(from: column) == from)
     }
 }
+
+struct TUIDetailTests {
+    @Test(arguments: [40, 60, 100])
+    func `long links wrap after a slash and keep the file name visible`(width: Int) throws {
+        let url = "https://download.developer.apple.com/Developer_Tools/Xcode_27.3_beta/Xcode_27.3_beta_Apple_silicon.xip"
+        let xcode = Xcode.fixture("27.3", build: "27C5020n", download: url)
+        let lines = TUIRenderer(usesColors: false).detailLines(TUIEntry(kind: .available, xcode: xcode), width: width)
+        let start = try #require(lines.firstIndex(of: "  Download:"))
+        let wrapped = lines[(start + 1)...].prefix { $0.hasPrefix("    ") }
+
+        #expect(wrapped.allSatisfy { $0.count <= width })
+        #expect(wrapped.map { $0.trimmingCharacters(in: .whitespaces) }.joined() == url)
+        #expect(wrapped.last?.hasSuffix("Xcode_27.3_beta_Apple_silicon.xip") == true)
+    }
+}
