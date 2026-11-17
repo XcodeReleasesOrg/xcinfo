@@ -8,14 +8,14 @@ on:
 
 jobs:
   build:
-    runs-on: macOS-latest
+    runs-on: xcode-27
     steps:
-    - name: Test
-      uses: actions/checkout@v2
-    - name: Use Node.js
-      uses: actions/setup-node@v2
-      with:
-        node-version: '16'
+    - name: Check out
+      uses: actions/checkout@v7
+    - name: Select Xcode 27.2
+      run: sudo xcode-select -s /Applications/Xcode_27.2.app
+    - name: Show the toolchain
+      run: swift --version
     - name: Running the tests
       run: swift test
     - name: Building a Universal xcinfo
@@ -24,5 +24,3 @@ jobs:
       run: sudo make install
     - name: Testing archs
       run: lipo -archs /usr/local/bin/xcinfo
-#    - name: Testing xcinfo
-#      run: /usr/local/bin/xcinfo list --all --no-ansi
