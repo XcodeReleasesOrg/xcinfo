@@ -632,6 +632,7 @@ struct CoreExtractTests {
 
         #expect(extracted == directory.url.appendingPathComponent("Xcode.app"))
         #expect(extractions.values == ["\(name) - false"])
+        #expect(FileManager.default.fileExists(atPath: source.path))
         #expect(logs.messages.first == "\nExtracting")
         #expect(logs.messages.contains("Extracted to \(directory.url.appendingPathComponent("Xcode.app").path)"))
         #expect(logs.messages.last?.hasPrefix("Extraction time: ") == true)

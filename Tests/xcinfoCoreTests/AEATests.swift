@@ -81,8 +81,12 @@ struct AEAExtractionTests {
         }
 
         func extractor(_ name: String) throws -> Extractor {
-            Extractor(
-                forReadingFromContainerAt: try AEAFixture.url(name),
+            let source = directory.url.appendingPathComponent(name)
+            if !FileManager.default.fileExists(atPath: source.path) {
+                try FileManager.default.copyItem(at: AEAFixture.url(name), to: source)
+            }
+            return Extractor(
+                forReadingFromContainerAt: source,
                 destination: destination,
                 appFilename: "Xcode_99.0.app",
                 temporaryDirectory: directory.url.appendingPathComponent("tmp"),
@@ -109,6 +113,8 @@ struct AEAExtractionTests {
         #expect(try String(contentsOf: app.appendingPathComponent("Contents/payload.txt"), encoding: .utf8) == "payload\n")
         #expect(fixture.logs.progress.last == OutputProgress(title: "Extracting", fraction: 1, isFinished: true))
         #expect(fixture.leftovers.isEmpty)
+        let source = fixture.directory.url.appendingPathComponent("signed.aea")
+        #expect(try Data(contentsOf: source) == Data(contentsOf: AEAFixture.url("signed.aea")))
     }
 
     @Test
@@ -157,7 +163,7 @@ struct AEAExtractionTests {
     func `another profile is extracted with archiveutil in the private working folder`() async throws {
         let fixture = try Fixture()
         let calls = Recorder<String>()
-        let source = try AEAFixture.url("symmetric.aea")
+        let source = fixture.directory.url.appendingPathComponent("symmetric.aea")
 
         let app = try await fixture.extractor("symmetric.aea").extractAEA(trust: AEAFixture.trust) { archive, workingDirectory in
             calls.append(archive.path)
@@ -169,6 +175,7 @@ struct AEAExtractionTests {
         }
 
         #expect(calls.values == [source.path])
+        #expect(FileManager.default.fileExists(atPath: source.path))
         #expect(app.path == fixture.destination.appendingPathComponent("Xcode_99.0.app").path)
         #expect(fixture.logs.messages.contains("Extracting with archiveutil ✓"))
         #expect(fixture.leftovers.isEmpty)
