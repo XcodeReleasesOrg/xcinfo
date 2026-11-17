@@ -519,6 +519,15 @@ extension Core {
     }
 
     private func installXcode(_ xcode: XcodeApplication, options: InstallationOptions) async throws {
+        do {
+            try await setUp(xcode, options: options)
+        } catch {
+            logger.warn("Xcode \(xcode.xcode.displayName) is at \(xcode.url.path), but its setup (license, components, selection) did not finish. Move it to the Trash, or open it once to finish the setup.")
+            throw error
+        }
+    }
+
+    private func setUp(_ xcode: XcodeApplication, options: InstallationOptions) async throws {
         logger.beginSection("Installing")
 
         try await verify(xcode)
