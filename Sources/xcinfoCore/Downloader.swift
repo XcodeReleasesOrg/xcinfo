@@ -24,11 +24,18 @@ class Downloader {
     private let logger: Logger
     private let olymp: OlympUs
     private let sessionDelegateProxy: URLSessionDelegateProxy
+    private let cachesDirectory: URL?
 
-    init(logger: Logger, olymp: OlympUs, sessionDelegateProxy: URLSessionDelegateProxy) {
+    init(
+        logger: Logger,
+        olymp: OlympUs,
+        sessionDelegateProxy: URLSessionDelegateProxy,
+        cachesDirectory: URL? = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+    ) {
         self.logger = logger
         self.olymp = olymp
         self.sessionDelegateProxy = sessionDelegateProxy
+        self.cachesDirectory = cachesDirectory
     }
 
     private static let byteCountFormatter: ByteCountFormatter = {
@@ -152,8 +159,7 @@ class Downloader {
 
     public func cacheURL(for url: URL) -> URL? {
         guard
-            let cache = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("xcinfo")
+            let cache = cachesDirectory?.appendingPathComponent("xcinfo")
         else {
             logger.error("Unable to save unfinished download")
             return nil

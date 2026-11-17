@@ -273,26 +273,20 @@ public class Core {
                 listFormatter.locale = Locale(identifier: "en_US")
                 environment.logger.verbose("Found: \(listFormatter.string(from: xcodes.map { $0.xcode.description })!)")
 
-                selected = choose(
-                    "Please choose the version you want to uninstall: ",
-                    type: XcodeApplication.self
-                ) { settings in
-                    let longestXcodeNameLength = xcodes.map { $0.xcode.attributedDisplayName }
-                        .max(by: { $1.count > $0.count })!.count
-                    for xcodeApp in xcodes {
-                        let attributedName = xcodeApp.xcode.attributedDisplayName
-                        let width = longestXcodeNameLength + attributedName.count - attributedName.raw.count
-                        let choice = "\(attributedName.paddedWithSpaces(to: width)) – \(xcodeApp.url.path.cyan)"
-
-                        settings.addChoice(choice) { xcodeApp }
-                    }
+                let longestXcodeNameLength = xcodes.map { $0.xcode.attributedDisplayName }
+                    .max(by: { $1.count > $0.count })!.count
+                let choices = xcodes.map { xcodeApp in
+                    let attributedName = xcodeApp.xcode.attributedDisplayName
+                    let width = longestXcodeNameLength + attributedName.count - attributedName.raw.count
+                    return "\(attributedName.paddedWithSpaces(to: width)) – \(xcodeApp.url.path.cyan)"
                 }
+                selected = xcodes[environment.prompt.choose("Please choose the version you want to uninstall: ", choices)]
             } else {
                 selected = xcodes[0]
             }
 
             let displayName = selected.xcode.attributedDisplayName
-            if agree("Are you sure you want to uninstall Xcode \(displayName)?") {
+            if environment.prompt.agree("Are you sure you want to uninstall Xcode \(displayName)?") {
                 do {
                     environment.logger
                         .verbose("Uninstalling Xcode \(selected.xcode.description) from \(selected.url.path) ...")
@@ -328,19 +322,14 @@ public class Core {
                 )
         }
 
-        let extractor = Extractor(
-            forReadingFromContainerAt: source,
-            destination: options.destination,
-            appFilename: xcode?.filename,
-            logger: environment.logger
-        )
         do {
-            let destinationURL: URL
-            if options.useLegacyUnxip {
-                destinationURL = try await extractor.extract()
-            } else {
-                destinationURL = try await extractor.extractExperimental()
-            }
+            let destinationURL = try await environment.extractionProviding.extract(
+                source,
+                options.destination,
+                xcode?.filename(in: environment.applicationsDirectory),
+                options.useLegacyUnxip,
+                environment.logger
+            )
             environment.logger.log("XIP successfully extracted to \(destinationURL.path)")
             guard let xcode = xcode else { return nil }
             return .init(url: destinationURL, xcode: xcode)
@@ -397,31 +386,20 @@ extension Core {
         }
 
         environment.logger.log("Installed Xcode to \(xcode.url.path)")
-        NSWorkspace.shared.selectFile(
-            xcode.url.path,
-            inFileViewerRootedAtPath: xcode.url.deletingLastPathComponent().path
-        )
+        environment.revealInFinder(xcode.url)
     }
 
     private func enableDeveloperMode(password: String) throws {
         environment.logger.log("Enabling Developer Mode...")
 
-        let result1 = Shell.executePrivileged(
-            command: "/usr/sbin/DevToolsSecurity",
-            password: password,
-            args: ["-enable"]
-        ).exitStatus
+        let result1 = environment.shell.executePrivileged("/usr/sbin/DevToolsSecurity", password, ["-enable"]).exitStatus
 
         guard result1 == EXIT_SUCCESS else {
             environment.logger.log("Enabling Developer Mode \("✗".red)", onSameLine: true)
             throw CoreError.installationFailed
         }
 
-        let result2 = Shell.executePrivileged(
-            command: "/usr/sbin/dseditgroup",
-            password: password,
-            args: "-o edit -t group -a staff _developer".components(separatedBy: " ")
-        ).exitStatus
+        let result2 = environment.shell.executePrivileged("/usr/sbin/dseditgroup", password, "-o edit -t group -a staff _developer".components(separatedBy: " ")).exitStatus
 
         guard result2 == EXIT_SUCCESS else {
             environment.logger.log("Enabling Developer Mode \("✗".red)", onSameLine: true)
@@ -433,11 +411,7 @@ extension Core {
 
     private func approveLicense(password: String, url: URL) throws {
         environment.logger.log("Approving License...")
-        let result = Shell.executePrivileged(
-            command: "\(url.path)/Contents/Developer/usr/bin/xcodebuild",
-            password: password,
-            args: ["-license", "accept"]
-        ).exitStatus
+        let result = environment.shell.executePrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-license", "accept"]).exitStatus
 
         guard result == EXIT_SUCCESS else {
             environment.logger.log("Approving License \("✗".red)", onSameLine: true)
@@ -449,11 +423,7 @@ extension Core {
 
     private func installComponents(password: String, url: URL) throws {
         environment.logger.log("Install additional components...")
-        let result = Shell.executePrivileged(
-            command: "\(url.path)/Contents/Developer/usr/bin/xcodebuild",
-            password: password,
-            args: ["-runFirstLaunch"]
-        ).exitStatus
+        let result = environment.shell.executePrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-runFirstLaunch"]).exitStatus
 
         guard result == EXIT_SUCCESS else {
             environment.logger.log("Install additional components \("✗".red)", onSameLine: true)
@@ -464,7 +434,7 @@ extension Core {
     }
 
     private func createSymbolicLink(to destination: URL) async throws {
-        let symlinkURL = URL(fileURLWithPath: "/Applications/Xcode.app")
+        let symlinkURL = environment.applicationsDirectory.appendingPathComponent("Xcode.app")
         let fileManager = FileManager.default
 
         if fileManager.isSymbolicLink(atPath: symlinkURL.path) {
@@ -477,11 +447,12 @@ extension Core {
             let installed = installedXcodes(knownVersions: knownXcodes)
 
             if let xcodeApp = installed.first(where: { $0.url == symlinkURL }) {
+                let filename = xcodeApp.xcode.filename(in: environment.applicationsDirectory)
                 environment.logger.verbose(
-                    "\(symlinkURL.path) already exists. Moving it to /Applications/\(xcodeApp.xcode.filename).",
+                    "\(symlinkURL.path) already exists. Moving it to \(environment.applicationsDirectory.path)/\(filename).",
                     onSameLine: true
                 )
-                let destination = URL(fileURLWithPath: "/Applications/\(xcodeApp.xcode.filename)")
+                let destination = environment.applicationsDirectory.appendingPathComponent(filename)
                 try? fileManager.moveItem(at: symlinkURL, to: destination)
             }
         }
@@ -493,7 +464,7 @@ extension Core {
 
     func selectXcode(at url: URL, password: String) throws {
         environment.logger.log("Selecting Xcode...")
-        let result = Shell.executePrivileged(command: "xcode-select", password: password, args: ["-s", url.path])
+        let result = environment.shell.executePrivileged("xcode-select", password, ["-s", url.path])
             .exitStatus
 
         guard result == EXIT_SUCCESS else {
@@ -521,15 +492,9 @@ extension Core {
             }()
 
             func getPwd(prompt: String) -> String? {
-                do {
-                    let password = try Shell.ask(prompt, secure: true) { pwd in
-                        let sudoExitStatus = Shell.executePrivileged(command: "ls", password: pwd, args: []).exitStatus
-                        return sudoExitStatus == EXIT_SUCCESS
-                    }
-                    return password
-                } catch {
-                    return nil
-                }
+                let password = environment.prompt.readSecret(prompt)
+                let sudoExitStatus = environment.shell.executePrivileged("ls", password, []).exitStatus
+                return sudoExitStatus == EXIT_SUCCESS ? password : nil
             }
             possiblePassword = getPwd(prompt: prompt)
         } while
@@ -544,19 +509,14 @@ extension Core {
 
     private func verify(_ app: XcodeApplication) throws {
         environment.logger.log("Verifying Xcode...")
-        var exitStatus = Shell.execute(
+        var exitStatus = environment.shell.execute(
             "/usr/sbin/spctl",
-            args: "--assess",
-            "--verbose",
-            "--type",
-            "execute",
-            app.url.path
-        ).exitStatus
+            ["--assess", "--verbose", "--type", "execute", app.url.path]).exitStatus
         guard exitStatus == EXIT_SUCCESS else {
             throw CoreError.gatekeeperVerificationFailed(app.url)
         }
 
-        exitStatus = Shell.execute("/usr/bin/codesign", args: "--verify", "--verbose", app.url.path).exitStatus
+        exitStatus = environment.shell.execute("/usr/bin/codesign", ["--verify", "--verbose", app.url.path]).exitStatus
 
         guard exitStatus == EXIT_SUCCESS else {
             throw CoreError.codesignVerificationFailed(app.url)
@@ -630,12 +590,8 @@ extension Core {
             environment.logger
                 .log("Found multiple possibilities for the requested version '\(version.description.cyan)'.")
 
-            let selectedVersion = choose(prompt, type: Xcode.self) { settings in
-                xcodes.forEach { xcode in
-                    settings.addChoice(xcode.attributedDisplayName) { xcode }
-                }
-            }
-            return selectedVersion
+            let index = environment.prompt.choose(prompt, xcodes.map(\.attributedDisplayName))
+            return xcodes[index]
         }
     }
 
@@ -655,7 +611,7 @@ extension Core {
         guard !knownVersions.isEmpty else {
             return []
         }
-        let result = Shell.execute("mdfind", args: "kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'")
+        let result = environment.shell.execute("mdfind", ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"])
         let paths = result.stdout.split(separator: "\n")
 
         return paths.compactMap { path -> XcodeApplication? in
