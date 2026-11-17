@@ -105,12 +105,25 @@ final class FileDownload: NSObject, URLSessionDownloadDelegate, Sendable {
         )
     }
 
+    func cancel() async -> Data? {
+        await withCheckedContinuation { continuation in
+            task.cancel { resumeData in
+                continuation.resume(returning: resumeData)
+            }
+        }
+    }
+
     func urlSession(_: URLSession, task _: URLSessionTask, didCompleteWithError error: Error?) {
         guard let error = error as? URLError else {
             return
         }
-
-        logger.error(error.localizedDescription)
+        if error.code == .cancelled, error.downloadTaskResumeData == nil {
+            finish(with: .failed(resumeData: nil, isCancelled: true))
+            return
+        }
+        if error.code != .cancelled {
+            logger.error(error.localizedDescription)
+        }
         finish(with: .failed(resumeData: error.downloadTaskResumeData, isCancelled: error.code == .cancelled))
     }
 }
