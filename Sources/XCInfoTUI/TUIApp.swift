@@ -86,6 +86,7 @@ public struct TUIApp: Sendable {
             let size = terminal.size
             guard force || isDirty || size != lastSize else { return }
             terminal.draw(renderer.render(model, width: size.width, height: size.height))
+            terminal.isPasteBracketed = model.isEditingText
             lastSize = size
             lastDraw = .now
             isDirty = false

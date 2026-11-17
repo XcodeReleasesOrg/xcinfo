@@ -23,6 +23,28 @@ private let keyExamples: [([UInt8], [Key])] = [
     ([0x08], [.backspace]),
     (Array("Grüße🎉".utf8), Array("Grüße🎉").map { .character($0) }),
     ([0x80, 0x61], [.character("a")]),
+    ([0x1B, 0x7F], [.deleteWord]),
+    ([0x1B, 0x08], [.deleteWord]),
+    (Array("\u{1B}b\u{1B}f".utf8), [.wordLeft, .wordRight]),
+    (Array("\u{1B}[1;3D\u{1B}[1;3C".utf8), [.wordLeft, .wordRight]),
+    (Array("\u{1B}[3~".utf8), [.delete]),
+    ([0x01, 0x05, 0x04, 0x0B, 0x15, 0x17], [.home, .end, .delete, .deleteToEnd, .deleteToStart, .deleteWord]),
+    (Array("\u{1B}[99;5Xa".utf8), [.character("a")]),
+    (Array("\u{1B}[1;5Pa".utf8), [.character("a")]),
+    (Array("\u{1B}xa".utf8), [.character("a")]),
+    ([0x1B, 0x1B], [.escape, .escape]),
+    (Array("\u{1B}[200~/Volumes/\u{1B}Ext\nra\u{1B}[201~a".utf8), [.paste("/Volumes/Extra"), .character("a")]),
+]
+
+private let incompleteExamples: [([UInt8], Bool)] = [
+    ([0x1B], true),
+    ([0x1B, 0x5B], true),
+    (Array("\u{1B}[1;3".utf8), true),
+    (Array("\u{1B}[1;3D".utf8), false),
+    ([0x1B, 0x7F], false),
+    (Array("\u{1B}[200~/Vol".utf8), true),
+    (Array("\u{1B}[200~/Vol\u{1B}[201~".utf8), false),
+    (Array("abc".utf8), false),
 ]
 
 struct KeyTests {
@@ -31,6 +53,23 @@ struct KeyTests {
         for (bytes, keys) in keyExamples {
             #expect(Key.parse(bytes) == keys, "\(bytes)")
         }
+    }
+
+    @Test
+    func `a sequence that may continue waits for more bytes`() {
+        for (bytes, isIncomplete) in incompleteExamples {
+            #expect(Key.isIncomplete(bytes) == isIncomplete, "\(bytes)")
+        }
+    }
+
+    @Test
+    func `a control sequence split across reads decodes as one key once complete`() {
+        var bytes: [UInt8] = []
+        for chunk in [[0x1B], Array("[1;".utf8), Array("3D".utf8)] as [[UInt8]] {
+            bytes += chunk
+            if !Key.isIncomplete(bytes) { break }
+        }
+        #expect(Key.parse(bytes) == [.wordLeft])
     }
 }
 

@@ -4,7 +4,9 @@
 //
 
 import Foundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable
+
+// annotations.
 
 public struct TUIInstallOptions: Sendable, Equatable {
     public var folder: String
@@ -37,10 +39,12 @@ public struct TUIInstallSetup: Sendable, Equatable {
     public let xcode: Xcode
     public private(set) var options: TUIInstallOptions
     public private(set) var focus = Field.folder
+    private var folder: TextField
 
     public init(xcode: Xcode, options: TUIInstallOptions = TUIInstallOptions()) {
         self.xcode = xcode
         self.options = options
+        folder = TextField(options.folder)
     }
 
     public mutating func handle(_ key: Key) -> Result? {
@@ -52,13 +56,11 @@ public struct TUIInstallSetup: Sendable, Equatable {
         case .tab, .down:
             focus = Field.allCases[(Field.allCases.firstIndex(of: focus)! + 1) % Field.allCases.count]
         case .up:
-            focus = Field.allCases[(Field.allCases.firstIndex(of: focus)! + Field.allCases.count - 1) % Field.allCases.count]
-        case .backspace where focus == .folder:
-            if !options.folder.isEmpty {
-                options.folder.removeLast()
-            }
-        case let .character(character) where focus == .folder:
-            options.folder.append(character)
+            focus = Field
+                .allCases[(Field.allCases.firstIndex(of: focus)! + Field.allCases.count - 1) % Field.allCases.count]
+        case _ where focus == .folder:
+            folder.handle(key)
+            options.folder = folder.text
         case .character(" "):
             toggle()
         default:
@@ -78,19 +80,19 @@ public struct TUIInstallSetup: Sendable, Equatable {
         }
     }
 
-    var lines: [String] {
+    func lines(fieldWidth: Int = 56) -> [String] {
         func marker(_ field: Field) -> String {
             focus == field ? "›" : " "
         }
         return [
             "Install Xcode \(xcode.displayName)",
             "",
-            "\(marker(.folder)) Folder: \(options.folder)\(focus == .folder ? "▏" : "")",
+            "\(marker(.folder)) Folder: \(focus == .folder ? folder.display(width: fieldWidth) : options.folder)",
             "\(marker(.symlink)) [\(options.createsSymlink ? "x" : " ")] Point /Applications/Xcode.app to it",
             "\(marker(.selection)) [\(options.selectsXcode ? "x" : " ")] Select it with xcode-select",
             "",
             "Administrator rights (sudo) are needed for the license and components.",
-            "Tab next · Space toggle · Return start · Esc cancel",
+            "Tab next · Space toggle · Return start · Esc cancel"
         ]
     }
 }

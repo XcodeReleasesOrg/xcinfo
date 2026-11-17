@@ -76,7 +76,7 @@ public struct TUIRenderer: Sendable {
         if let dialog = model.dialog {
             overlay(box(dialog, width: width), on: &lines, height: height)
         } else if let setup = model.installSetup {
-            overlay(box(setup.lines, width: width), on: &lines, height: height)
+            overlay(box(setup.lines(fieldWidth: max(10, min(56, width - 18))), width: width), on: &lines, height: height)
         }
         return lines
     }
@@ -169,7 +169,7 @@ public struct TUIRenderer: Sendable {
     }
 
     func box(_ dialog: TUIDialog, width: Int) -> [String] {
-        box([dialog.prompt, ""] + dialog.lines, width: width)
+        box([dialog.prompt, ""] + dialog.lines(fieldWidth: max(10, min(56, width - 10))), width: width)
     }
 
     func box(_ content: [String], width: Int) -> [String] {

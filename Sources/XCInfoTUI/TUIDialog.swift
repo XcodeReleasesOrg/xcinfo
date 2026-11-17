@@ -20,7 +20,7 @@ public enum TUIAnswer: Sendable, Equatable {
 
 public struct TUIDialog: Sendable {
     public let question: TUIQuestion
-    public private(set) var input = ""
+    public private(set) var field = TextField()
     public private(set) var selection = 0
     public private(set) var error: String?
 
@@ -36,21 +36,16 @@ public struct TUIDialog: Sendable {
         case let .text(_, _, invalidMessage, isInvalid):
             switch key {
             case .enter:
-                guard !isInvalid(input) else {
+                guard !isInvalid(field.text) else {
                     error = invalidMessage
                     return nil
                 }
-                defer { input = "" }
-                return .text(input)
-            case .backspace:
-                if !input.isEmpty {
-                    input.removeLast()
-                }
-            case let .character(character):
-                input.append(character)
-                error = nil
+                defer { field.clear() }
+                return .text(field.text)
             default:
-                break
+                if field.handle(key) {
+                    error = nil
+                }
             }
         case let .choice(_, choices):
             switch key {
@@ -91,13 +86,24 @@ public struct TUIDialog: Sendable {
         }
     }
 
-    var lines: [String] {
+    public var input: String {
+        field.text
+    }
+
+    func lines(fieldWidth: Int = 56) -> [String] {
         switch question {
         case let .text(_, isSecret, _, _):
-            let shown = isSecret ? String(repeating: "•", count: input.count) : input
-            return ["> " + shown + "▏", error ?? "", isSecret ? "Return to confirm · Esc to cancel · typing is hidden" : "Return to confirm · Esc to cancel"]
+            return [
+                "> " + field.display(width: fieldWidth, masked: isSecret),
+                error ?? "",
+                isSecret ? "Return to confirm · Esc to cancel · typing is hidden" : "Return to confirm · Esc to cancel"
+            ]
         case let .choice(_, choices):
-            return choices.enumerated().map { (selection == $0.offset ? "› " : "  ") + "\($0.offset + 1). \($0.element)" } + ["", "↑↓ choose · Return to confirm · Esc to cancel"]
+            return choices.enumerated()
+                .map { (selection == $0.offset ? "› " : "  ") + "\($0.offset + 1). \($0.element)" } + [
+                    "",
+                    "↑↓ choose · Return to confirm · Esc to cancel"
+                ]
         case .confirm:
             return [selection == 0 ? "[ Yes ]   No  " : "  Yes   [ No ]", "", "y yes · n no · Esc to cancel"]
         }
@@ -106,6 +112,6 @@ public struct TUIDialog: Sendable {
 
 extension TUIDialog: Equatable {
     public static func == (lhs: TUIDialog, rhs: TUIDialog) -> Bool {
-        lhs.prompt == rhs.prompt && lhs.input == rhs.input && lhs.selection == rhs.selection && lhs.error == rhs.error
+        lhs.prompt == rhs.prompt && lhs.field == rhs.field && lhs.selection == rhs.selection && lhs.error == rhs.error
     }
 }

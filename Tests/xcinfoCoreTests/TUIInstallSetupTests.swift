@@ -26,6 +26,19 @@ struct TUIInstallSetupTests {
     }
 
     @Test
+    func `option-backspace and ctrl-u clear the folder without leaving the setup`() {
+        var setup = TUIInstallSetup(xcode: xcode, options: TUIInstallOptions(folder: "/Volumes/External/Xcodes"))
+        for key in Key.parse([0x1B, 0x7F]) {
+            #expect(setup.handle(key) == nil)
+        }
+        #expect(setup.options.folder == "/Volumes/External/")
+        #expect(setup.handle(.deleteToStart) == nil)
+        #expect(setup.options.folder.isEmpty)
+        #expect(setup.handle(.paste("/Applications")) == nil)
+        #expect(setup.options.folder == "/Applications")
+    }
+
+    @Test
     func `a tilde folder is expanded`() {
         #expect(TUIInstallOptions(folder: "~/xcinfo-test").folderURL.path == "\(NSHomeDirectory())/xcinfo-test")
     }

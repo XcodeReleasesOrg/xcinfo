@@ -5,7 +5,9 @@
 
 import Foundation
 import xcinfoCore
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable
+
+// annotations.
 
 public struct TUIEntry: Sendable, Equatable {
     public enum Kind: Sendable, Equatable {
@@ -39,6 +41,13 @@ public struct TUIModel: Sendable, Equatable {
     public var activity: TUIActivity?
     public var installSetup: TUIInstallSetup?
 
+    var isEditingText: Bool {
+        if let dialog, case .text = dialog.question {
+            return true
+        }
+        return installSetup?.focus == .folder
+    }
+
     public init(sections: [TUISection], status: String? = nil) {
         self.sections = sections
         self.status = status
@@ -52,9 +61,15 @@ public struct TUIModel: Sendable, Equatable {
         }
         self.init(
             sections: [
-                TUISection(title: "Installed", entries: installed.map { TUIEntry(kind: .installed($0.url), xcode: $0.xcode) }),
+                TUISection(
+                    title: "Installed",
+                    entries: installed.map { TUIEntry(kind: .installed($0.url), xcode: $0.xcode) }
+                ),
                 TUISection(title: "Available", entries: available.map { TUIEntry(kind: .available, xcode: $0) }),
-                TUISection(title: "Not installable", entries: list.notInstallable.map { TUIEntry(kind: .notInstallable, xcode: $0) }),
+                TUISection(
+                    title: "Not installable",
+                    entries: list.notInstallable.map { TUIEntry(kind: .notInstallable, xcode: $0) }
+                )
             ].filter { !$0.entries.isEmpty },
             status: status
         )
