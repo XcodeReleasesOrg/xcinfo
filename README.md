@@ -71,6 +71,10 @@ $ brew install xcinfo
 - Deletes the Keychain item `xcinfo` (the stored Apple ID and the Apple session) and the Apple cookies left by older versions; the next download signs in again, with two-factor authentication
 - Keeps downloaded archives, saved download progress and the cached list of Xcode versions
 
+### Debug and release builds
+
+`swift run xcinfo …` runs a debug build, which extracts noticeably slower. For real installs use `swift run -c release xcinfo …`, or `make` and the installed binary.
+
 ### tui
 
 `xcinfo tui`, or plain `xcinfo` in an interactive terminal, opens a full-screen view of all Xcode versions, grouped into installed, available and not installable, with the SDKs, compilers and links of the selected version.

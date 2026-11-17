@@ -75,4 +75,31 @@ struct TUISessionTests {
         #expect(await session.prompt.agree("Install from this archive anyway?") == false)
         #expect(await session.prompt.choose("Choose:", ["a"]) == 0)
     }
+
+    @Test
+    func `a flood of output events never makes the producer wait`() {
+        let (inputs, input) = AsyncStream.makeStream(of: TUIInput.self)
+        let session = TUISession(input: input, questions: TUIQuestionBox(input: input))
+        let start = ContinuousClock.now
+
+        for index in 0 ..< 100_000 {
+            session.logger.verbose("Extracted: file \(index)")
+        }
+
+        #expect(start.duration(to: .now) < .seconds(2))
+        _ = inputs
+    }
+
+    @Test
+    func `hidden detail lines cost nothing in the activity`() {
+        var activity = TUIActivity(title: "Installing", steps: ["Extract"])
+        let start = ContinuousClock.now
+
+        for index in 0 ..< 100_000 {
+            activity.apply(.verbose("Extracted: file \(index)"))
+        }
+
+        #expect(activity.lines.isEmpty)
+        #expect(start.duration(to: .now) < .seconds(2))
+    }
 }

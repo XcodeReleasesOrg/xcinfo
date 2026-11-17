@@ -31,6 +31,8 @@ public struct TUIApp: Sendable {
         self.showsVerbose = showsVerbose
     }
 
+    static let frameInterval = Duration.milliseconds(100)
+
     public static var isAvailable: Bool {
         TerminalSession.isInteractive
     }
@@ -77,11 +79,16 @@ public struct TUIApp: Sendable {
         var questions: TUIQuestionBox?
         var cancelAction: AsyncStream<Void>.Continuation?
 
+        var lastDraw = ContinuousClock.now
+        var isDirty = false
+
         func draw(force: Bool = false) {
             let size = terminal.size
-            guard force || size != lastSize else { return }
+            guard force || isDirty || size != lastSize else { return }
             terminal.draw(renderer.render(model, width: size.width, height: size.height))
             lastSize = size
+            lastDraw = .now
+            isDirty = false
         }
 
         draw(force: true)
@@ -95,6 +102,11 @@ public struct TUIApp: Sendable {
                 continue
             case let .output(output):
                 model.activity?.apply(output)
+                isDirty = true
+                if lastDraw.duration(to: .now) >= TUIApp.frameInterval {
+                    draw()
+                }
+                continue
             case let .question(question):
                 model.dialog = TUIDialog(question)
             case let .releaseTerminal(release):
