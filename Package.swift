@@ -86,6 +86,7 @@ let package = Package(
                 .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "XCModel", package: "data"),
             ],
+            resources: [.copy("Fixtures")],
             swiftSettings: swiftSettings,
             linkerSettings: [
                 LinkerSetting.linkedFramework("PackageKit"),

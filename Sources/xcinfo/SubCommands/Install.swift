@@ -29,12 +29,12 @@ extension XCInfo {
                 let application = try await core.install(
                     options: .init(
                         version: installationOptions.versionOptions.xcodeVersion,
-                        xipFile: installationOptions.xipFile,
+                        archiveFile: installationOptions.archiveFile,
                         downloadOptions: installationOptions.downloadOptions.options,
                         extractionOptions: installationOptions.extractionOptions.options,
                         skipSymlinkCreation: installationOptions.skipSymlinkCreation,
                         skipXcodeSelection: installationOptions.skipXcodeSelection,
-                        shouldPreserveXIP: installationOptions.shouldPreserveXIP
+                        shouldPreserveArchive: installationOptions.shouldPreserveArchive
                     ),
                     updateVersionList: listOptions.updateList
                 )

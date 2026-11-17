@@ -368,16 +368,16 @@ struct CoreInstallTests {
         useLegacyUnxip: Bool = false,
         skipSymlinkCreation: Bool = false,
         skipXcodeSelection: Bool = false,
-        shouldPreserveXIP: Bool = false
+        shouldPreserveArchive: Bool = false
     ) -> Core.InstallationOptions {
         Core.InstallationOptions(
             version: .version("15.0"),
-            xipFile: xip,
+            archiveFile: xip,
             downloadOptions: .init(destination: destination, disableSleep: false),
             extractionOptions: .init(destination: destination, useLegacyUnxip: useLegacyUnxip),
             skipSymlinkCreation: skipSymlinkCreation,
             skipXcodeSelection: skipXcodeSelection,
-            shouldPreserveXIP: shouldPreserveXIP
+            shouldPreserveArchive: shouldPreserveArchive
         )
     }
 
@@ -386,7 +386,7 @@ struct CoreInstallTests {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let downloads = try TemporaryDirectory()
-        let xip = try downloads.file("Xcode_15.xip")
+        let xip = try downloads.file("Xcode_15.xip", contents: .xipMagic)
         let logs = LogRecorder()
         let shell = FakeShell()
         let extractions = Recorder<String>()
@@ -401,7 +401,7 @@ struct CoreInstallTests {
         )
 
         try await core.install(
-            options: options(xip: xip, destination: applications.url, useLegacyUnxip: true, shouldPreserveXIP: true),
+            options: options(xip: xip, destination: applications.url, useLegacyUnxip: true, shouldPreserveArchive: true),
             updateVersionList: true
         )
 
@@ -428,12 +428,12 @@ struct CoreInstallTests {
     func `install can skip the symlink and the selection`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let xip = try caches.file("Xcode_15.xip")
+        let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let shell = FakeShell()
         let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell)
 
         try await core.install(
-            options: options(xip: xip, destination: applications.url, skipSymlinkCreation: true, skipXcodeSelection: true, shouldPreserveXIP: true),
+            options: options(xip: xip, destination: applications.url, skipSymlinkCreation: true, skipXcodeSelection: true, shouldPreserveArchive: true),
             updateVersionList: true
         )
 
@@ -445,13 +445,13 @@ struct CoreInstallTests {
     func `install replaces an existing symlink`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let xip = try caches.file("Xcode_15.xip")
+        let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let previous = try applications.directory("Xcode_14.app")
         let symlink = applications.url.appendingPathComponent("Xcode.app")
         try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: previous)
         let core = core(logs: LogRecorder(), caches: caches, applications: applications)
 
-        try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
+        try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveArchive: true), updateVersionList: true)
 
         #expect(try FileManager.default.destinationOfSymbolicLink(atPath: symlink.path) == applications.url.appendingPathComponent("Xcode_15.0.app").path)
         #expect(FileManager.default.fileExists(atPath: previous.path))
@@ -461,7 +461,7 @@ struct CoreInstallTests {
     func `install moves an existing xcode out of the way of the symlink`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let xip = try caches.file("Xcode_15.xip")
+        let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let existing = try applications.fakeXcode(named: "Xcode.app", build: "15A240d")
         let core = core(
             logs: LogRecorder(),
@@ -470,7 +470,7 @@ struct CoreInstallTests {
             shell: .installedXcodes([existing])
         )
 
-        try await core.install(options: options(xip: xip, destination: caches.url, shouldPreserveXIP: true), updateVersionList: true)
+        try await core.install(options: options(xip: xip, destination: caches.url, shouldPreserveArchive: true), updateVersionList: true)
 
         let moved = applications.url.appendingPathComponent("Xcode_15.0.app")
         #expect(FileManager.default.fileExists(atPath: moved.appendingPathComponent("Contents/version.plist").path))
@@ -479,7 +479,7 @@ struct CoreInstallTests {
 
     @Test
     func `install keeps a downloaded archive only when asked`() async throws {
-        for shouldPreserveXIP in [true, false] {
+        for shouldPreserveArchive in [true, false] {
             let caches = try TemporaryDirectory()
             let applications = try TemporaryDirectory()
             let downloads = try TemporaryDirectory()
@@ -490,17 +490,17 @@ struct CoreInstallTests {
                 applications: applications,
                 download: { _, destination, _ in
                     let url = destination.appendingPathComponent("Xcode_15.xip")
-                    try Data("xip".utf8).write(to: url)
+                    try Data.xipMagic.write(to: url)
                     return url
                 }
             )
 
             try await core.install(
-                options: options(xip: nil, destination: downloads.url, shouldPreserveXIP: shouldPreserveXIP),
+                options: options(xip: nil, destination: downloads.url, shouldPreserveArchive: shouldPreserveArchive),
                 updateVersionList: true
             )
 
-            #expect(FileManager.default.fileExists(atPath: archive.path) == shouldPreserveXIP)
+            #expect(FileManager.default.fileExists(atPath: archive.path) == shouldPreserveArchive)
         }
     }
 
@@ -508,10 +508,10 @@ struct CoreInstallTests {
     func `install never deletes an archive the user passed in`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let xip = try caches.file("Users-own.xip")
+        let xip = try caches.file("Users-own.xip", contents: .xipMagic)
         let core = core(logs: LogRecorder(), caches: caches, applications: applications)
 
-        try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: false), updateVersionList: true)
+        try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveArchive: false), updateVersionList: true)
 
         #expect(FileManager.default.fileExists(atPath: xip.path))
     }
@@ -520,13 +520,13 @@ struct CoreInstallTests {
     func `install asks for the password three times`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let xip = try caches.file("Xcode_15.xip")
+        let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let prompt = FakePrompt(passwords: ["one", "two", "three"])
         let shell = FakeShell { call in call.command == "ls" ? (1, "", "") : (0, "", "") }
         let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt)
 
         await #expect {
-            try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
+            try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveArchive: true), updateVersionList: true)
         } throws: { error in
             isCoreError(error) { if case .incorrectSuperUserPassword = $0 { true } else { false } }
         }
@@ -539,12 +539,12 @@ struct CoreInstallTests {
     func `install accepts the password on a later attempt`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let xip = try caches.file("Xcode_15.xip")
+        let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let prompt = FakePrompt(passwords: ["wrong", "right"])
         let shell = FakeShell { call in call.password == "wrong" ? (1, "", "") : (0, "", "") }
         let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt)
 
-        try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
+        try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveArchive: true), updateVersionList: true)
 
         #expect(shell.privilegedCalls.dropFirst(2).allSatisfy { $0.password == "right" })
     }
@@ -556,13 +556,13 @@ struct CoreInstallTests {
     func `install stops when the verification fails`(command: String, kind: String) async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let xip = try caches.file("Xcode_15.xip")
+        let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let prompt = FakePrompt()
         let shell = FakeShell { call in call.command == command ? (3, "", "") : (0, "", "") }
         let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt)
 
         await #expect {
-            try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
+            try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveArchive: true), updateVersionList: true)
         } throws: { error in
             isCoreError(error) {
                 switch $0 {
@@ -583,12 +583,12 @@ struct CoreInstallTests {
     func `install fails when a privileged step fails`(command: String) async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let xip = try caches.file("Xcode_15.xip")
+        let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let shell = FakeShell { call in call.command == command ? (1, "", "") : (0, "", "") }
         let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell)
 
         await #expect {
-            try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
+            try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveArchive: true), updateVersionList: true)
         } throws: { error in
             isCoreError(error) { if case .installationFailed = $0 { true } else { false } }
         }
@@ -598,12 +598,12 @@ struct CoreInstallTests {
     func `install fails when xcodebuild fails`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let xip = try caches.file("Xcode_15.xip")
+        let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let shell = FakeShell { call in call.args == ["-license", "accept"] ? (1, "", "") : (0, "", "") }
         let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell)
 
         await #expect {
-            try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
+            try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveArchive: true), updateVersionList: true)
         } throws: { error in
             isCoreError(error) { if case .installationFailed = $0 { true } else { false } }
         }
@@ -614,7 +614,7 @@ struct CoreExtractTests {
     @Test(arguments: ["Xcode.xip", "Xcode.XIP"])
     func `extract passes the archive to the extractor`(name: String) async throws {
         let directory = try TemporaryDirectory()
-        let source = try directory.file(name)
+        let source = try directory.file(name, contents: .xipMagic)
         let logs = LogRecorder()
         let extractions = Recorder<String>()
         let core = Core.test(
@@ -628,7 +628,7 @@ struct CoreExtractTests {
             applicationsDirectory: directory.url
         )
 
-        let extracted = try await core.extractXIP(source: source, options: .init(destination: directory.url))
+        let extracted = try await core.extractArchive(source: source, options: .init(destination: directory.url))
 
         #expect(extracted == directory.url.appendingPathComponent("Xcode.app"))
         #expect(extractions.values == ["\(name) - false"])
@@ -640,10 +640,10 @@ struct CoreExtractTests {
     @Test
     func `extracting for an xcode uses its file name`() async throws {
         let directory = try TemporaryDirectory()
-        let source = try directory.file("Xcode.xip")
+        let source = try directory.file("Xcode.xip", contents: .xipMagic)
         let core = Core.test(logs: LogRecorder(), cachesDirectory: directory.url, extract: { _, destination, filename, _ in destination.appendingPathComponent(filename ?? "Xcode.app") }, applicationsDirectory: directory.url)
 
-        let extracted = try await core.extractXIP(
+        let extracted = try await core.extractArchive(
             source: source,
             options: .init(destination: directory.url),
             xcode: .fixture("15.0", build: "15A240d")
@@ -652,23 +652,23 @@ struct CoreExtractTests {
         #expect(extracted == directory.url.appendingPathComponent("Xcode_15.0.app"))
     }
 
-    @Test(arguments: ["Xcode.dmg", "Xcode", "Xcode.xip.zip"])
-    func `only xip archives can be extracted`(name: String) async throws {
+    @Test(arguments: ["Xcode.dmg", "Xcode", "Xcode.xip.zip", "Xcode.xip"])
+    func `only files with xip or aea contents can be extracted`(name: String) async throws {
         let directory = try TemporaryDirectory()
-        let source = try directory.file(name)
+        let source = try directory.file(name, contents: Data("PK\u{3}\u{4}".utf8))
         let core = Core.test(logs: LogRecorder(), cachesDirectory: directory.url, applicationsDirectory: directory.url)
 
         await #expect {
-            try await core.extractXIP(source: source, options: .init(destination: directory.url))
+            try await core.extractArchive(source: source, options: .init(destination: directory.url))
         } throws: { error in
-            isCoreError(error) { if case let .unsupportedFile(fileExtension) = $0 { fileExtension == source.pathExtension } else { false } }
+            isCoreError(error) { if case let .unsupportedFile(name) = $0 { name == source.lastPathComponent } else { false } }
         }
     }
 
     @Test
     func `extraction errors are wrapped`() async throws {
         let directory = try TemporaryDirectory()
-        let source = try directory.file("Xcode.xip")
+        let source = try directory.file("Xcode.xip", contents: .xipMagic)
         let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: directory.url,
@@ -677,7 +677,7 @@ struct CoreExtractTests {
         )
 
         await #expect {
-            try await core.extractXIP(source: source, options: .init(destination: directory.url))
+            try await core.extractArchive(source: source, options: .init(destination: directory.url))
         } throws: { error in
             isCoreError(error) { if case let .extractionFailed(underlying) = $0 { underlying.localizedDescription == "broken" } else { false } }
         }
@@ -691,7 +691,7 @@ struct CoreExtractionNameTests {
         let applications = try TemporaryDirectory()
         let destination = try TemporaryDirectory()
         _ = try destination.file("Xcode_15.0.app/Contents/Info.plist")
-        let source = try caches.file("Xcode_15.xip")
+        let source = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let filenames = Recorder<String>()
         let core = Core.test(
             logs: LogRecorder(),
@@ -703,7 +703,7 @@ struct CoreExtractionNameTests {
             applicationsDirectory: applications.url
         )
 
-        _ = try await core.extractXIP(source: source, options: .init(destination: destination.url), xcode: .fixture("15.0", build: "15A240d"))
+        _ = try await core.extractArchive(source: source, options: .init(destination: destination.url), xcode: .fixture("15.0", build: "15A240d"))
 
         #expect(filenames.values == ["Xcode_15.0-2.app"])
     }
@@ -940,7 +940,7 @@ struct CoreErrorTests {
         #expect(CoreError.uninstallationFailed("nope").errorDescription == "nope")
         #expect(CoreError.versionNotFound(.version("1.0")).errorDescription == "No Xcode found for given version '1.0'.")
         #expect(CoreError.invalidDownloadURL.errorDescription == "Invalid download url")
-        #expect(CoreError.unsupportedFile("dmg").errorDescription == "'dmg' is not supported.")
+        #expect(CoreError.unsupportedFile("Xcode.dmg").errorDescription == "Xcode.dmg is not a .xip or .aea archive.")
         #expect(CoreError.installationFailed.errorDescription == "Xcode could not be installed.")
         #expect(CoreError.gatekeeperVerificationFailed(url).errorDescription == "Gatekeeper could not verify Xcode at /tmp/Xcode.app")
         #expect(CoreError.codesignVerificationFailed(url).errorDescription == "Code sign could not verify Xcode at /tmp/Xcode.app")

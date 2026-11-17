@@ -532,6 +532,23 @@ struct OlympUsSessionTests {
     }
 
     @Test
+    func `download auth logs which xcode archives apple lists`() async throws {
+        let listing = """
+        {"downloads": [
+          {"name": "Xcode 27.3 beta 2", "files": [{"remotePath": "/Developer_Tools/Xcode_27.3_beta_2/Xcode_27.3_beta_2.xip"}, {"remotePath": "/Developer_Tools/Xcode_27.3_beta_2/Xcode_27.3_beta_2.aea"}]},
+          {"name": "Xcode 27.2", "files": [{"remotePath": "/Developer_Tools/Xcode_27.2/Xcode_27.2.xip"}]},
+          {"name": "Command Line Tools for Xcode 27.2", "files": [{"remotePath": "/Developer_Tools/CLT/Command_Line_Tools.dmg"}]}
+        ]}
+        """
+        let fixture = OlympUsFixture { _ in StubResponse(headers: ["Set-Cookie": downloadAuthCookie], body: Data(listing.utf8)) }
+
+        try await fixture.olymp.getDownloadAuth(assets: assets)
+
+        #expect(fixture.logs.messages.contains("Apple lists 2 Xcode archives, 1 of them as .aea."))
+        #expect(fixture.logs.messages.contains("  Xcode 27.3 beta 2: .xip, .aea"))
+    }
+
+    @Test
     func `download auth fails without the download cookie`() async throws {
         let fixture = OlympUsFixture { _ in StubResponse(headers: ["Set-Cookie": "other=1; Path=/"]) }
 

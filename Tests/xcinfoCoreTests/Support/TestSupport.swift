@@ -297,3 +297,7 @@ extension Date {
         Calendar.current.date(byAdding: .month, value: -months, to: Date())!
     }
 }
+
+extension Data {
+    static let xipMagic = Data("xar!".utf8)
+}

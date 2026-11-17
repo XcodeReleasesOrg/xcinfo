@@ -11,10 +11,10 @@ import xcinfoCore
 extension XCInfo {
     struct Extract: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Extract an Xcode XIB"
+            abstract: "Extract an Xcode archive (.xip or .aea)"
         )
 
-        @Argument
+        @Argument(completion: .file(extensions: ArchiveFormat.fileExtensions))
         var source: URL
 
         @OptionGroup
@@ -25,7 +25,7 @@ extension XCInfo {
 
         func run() async throws {
             try await globals.run { core, output in
-                let url = try await core.extractXIP(source: source, options: extractionOptions.options)
+                let url = try await core.extractArchive(source: source, options: extractionOptions.options)
                 if output.options.isJSON {
                     try output.printJSON(PathPayload(path: url.path))
                 }

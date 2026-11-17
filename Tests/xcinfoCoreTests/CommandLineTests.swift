@@ -150,10 +150,10 @@ struct CommandLineTests {
         let options = install.installationOptions
 
         #expect(options.versionOptions.xcodeVersion.description == "latest")
-        #expect(options.xipFile == nil)
+        #expect(options.archiveFile == nil)
         #expect(options.extractionOptions.installationDirectory == URL(fileURLWithPath: "/Applications"))
         #expect(!options.extractionOptions.useSystemUnxip)
-        #expect(!options.shouldPreserveXIP)
+        #expect(!options.shouldPreserveArchive)
         #expect(!options.skipSymlinkCreation)
         #expect(!options.skipXcodeSelection)
         #expect(install.listOptions.updateList)
@@ -174,16 +174,27 @@ struct CommandLineTests {
         ])
         let options = install.installationOptions
 
-        #expect(options.xipFile?.path == "/tmp/Xcode.xip")
+        #expect(options.archiveFile?.path == "/tmp/Xcode.xip")
         #expect(options.extractionOptions.installationDirectory.path == "/tmp/Apps")
         #expect(options.downloadOptions.downloadDirectory.path == "/tmp/Downloads")
         #expect(options.extractionOptions.useSystemUnxip)
         #expect(options.extractionOptions.options.useLegacyUnxip)
         #expect(options.extractionOptions.options.destination.path == "/tmp/Apps")
-        #expect(options.shouldPreserveXIP)
+        #expect(options.shouldPreserveArchive)
         #expect(options.skipSymlinkCreation)
         #expect(options.skipXcodeSelection)
         #expect(!install.listOptions.updateList)
+    }
+
+    @Test(arguments: [
+        ["--archive-path", "/tmp/Xcode.aea", "--preserve-archive"],
+        ["--xip-path", "/tmp/Xcode.aea", "--preserve-xip"],
+    ])
+    func `archive options accept the new names and the deprecated xip names`(arguments: [String]) throws {
+        let options = try parse(XCInfo.Install.self, ["install", "15.0"] + arguments).installationOptions
+
+        #expect(options.archiveFile?.path == "/tmp/Xcode.aea")
+        #expect(options.shouldPreserveArchive)
     }
 
     @Test

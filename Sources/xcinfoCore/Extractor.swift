@@ -20,8 +20,8 @@ struct Extractor: Sendable {
     let destination: URL
     let appFilename: String?
 
-    private let temporaryDirectory: URL
-    private let logger: Logger
+    let temporaryDirectory: URL
+    let logger: Logger
 
     init(
         forReadingFromContainerAt url: URL,

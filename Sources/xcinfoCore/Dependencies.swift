@@ -154,10 +154,15 @@ extension ExtractionClient: DependencyKey {
                 temporaryDirectory: fileSystem.temporaryDirectory(destination),
                 logger: logger
             )
-            if useLegacyUnxip {
-                return try await extractor.extract()
-            } else {
-                return try await extractor.extractExperimental()
+            switch ArchiveFormat(contentsOf: source) {
+            case .aea:
+                return try await extractor.extractAEA(trust: .apple, archiveUtility: ProcessRunner.archiveUtility)
+            case .xip, nil:
+                if useLegacyUnxip {
+                    return try await extractor.extract()
+                } else {
+                    return try await extractor.extractExperimental()
+                }
             }
         }
     )

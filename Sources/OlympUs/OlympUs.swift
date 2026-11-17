@@ -694,6 +694,7 @@ public actor OlympUs {
         do {
             let (data, urlResponse) = try await session.data(for: request)
             logResponse(request, urlResponse, data)
+            logArchives(in: data)
             response = urlResponse
         } catch {
             throw OlympUsError.downloadAuthFailed
@@ -842,5 +843,41 @@ extension [HTTPCookie] {
         isEmpty ? "none" : map { "\($0.name) on \($0.domain.isEmpty ? "no domain" : $0.domain), \($0.dropReason(at: date) ?? "kept")" }
             .sorted()
             .joined(separator: "; ")
+    }
+}
+
+struct DownloadListing: Decodable, Equatable {
+    struct Download: Decodable, Equatable {
+        struct File: Decodable, Equatable {
+            let remotePath: String
+        }
+
+        let name: String
+        let files: [File]
+    }
+
+    let downloads: [Download]
+
+    var xcodeArchives: [(name: String, formats: [String])] {
+        downloads
+            .filter { $0.name.hasPrefix("Xcode ") && $0.name.dropFirst(6).first?.isNumber == true }
+            .compactMap { download in
+                let formats = download.files
+                    .map { ($0.remotePath as NSString).pathExtension.lowercased() }
+                    .filter { ["xip", "aea"].contains($0) }
+                return formats.isEmpty ? nil : (download.name, formats)
+            }
+    }
+}
+
+extension OlympUs {
+    func logArchives(in data: Data) {
+        guard let listing = try? JSONDecoder().decode(DownloadListing.self, from: data) else { return }
+        let archives = listing.xcodeArchives
+        let withAEA = archives.filter { $0.formats.contains("aea") }
+        logger.verbose("Apple lists \(archives.count) Xcode archives, \(withAEA.count) of them as .aea.")
+        for archive in (withAEA.isEmpty ? archives : withAEA).prefix(5) {
+            logger.verbose("  \(archive.name): \(archive.formats.map { ".\($0)" }.joined(separator: ", "))")
+        }
     }
 }

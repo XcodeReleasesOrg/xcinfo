@@ -124,7 +124,17 @@ Exit codes:
 | 64 | Invalid arguments |
 | 130 | Stopped with Ctrl-C (143 for `SIGTERM`) |
 
-After a download, and before installing from `--xip-path`, xcinfo checks the archive's SHA-1 against xcodereleases.com when the list has one ("Verifying"). A mismatch after a download fails with exit code 5 and keeps the file; for a `--xip-path` archive it warns and asks whether to install anyway. `--no-verify` skips the check.
+### Archive formats
+
+Xcode comes as `.xip` and, from Xcode 27.3, also as Apple Encrypted Archive (`.aea`). xcinfo recognizes the format by the file's contents, not its name; `extract`, `install --archive-path` and downloads accept both.
+
+- A signed `.aea` is opened with the AppleArchive framework, after its embedded certificate chain is checked against Apple Root CA - G3 and the "Apple Platform Signing ECC CA 1 - G1" intermediate. A chain or signature that does not check out stops the extraction; nothing is extracted.
+- Other `.aea` profiles are extracted with Apple's `archiveutil extractXcodeAEA`, available from macOS 15.
+- xcodereleases.com lists SHA-1 checksums for `.xip` archives only. An `.aea` is not compared with them; its signature is checked instead.
+- `--archive-path` and `--preserve-archive` replace `--xip-path` and `--preserve-xip`, which still work.
+- `-v` during a download lists which Xcode archives Apple offers and which of them as `.aea`.
+
+After a download, and before installing from `--archive-path`, xcinfo checks the archive's SHA-1 against xcodereleases.com when the list has one ("Verifying"). A mismatch after a download fails with exit code 5 and keeps the file; for an `--archive-path` archive it warns and asks whether to install anyway. `--no-verify` skips the check.
 
 `uninstall` asks with the full path of the Xcode it is about to remove and moves it to the Trash. `--delete-permanently` deletes it right away; if the Trash can't be used, `uninstall` stops and suggests that flag.
 

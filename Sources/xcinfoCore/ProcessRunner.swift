@@ -30,10 +30,25 @@ struct ProcessRunner {
         )
     }
 
-    private static func launch(executable: URL, arguments: [String], input: Data?) async throws -> ProcessResult {
+    static let archiveUtilityURL = URL(fileURLWithPath: "/usr/bin/archiveutil")
+
+    static var archiveUtility: AEAExtractor.ArchiveUtility? {
+        guard FileManager.default.isExecutableFile(atPath: archiveUtilityURL.path) else { return nil }
+        return { archive, workingDirectory in
+            try await launch(
+                executable: archiveUtilityURL,
+                arguments: ["extractXcodeAEA", archive.path],
+                input: nil,
+                workingDirectory: workingDirectory
+            )
+        }
+    }
+
+    private static func launch(executable: URL, arguments: [String], input: Data?, workingDirectory: URL? = nil) async throws -> ProcessResult {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments
+        process.currentDirectoryURL = workingDirectory
 
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()

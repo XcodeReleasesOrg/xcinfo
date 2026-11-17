@@ -135,7 +135,7 @@ struct ExtractionOptions: ParsableArguments {
     var installationDirectory: URL = .init(fileURLWithPath: "/Applications")
 
     @Flag(
-        help: "Uses system (much slower) version of unxip."
+        help: "Uses system (much slower) version of unxip for .xip archives."
     )
     var useSystemUnxip: Bool = false
 }
@@ -145,11 +145,11 @@ struct InstallationOptions: ParsableArguments {
     var versionOptions: VersionOptions
 
     @Option(
-        name: [.customLong("xip-path")],
-        help: "The path to an existing XIP file.",
-        completion: .file(extensions: ["xip"])
+        name: [.customLong("archive-path"), .customLong("xip-path")],
+        help: "The path to an existing Xcode archive (.xip or .aea). --xip-path is a deprecated alias.",
+        completion: .file(extensions: ArchiveFormat.fileExtensions)
     )
-    var xipFile: URL?
+    var archiveFile: URL?
 
     @OptionGroup
     var downloadOptions: DownloadOptions
@@ -158,10 +158,10 @@ struct InstallationOptions: ParsableArguments {
     var extractionOptions: ExtractionOptions
 
     @Flag(
-        name: [.customLong("preserve-xip")],
-        help: "Skip deletion of the downloaded XIP after extraction."
+        name: [.customLong("preserve-archive"), .customLong("preserve-xip")],
+        help: "Keep the downloaded archive after extraction. --preserve-xip is a deprecated alias."
     )
-    var shouldPreserveXIP: Bool = false
+    var shouldPreserveArchive: Bool = false
 
     @Flag(
         name: [.customLong("no-symlink")],
