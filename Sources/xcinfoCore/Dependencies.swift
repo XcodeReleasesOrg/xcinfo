@@ -27,7 +27,7 @@ public struct CredentialsClient: Sendable {
 
 @DependencyClient
 public struct AuthenticationClient: Sendable {
-    public var authenticate: @Sendable (_ accountName: String, _ password: @escaping @Sendable () async throws -> String) async throws -> Void
+    public var authenticate: @Sendable (_ accountName: String, _ password: @escaping @Sendable () async throws -> String) async throws -> DownloadListing?
     public var cleanup: @Sendable () async -> Void
 }
 
@@ -106,7 +106,7 @@ extension AuthenticationClient: DependencyKey {
             @Dependency(\.keychain) var keychain
             HTTPCookieStorage.shared.removeAppleCookies()
             let olymp = OlympUs(logger: logger, session: .xcinfo, sessionStore: .vault(keychain), prompt: prompt)
-            try await AppleAuthenticator(olymp: olymp, logger: logger).authenticate(username: accountName, password: password)
+            return try await AppleAuthenticator(olymp: olymp, logger: logger).authenticate(username: accountName, password: password)
         },
         cleanup: {
             @Dependency(\.logger) var logger

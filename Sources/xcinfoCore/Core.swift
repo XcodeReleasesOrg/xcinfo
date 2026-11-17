@@ -171,8 +171,9 @@ public struct Core: Sendable {
 
         logger.beginSection("Sign in to Apple Developer")
         let accountName = try await credentials.accountName()
+        let listing: DownloadListing?
         do {
-            try await authentication.authenticate(accountName) { [credentials] in
+            listing = try await authentication.authenticate(accountName) { [credentials] in
                 try await credentials.password(accountName)
             }
         } catch let error as CredentialsError {
@@ -184,12 +185,19 @@ public struct Core: Sendable {
         }
 
         logger.beginSection("Downloading")
+        let source = DownloadSource(listed: url, offered: listing?.archiveURLs(inFolderOf: url, named: "Xcode \(xcode.displayVersion)"))
+        if let note = source.note {
+            logger.log(note)
+        }
         do {
-            let downloadURL = try await downloads.download(
-                url,
-                options.destination,
-                options.disableSleep
-            )
+            let downloadURL: URL
+            do {
+                downloadURL = try await downloads.download(source.url, options.destination, options.disableSleep)
+            } catch XCAPIError.unexpectedStatusCode(404) where source.derivedFallback != nil {
+                let fallback = source.derivedFallback!
+                logger.warn("Apple has no file at \(source.url.lastPathComponent). Trying the .aea at the same path, a derived address: \(fallback)")
+                downloadURL = try await downloads.download(fallback, options.destination, options.disableSleep)
+            }
             logger.success("Downloaded to \(downloadURL.path)")
             if options.verifiesChecksum, let mismatch = try await checksumMismatch(of: downloadURL, xcode: xcode) {
                 throw mismatch
