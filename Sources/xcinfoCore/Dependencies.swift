@@ -343,7 +343,7 @@ extension URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpCookieStorage = HTTPCookieStorage.xcinfo
-        configuration.timeoutIntervalForRequest = 5
+        configuration.timeoutIntervalForRequest = 30
         return URLSession(configuration: configuration)
     }()
 
