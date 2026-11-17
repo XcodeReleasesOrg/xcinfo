@@ -51,7 +51,8 @@ extension DownloadOptions {
             disableSleep: disableSleep,
             verifiesChecksum: !skipsVerification,
             archiveFormat: archiveFormat,
-            overwritesExistingFile: overwritesExistingFile
+            overwritesExistingFile: overwritesExistingFile,
+            architecture: architecture
         )
     }
 }

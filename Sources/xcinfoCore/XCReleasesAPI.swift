@@ -98,6 +98,10 @@ extension Xcode: @retroactive CustomStringConvertible, @retroactive CustomDebugS
         return nil
     }
 
+    func isVariant(of other: Xcode) -> Bool {
+        displayName == other.displayName && links?.download?.url != other.links?.download?.url
+    }
+
     public var labeledName: String {
         architecture.map { "\(displayName) · \($0.label)" } ?? displayName
     }

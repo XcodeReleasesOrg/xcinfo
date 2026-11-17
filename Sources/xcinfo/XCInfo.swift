@@ -143,6 +143,28 @@ struct DownloadOptions: ParsableArguments {
     @Flag(name: .customLong("no-verify"), help: "Skip the SHA-1 check of the archive against xcodereleases.com.")
     var skipsVerification: Bool = false
 
+    @Flag(
+        name: .customLong("apple-silicon"),
+        help: "When a version has separate downloads, take the Apple silicon one. The default follows this Mac."
+    )
+    var prefersAppleSilicon: Bool = false
+
+    @Flag(
+        name: .customLong("universal"),
+        help: "When a version has separate downloads, take the Universal one (Apple silicon and Intel)."
+    )
+    var prefersUniversal: Bool = false
+
+    var architecture: XcodeArchitecture? {
+        prefersUniversal ? .universal : prefersAppleSilicon ? .appleSilicon : nil
+    }
+
+    mutating func validate() throws {
+        guard !(prefersAppleSilicon && prefersUniversal) else {
+            throw ValidationError("Use either --apple-silicon or --universal, not both.")
+        }
+    }
+
     var disableSleep: Bool {
         preventSleep || allowsSleep == false
     }

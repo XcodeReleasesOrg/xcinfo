@@ -46,6 +46,7 @@ public struct ProcessClient: Sendable {
     public var run: @Sendable (_ command: String, _ arguments: [String]) async throws -> ProcessResult
     public var runPrivileged: @Sendable (_ command: String, _ password: String, _ arguments: [String]) async throws -> ProcessResult
     public var isRunningAsRoot: @Sendable () -> Bool = { false }
+    public var isAppleSilicon: @Sendable () -> Bool = { true }
 }
 
 @DependencyClient
@@ -179,7 +180,12 @@ extension ProcessClient: DependencyKey {
             }
             return try await ProcessRunner.runPrivileged(command, password: password, arguments: arguments)
         },
-        isRunningAsRoot: { geteuid() == 0 }
+        isRunningAsRoot: { geteuid() == 0 },
+        isAppleSilicon: {
+            var value: Int32 = 0
+            var size = MemoryLayout<Int32>.size
+            return sysctlbyname("hw.optional.arm64", &value, &size, nil, 0) == 0 && value == 1
+        }
     )
 
     public static let testValue = ProcessClient()
