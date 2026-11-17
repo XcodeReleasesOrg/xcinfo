@@ -5,7 +5,6 @@
 
 import Foundation
 import XCIFoundation
-import XCUnxip
 
 struct Extractor: Sendable {
     struct ExtractionError: LocalizedError {
@@ -37,7 +36,7 @@ struct Extractor: Sendable {
         self.logger = logger
     }
 
-    func extractExperimental() async throws -> URL {
+    func extractXIP() async throws -> URL {
         let target = temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.ensureFolderExists(target)
         defer { try? FileManager.default.removeItem(at: target) }
@@ -68,67 +67,6 @@ struct Extractor: Sendable {
         logger.progress(OutputProgress(title: "Extracting", fraction: 1, isFinished: true))
         logger.verbose("Done extracting: \(target.path)")
 
-        if let applicationURL = moveToDestinationFolder(tempFolder: target) {
-            return applicationURL
-        } else {
-            throw ExtractionError("Application could not be moved to \(destination.path).")
-        }
-    }
-
-    private enum UnarchivingEvent: Sendable {
-        case progress(Double, String)
-        case finished
-    }
-
-    func extract() async throws -> URL {
-        let container: PKSignedContainer
-        do {
-            container = try PKSignedContainer(forReadingFromContainerAt: source)
-        } catch {
-            throw ExtractionError(error.localizedDescription)
-        }
-
-        let target = temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: target) }
-        logger.verbose("Extracting the .xip archive into a temporary folder: \(target.path)")
-
-        let (events, continuation) = AsyncStream.makeStream(of: UnarchivingEvent.self)
-        container.startUnarchiving(atPath: target.path, notifyOn: .main, progress: { progress, statusMessage in
-            continuation.yield(.progress(progress, statusMessage))
-        }, finish: { _ in
-            continuation.yield(.finished)
-            continuation.finish()
-        })
-
-        var milestones = ProgressMilestones()
-        for await event in events {
-            guard case let .progress(progress, statusMessage) = event else { break }
-            let ratio = progress / 100
-            switch ratio {
-            case _ where ratio < 0:
-                logger.verbose(statusMessage)
-            case _ where ratio > 1:
-                logger.verbose("Probably done: \(statusMessage)")
-            default:
-                logger.progress(OutputProgress(
-                    title: "Extracting",
-                    fraction: min(ratio, 0.999),
-                    detail: statusMessage.isEmpty ? nil : statusMessage,
-                    isMilestone: milestones.reached(ratio)
-                ))
-            }
-        }
-        withExtendedLifetime(container) {}
-
-        guard FileManager.default.fileExists(atPath: target.path) else {
-            let result = try await ProcessRunner.run("/usr/bin/xip", arguments: ["--expand", source.path])
-            let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            let prefix = "xip: error: "
-            throw ExtractionError(message.hasPrefix(prefix) ? String(message.dropFirst(prefix.count)) : message)
-        }
-
-        logger.progress(OutputProgress(title: "Extracting", fraction: 1, isFinished: true))
-        logger.verbose("Done extracting: \(target.path)")
         if let applicationURL = moveToDestinationFolder(tempFolder: target) {
             return applicationURL
         } else {

@@ -38,7 +38,7 @@ public struct DownloadClient: Sendable {
 
 @DependencyClient
 public struct ExtractionClient: Sendable {
-    public var extract: @Sendable (_ source: URL, _ destination: URL, _ appFilename: String?, _ useLegacyUnxip: Bool) async throws -> URL
+    public var extract: @Sendable (_ source: URL, _ destination: URL, _ appFilename: String?) async throws -> URL
 }
 
 @DependencyClient
@@ -144,7 +144,7 @@ extension DownloadClient: DependencyKey {
 
 extension ExtractionClient: DependencyKey {
     public static let liveValue = ExtractionClient(
-        extract: { source, destination, appFilename, useLegacyUnxip in
+        extract: { source, destination, appFilename in
             @Dependency(\.logger) var logger
             @Dependency(\.fileSystem) var fileSystem
             let extractor = Extractor(
@@ -158,11 +158,7 @@ extension ExtractionClient: DependencyKey {
             case .aea:
                 return try await extractor.extractAEA(trust: .apple, archiveUtility: ProcessRunner.archiveUtility)
             case .xip, nil:
-                if useLegacyUnxip {
-                    return try await extractor.extract()
-                } else {
-                    return try await extractor.extractExperimental()
-                }
+                return try await extractor.extractXIP()
             }
         }
     )

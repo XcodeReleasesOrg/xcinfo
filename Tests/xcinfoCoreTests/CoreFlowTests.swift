@@ -351,8 +351,8 @@ struct CoreInstallTests {
             accountName: { "user" },
             authenticate: { _, _ in },
             download: download,
-            extract: { source, destination, filename, useLegacyUnxip in
-                extractions.append("\(source.lastPathComponent) \(destination.path) \(filename ?? "-") \(useLegacyUnxip)")
+            extract: { source, destination, filename in
+                extractions.append("\(source.lastPathComponent) \(destination.path) \(filename ?? "-")")
                 return destination.appendingPathComponent(filename ?? "Xcode.app")
             },
             shell: shell,
@@ -365,7 +365,6 @@ struct CoreInstallTests {
     private func options(
         xip: URL?,
         destination: URL,
-        useLegacyUnxip: Bool = false,
         skipSymlinkCreation: Bool = false,
         skipXcodeSelection: Bool = false,
         shouldPreserveArchive: Bool = false
@@ -374,7 +373,7 @@ struct CoreInstallTests {
             version: .version("15.0"),
             archiveFile: xip,
             downloadOptions: .init(destination: destination, disableSleep: false),
-            extractionOptions: .init(destination: destination, useLegacyUnxip: useLegacyUnxip),
+            extractionOptions: .init(destination: destination),
             skipSymlinkCreation: skipSymlinkCreation,
             skipXcodeSelection: skipXcodeSelection,
             shouldPreserveArchive: shouldPreserveArchive
@@ -401,12 +400,12 @@ struct CoreInstallTests {
         )
 
         try await core.install(
-            options: options(xip: xip, destination: applications.url, useLegacyUnxip: true, shouldPreserveArchive: true),
+            options: options(xip: xip, destination: applications.url, shouldPreserveArchive: true),
             updateVersionList: true
         )
 
         let app = applications.url.appendingPathComponent("Xcode_15.0.app")
-        #expect(extractions.values == ["Xcode_15.xip \(applications.url.path) Xcode_15.0.app true"])
+        #expect(extractions.values == ["Xcode_15.xip \(applications.url.path) Xcode_15.0.app"])
         #expect(shell.calls.values == [
             ShellCall(command: "/usr/sbin/spctl", args: ["--assess", "--verbose", "--type", "execute", app.path], password: nil),
             ShellCall(command: "/usr/bin/codesign", args: ["--verify", "--verbose", app.path], password: nil),
@@ -621,8 +620,8 @@ struct CoreExtractTests {
             logs: logs,
             isVerbose: true,
             cachesDirectory: directory.url,
-            extract: { source, destination, filename, useLegacyUnxip in
-                extractions.append("\(source.lastPathComponent) \(filename ?? "-") \(useLegacyUnxip)")
+            extract: { source, destination, filename in
+                extractions.append("\(source.lastPathComponent) \(filename ?? "-")")
                 return destination.appendingPathComponent("Xcode.app")
             },
             applicationsDirectory: directory.url
@@ -631,7 +630,7 @@ struct CoreExtractTests {
         let extracted = try await core.extractArchive(source: source, options: .init(destination: directory.url))
 
         #expect(extracted == directory.url.appendingPathComponent("Xcode.app"))
-        #expect(extractions.values == ["\(name) - false"])
+        #expect(extractions.values == ["\(name) -"])
         #expect(FileManager.default.fileExists(atPath: source.path))
         #expect(logs.messages.first == "\nExtracting")
         #expect(logs.messages.contains("Extracted to \(directory.url.appendingPathComponent("Xcode.app").path)"))
@@ -642,7 +641,7 @@ struct CoreExtractTests {
     func `extracting for an xcode uses its file name`() async throws {
         let directory = try TemporaryDirectory()
         let source = try directory.file("Xcode.xip", contents: .xipMagic)
-        let core = Core.test(logs: LogRecorder(), cachesDirectory: directory.url, extract: { _, destination, filename, _ in destination.appendingPathComponent(filename ?? "Xcode.app") }, applicationsDirectory: directory.url)
+        let core = Core.test(logs: LogRecorder(), cachesDirectory: directory.url, extract: { _, destination, filename in destination.appendingPathComponent(filename ?? "Xcode.app") }, applicationsDirectory: directory.url)
 
         let extracted = try await core.extractArchive(
             source: source,
@@ -673,7 +672,7 @@ struct CoreExtractTests {
         let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: directory.url,
-            extract: { _, _, _, _ in throw Extractor.ExtractionError("broken") },
+            extract: { _, _, _ in throw Extractor.ExtractionError("broken") },
             applicationsDirectory: directory.url
         )
 
@@ -697,7 +696,7 @@ struct CoreExtractionNameTests {
         let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
-            extract: { _, destination, filename, _ in
+            extract: { _, destination, filename in
                 filenames.append(filename ?? "-")
                 return destination.appendingPathComponent(filename ?? "Xcode.app")
             },

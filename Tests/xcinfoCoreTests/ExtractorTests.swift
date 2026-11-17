@@ -32,7 +32,7 @@ struct ExtractorTests {
         )
 
         await #expect(throws: (any Error).self) {
-            try await extractor.extractExperimental()
+            try await extractor.extractXIP()
         }
 
         #expect(try FileManager.default.contentsOfDirectory(atPath: temporary.path).isEmpty)
@@ -68,17 +68,6 @@ struct ExtractorTests {
         } throws: { error in
             guard case let CoreError.invalidExtractionOutputURL(url) = error else { return false }
             return url == missing
-        }
-    }
-
-    @Test
-    func `the legacy extractor rejects a broken archive`() async throws {
-        let directory = try TemporaryDirectory()
-        let source = try directory.file("Broken.xip", contents: Data("not a xip archive".utf8))
-        let extractor = Extractor(forReadingFromContainerAt: source, destination: directory.url, appFilename: nil, logger: LogRecorder().logger())
-
-        await #expect(throws: (any Error).self) {
-            try await extractor.extract()
         }
     }
 }

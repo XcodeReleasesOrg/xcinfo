@@ -25,6 +25,7 @@ extension XCInfo {
 
         func run() async throws {
             try await globals.run { core, output in
+                extractionOptions.reportDeprecations(to: output)
                 let url = try await core.extractArchive(source: source, options: extractionOptions.options)
                 if output.options.isJSON {
                     try output.printJSON(PathPayload(path: url.path))
@@ -36,6 +37,6 @@ extension XCInfo {
 
 extension ExtractionOptions {
     var options: Core.ExtractionOptions {
-        .init(destination: installationDirectory, useLegacyUnxip: useSystemUnxip)
+        .init(destination: installationDirectory)
     }
 }

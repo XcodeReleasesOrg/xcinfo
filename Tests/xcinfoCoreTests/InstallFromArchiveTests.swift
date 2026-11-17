@@ -22,7 +22,7 @@ struct InstallFromArchiveTests {
             isVerbose: true,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
-            extract: { _, destination, filename, _ in
+            extract: { _, destination, filename in
                 let app = destination.appendingPathComponent(filename ?? "Xcode-beta.app")
                 let contents = app.appendingPathComponent("Contents")
                 try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)

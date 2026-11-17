@@ -32,10 +32,6 @@ let package = Package(
             swiftSettings: swiftSettings
         ),
         .target(
-            name: "XCUnxip",
-            dependencies: []
-        ),
-        .target(
             name: "XCInfoTUI",
             dependencies: [
                 .product(name: "Dependencies", package: "swift-dependencies"),
@@ -54,11 +50,7 @@ let package = Package(
                 "xcinfoCore",
                 "XCIFoundation",
             ],
-            swiftSettings: swiftSettings,
-            linkerSettings: [
-                LinkerSetting.linkedFramework("PackageKit"),
-                LinkerSetting.unsafeFlags(["-F/System/Library/PrivateFrameworks/"]),
-            ]
+            swiftSettings: swiftSettings
         ),
         .target(
             name: "xcinfoCore",
@@ -67,7 +59,6 @@ let package = Package(
                 .product(name: "DependenciesMacros", package: "swift-dependencies"),
                 "OlympUs",
                 "XCIFoundation",
-                "XCUnxip",
                 .product(name: "libunxip", package: "unxip"),
                 .product(name: "XCModel", package: "data"),
             ],
@@ -87,11 +78,7 @@ let package = Package(
                 .product(name: "XCModel", package: "data"),
             ],
             resources: [.copy("Fixtures")],
-            swiftSettings: swiftSettings,
-            linkerSettings: [
-                LinkerSetting.linkedFramework("PackageKit"),
-                LinkerSetting.unsafeFlags(["-F/System/Library/PrivateFrameworks/"]),
-            ]
+            swiftSettings: swiftSettings
         ),
         .target(
             name: "OlympUs",

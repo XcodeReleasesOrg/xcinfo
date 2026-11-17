@@ -26,6 +26,7 @@ extension XCInfo {
 
         func run() async throws {
             try await globals.run { core, output in
+                installationOptions.extractionOptions.reportDeprecations(to: output)
                 let application = try await core.install(
                     options: .init(
                         version: installationOptions.xcodeVersion,
