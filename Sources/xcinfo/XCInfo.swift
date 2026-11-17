@@ -13,6 +13,11 @@ import xcinfoCore
 struct XCInfo: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "xcinfo",
+        discussion: """
+        Exit codes: 0 success, 1 unexpected error, 3 version not found, 4 sign-in failed, \
+        5 download failed, 6 extraction failed, 7 installation failed, 8 uninstallation failed, \
+        9 xcodereleases.com or cache unavailable. Invalid arguments exit with 64.
+        """,
         version: version,
         subcommands: [
             Cleanup.self,
@@ -34,20 +39,36 @@ struct DefaultOptions: ParsableArguments {
     )
     var isVerbose: Bool = false
 
-    @Flag(name: .customLong("ansi"), inversion: .prefixedNo, help: "Show output with colors.")
+    @Flag(
+        name: .customLong("ansi"),
+        inversion: .prefixedNo,
+        help: "Show output with colors. Colors are off when the output is not a terminal or NO_COLOR is set."
+    )
     var useANSI: Bool = true
 
-    var logger: Logger {
-        Logger(isVerbose: isVerbose)
+    @Flag(name: [.customLong("quiet"), .customShort("q")], help: "Only show results, warnings and errors.")
+    var isQuiet: Bool = false
+
+    @Flag(name: .customLong("json"), help: "Print the result as JSON, without progress or status messages.")
+    var isJSON: Bool = false
+
+    var renderer: TerminalRenderer {
+        TerminalRenderer(options: .detect(isVerbose: isVerbose, isQuiet: isQuiet, isJSON: isJSON, allowsColors: useANSI))
     }
 
     @discardableResult
-    func run<Result>(_ operation: (Core) async throws -> Result) async throws -> Result {
-        Logger.isANSIEnabled = useANSI
-        return try await withDependencies {
-            $0.logger = logger
-        } operation: {
-            try await operation(Core())
+    func run<Result>(_ operation: (Core, TerminalRenderer) async throws -> Result) async throws -> Result {
+        let renderer = renderer
+        Logger.isANSIEnabled = renderer.options.usesColors
+        do {
+            return try await withDependencies {
+                $0.logger = renderer.logger
+            } operation: {
+                try await operation(Core(), renderer)
+            }
+        } catch {
+            renderer.report(error)
+            throw ExitCode(error.exitCode)
         }
     }
 }
@@ -76,12 +97,19 @@ struct DownloadOptions: ParsableArguments {
     )
     var downloadDirectory: URL = .init(fileURLWithPath: "\(NSHomeDirectory())/Downloads").standardizedFileURL
 
+    @Flag(name: .customLong("prevent-sleep"), help: "Keep the Mac awake while downloading.")
+    var preventSleep: Bool = false
+
     @Flag(
-        name: [.customLong("sleep")],
+        name: .customLong("sleep"),
         inversion: .prefixedNo,
-        help: "Let the system sleep during execution."
+        help: "Deprecated, use --prevent-sleep. --no-sleep keeps the Mac awake, --sleep lets it sleep."
     )
-    var disableSleep: Bool = false
+    var allowsSleep: Bool?
+
+    var disableSleep: Bool {
+        preventSleep || allowsSleep == false
+    }
 }
 
 struct ExtractionOptions: ParsableArguments {

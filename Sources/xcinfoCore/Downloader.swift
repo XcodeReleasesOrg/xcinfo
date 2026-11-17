@@ -26,21 +26,12 @@ struct Downloader: Sendable {
         self.clock = clock
     }
 
-    private static func string(fromByteCount measurement: Measurement<UnitInformationStorage>) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.zeroPadsFractionDigits = true
-        return formatter.string(from: measurement)
-    }
-
-    private static func timestamp() -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = DateFormatter.dateFormat(fromTemplate: "jms", options: 0, locale: nil)
-        return formatter.string(from: Date())
+    private static func bytes(_ measurement: Measurement<UnitInformationStorage>) -> String {
+        measurement.formatted(.byteCount(style: .file, spellsOutZero: false).locale(Locale(identifier: "en_US")))
     }
 
     func start(url: URL, disableSleep: Bool, resumeData: Data? = nil) async throws -> URL {
-        var progressDisplay = ProgressDisplay(ratio: 0, width: 20)
-        let start = Date()
+        let start = ContinuousClock.now
 
         let task: URLSessionDownloadTask
         if let resumeData {
@@ -62,18 +53,12 @@ struct Downloader: Sendable {
             disableSleep: disableSleep
         )
 
-        if resumeData == nil {
-            logger.verbose("[\(Self.timestamp())] Starting download")
-        } else {
-            logger.verbose("[\(Self.timestamp())] Resuming download")
-        }
-
+        logger.verbose(resumeData == nil ? "Starting download" : "Resuming download")
         logger.log("Source: \(url)")
-        var hasLoggedTotalSize = false
-        var previouslyDisplayedNonANSIProgress = -1
+
         var progress = DownloadProgress()
-        let clock = ContinuousClock()
         var lastDisplay: ContinuousClock.Instant?
+        var lastMilestone = 0
 
         for await event in download.events {
             switch event {
@@ -83,50 +68,34 @@ struct Downloader: Sendable {
                     totalBytesWritten: totalBytesWritten,
                     totalBytesExpectedToWrite: totalBytesExpectedToWrite
                 )
-                let now = clock.now
-                if let lastDisplay, lastDisplay.duration(to: now) < .seconds(1) {
+                let now = ContinuousClock.now
+                let milestone = Int(progress.progress * 10)
+                let isMilestone = milestone > lastMilestone
+                if let lastDisplay, lastDisplay.duration(to: now) < .seconds(1), !isMilestone {
                     continue
                 }
                 lastDisplay = now
+                lastMilestone = max(lastMilestone, milestone)
 
-                if !hasLoggedTotalSize {
-                    logger.log(
-                        "Source: \(url) (\(Self.string(fromByteCount: progress.totalBytes)))\n",
-                        onSameLine: true
-                    )
-                    hasLoggedTotalSize = true
+                var details = [
+                    "\(Self.bytes(progress.remainingBytes)) of \(Self.bytes(progress.totalBytes)) remaining",
+                ]
+                if progress.downloadSpeed.value > 0 {
+                    details.append("\(Self.bytes(progress.downloadSpeed))/s")
                 }
-                if Logger.isANSIEnabled {
-                    progressDisplay.ratio = progress.progress
-                    let logMessage = [
-                        progressDisplay.representation,
-                        "remaining: \(Self.string(fromByteCount: progress.remainingBytes))",
-                        "speed: \(Self.string(fromByteCount: progress.downloadSpeed))/s"
-                    ].joined(separator: ", ")
-                    logger.log(logMessage, onSameLine: true)
-                } else {
-                    let percent = Int(100 * progress.progress)
-                    print(String(format: "%.1f %", 100 * progress.progress))
-                    if percent.isMultiple(of: 5), previouslyDisplayedNonANSIProgress != percent {
-                        logger.log("Download progress: \(percent) %")
-                        previouslyDisplayedNonANSIProgress = percent
-                    }
-                }
+                logger.progress(OutputProgress(
+                    title: "Downloading",
+                    fraction: progress.progress,
+                    detail: details.joined(separator: ", "),
+                    isMilestone: isMilestone
+                ))
             case let .finished(downloadedURL):
-                let downloadTime = Date().timeIntervalSinceReferenceDate - start.timeIntervalSinceReferenceDate
-                if Logger.isANSIEnabled {
-                    progressDisplay.ratio = 1
-                    let formatter = DateComponentsFormatter()
-                    formatter.unitsStyle = .abbreviated
-                    formatter.allowedUnits = [.hour, .minute, .second]
-                    let logMessage = [
-                        progressDisplay.representation,
-                        "Download time: \(formatter.string(from: downloadTime) ?? "???")"
-                    ].joined(separator: ", ")
-                    logger.log(logMessage, onSameLine: true)
-                } else {
-                    logger.log("Download progress: 100 %")
-                }
+                let downloadTime = start.duration(to: .now)
+                logger.progress(OutputProgress(
+                    title: "Downloading",
+                    fraction: 1,
+                    detail: "done in \(downloadTime.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated)))"
+                ))
 
                 guard let downloadedURL else {
                     throw XCAPIError.couldNotMoveToTemporaryFile

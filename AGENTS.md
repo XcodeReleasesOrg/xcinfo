@@ -26,11 +26,15 @@
 
 ## Terminal I/O
 
-`xcinfoCore` writes through the `logger` dependency and asks through the `prompt` dependency (`PromptClient`, backed by the in-house `ConsolePrompt`). Don't add `print`, `readLine` or `getpass` calls in `Core`, `OlympUs` or the clients; a later step replaces the logger with typed events for the CLI renderer and the TUI.
+- `xcinfoCore` never prints. It reports typed `OutputEvent`s (section, message with a style, verbose, check, progress) through the `logger` dependency and asks through the `prompt` dependency (`PromptClient`, backed by the in-house `ConsolePrompt`). No `print`, `readLine`, `getpass` or ANSI styling in `Core`, `OlympUs` or the clients
+- Queries (`list`, `installed`, `info`) return data; the CLI renders it as text (`Presentation.swift`) or JSON
+- `TerminalRenderer` (XCIFoundation) owns the terminal: stdout for status and results, stderr for warnings and errors, colors only on a terminal without `NO_COLOR`, one updating progress line on a terminal and 10 % milestones when piped, `--quiet` and `--json`
+- Every failure maps to an exit code in `Error.exitCode`; keep the table in the README and in `xcinfo --help` in sync
 
 ## Behaviour that must not change
 
-- CLI subcommands, flags and their defaults
+- CLI subcommands, flags and their defaults (deprecated flags stay as aliases)
+- The text output of `list` and `installed` when piped
 - Keychain service names `xcinfo.appleid` and `xcinfo.session`, the `cookies` user defaults key, and the cache file `~/Library/Caches/xcinfo/xcinfo.json`
 - The Apple sign-in sequence in `OlympUs`
 

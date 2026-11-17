@@ -71,26 +71,44 @@ final class Recorder<Value: Sendable>: Sendable {
 }
 
 final class LogRecorder: Sendable {
-    private let recorder = Recorder<String>()
+    private let recorder = Recorder<OutputEvent>()
 
-    func logger(isVerbose: Bool = false) -> XCIFoundation.Logger {
-        Logger(isVerbose: isVerbose, output: { [recorder] in recorder.append($0) })
+    func logger(isVerbose _: Bool = false) -> XCIFoundation.Logger {
+        XCIFoundation.Logger { [recorder] in recorder.append($0) }
     }
 
-    var rawMessages: [String] {
+    var events: [OutputEvent] {
         recorder.values
     }
 
     var messages: [String] {
-        rawMessages.map(\.strippingANSI)
+        events.compactMap { event in
+            switch event {
+            case let .section(title), let .paragraph(title):
+                "\n" + title
+            case let .message(text, _), let .verbose(text):
+                text
+            case let .check(title, .running):
+                "\(title)..."
+            case let .check(title, .passed):
+                "\(title) ✓"
+            case let .check(title, .failed):
+                "\(title) ✗"
+            case .progress:
+                nil
+            }
+        }
+    }
+
+    var progress: [OutputProgress] {
+        events.compactMap { event in
+            guard case let .progress(progress) = event else { return nil }
+            return progress
+        }
     }
 
     var text: String {
         messages.joined(separator: "\n")
-    }
-
-    var lines: [String] {
-        text.components(separatedBy: "\n")
     }
 }
 

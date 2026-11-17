@@ -9,7 +9,7 @@ import XCIFoundation
 import xcinfoCore
 
 extension XCInfo {
-    struct Cleanup: ParsableCommand {
+    struct Cleanup: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Remove stored credentials",
             discussion: "Remove stored Apple ID credentials and session authentification items from the macOS keychain."
@@ -18,12 +18,12 @@ extension XCInfo {
         @OptionGroup()
         var globals: DefaultOptions
 
-        func run() throws {
-            Logger.isANSIEnabled = globals.useANSI
-            withDependencies {
-                $0.logger = globals.logger
-            } operation: {
-                Core().cleanup()
+        func run() async throws {
+            try await globals.run { core, output in
+                core.cleanup()
+                if output.options.isJSON {
+                    try output.printJSON([String: String]())
+                }
             }
         }
     }

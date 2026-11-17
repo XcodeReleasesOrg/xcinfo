@@ -4,6 +4,7 @@
 //
 
 import ArgumentParser
+import Foundation
 import XCIFoundation
 import xcinfoCore
 
@@ -32,17 +33,17 @@ extension XCInfo {
         var listOptions: ListOptions
 
         func run() async throws {
-            do {
-                try await globals.run { core in
-                    try await core.list(
-                        shouldUpdate: listOptions.updateList,
-                        showAllVersions: showAllVersions,
-                        filter: listFilter
-                    )
+            try await globals.run { core, output in
+                let list = try await core.list(
+                    shouldUpdate: listOptions.updateList,
+                    showAllVersions: showAllVersions,
+                    filter: listFilter
+                )
+                if output.options.isJSON {
+                    try output.printJSON(ListPayload(list))
+                } else {
+                    list.lines(terminalColumns: WindowSize.current?.columns).forEach(output.print)
                 }
-            } catch {
-                globals.logger.error(error.localizedDescription)
-                throw ExitCode.failure
             }
         }
     }
