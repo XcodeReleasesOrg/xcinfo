@@ -237,6 +237,7 @@ extension Core {
         extract: (@Sendable (URL, URL, String?) async throws -> URL)? = nil,
         shell: FakeShell? = nil,
         prompt: FakePrompt? = nil,
+        promptClient: PromptClient? = nil,
         applicationsDirectory: URL,
         revealInFinder: (@Sendable (URL) -> Void)? = nil,
         trashItem: (@Sendable (URL) throws -> URL?)? = nil
@@ -272,6 +273,7 @@ extension Core {
             if let extract { $0.extraction.extract = extract }
             if let shell { $0.processes = shell.client }
             if let prompt { $0.prompt = prompt.client }
+            if let promptClient { $0.prompt = promptClient }
             if let revealInFinder { $0.workspace.revealInFinder = { revealInFinder($0) } }
         } operation: {
             Core()
