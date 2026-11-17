@@ -84,6 +84,8 @@ private func perform(_ command: TUICommand, core: Core) async throws {
             options: .init(destination: downloadsDirectory, disableSleep: true),
             updateVersionList: false
         )
+    case let .switchTo(application):
+        try await core.switchXcode(to: application, options: .init())
     case let .uninstall(application):
         try await core.uninstall(application.xcode.version.build?.lowercased() ?? application.xcode.displayVersion, updateVersionList: false)
     case .quit, .refresh:

@@ -31,6 +31,7 @@ public enum TUICommand: Sendable, Equatable {
     case install(Xcode, TUIInstallOptions)
     case download(Xcode)
     case uninstall(XcodeApplication)
+    case switchTo(XcodeApplication)
 }
 
 public struct TUIModel: Sendable, Equatable {
@@ -121,6 +122,8 @@ public struct TUIModel: Sendable, Equatable {
             return command(for: .download)
         case .character("u"):
             return command(for: .uninstall)
+        case .character("s"):
+            return command(for: .switchTo)
         default:
             break
         }
@@ -132,6 +135,7 @@ public struct TUIModel: Sendable, Equatable {
         case install
         case download
         case uninstall
+        case switchTo
     }
 
     private mutating func command(for action: Action) -> TUICommand? {
@@ -144,6 +148,10 @@ public struct TUIModel: Sendable, Equatable {
             return .download(entry.xcode)
         case let (.uninstall, .installed(url)):
             return .uninstall(XcodeApplication(url: url, xcode: entry.xcode))
+        case let (.switchTo, .installed(url)):
+            return .switchTo(XcodeApplication(url: url, xcode: entry.xcode))
+        case (.switchTo, _):
+            status = "Only installed versions can be switched to."
         case (.install, .installed):
             status = "\(entry.xcode.displayName) is already installed."
         case (.uninstall, _):

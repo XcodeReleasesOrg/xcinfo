@@ -282,7 +282,7 @@ public struct TUIRenderer: Sendable {
         case .available:
             actions += ["i install", "d download"]
         case .installed:
-            actions += ["d download", "u uninstall"]
+            actions += ["s switch", "d download", "u uninstall"]
         case .notInstallable, .none:
             break
         }

@@ -30,6 +30,7 @@ struct XCInfo: AsyncParsableCommand {
             Install.self,
             Installed.self,
             List.self,
+            Switch.self,
             Tui.self,
             Uninstall.self
         ]

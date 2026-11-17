@@ -67,6 +67,10 @@ $ brew install xcinfo
 ### uninstall
 - removes an installed version of Xcode from /Applications
 
+### switch
+- points /Applications/Xcode.app to another installed Xcode and selects it with `xcode-select` (asks for the Mac administrator password): `xcinfo switch 16.0`, `xcinfo switch 16A242d`, or `xcinfo switch` to choose
+- `--no-symlink` and `--no-xcode-select` skip either change; in the terminal UI, press `s` on an installed version
+
 ### cleanup
 - Deletes the Keychain item `xcinfo` (the stored Apple ID and the Apple session) and the Apple cookies left by older versions; the next download signs in again, with two-factor authentication
 - Keeps downloaded archives, saved download progress and the cached list of Xcode versions
@@ -85,6 +89,7 @@ $ brew install xcinfo
 | i | Install the selected version: first asks for the folder (default /Applications) and whether to point /Applications/Xcode.app to it and select it with xcode-select |
 | d | Download the selected version |
 | u | Uninstall the selected version |
+| s | Switch to the selected installed version (link and xcode-select) |
 | r | Refresh the list |
 | q, Esc, Ctrl-C | Quit |
 
