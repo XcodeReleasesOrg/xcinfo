@@ -117,10 +117,21 @@ public extension PromptClient {
                 console.readLine(prompt)
             },
             readSecret: { prompt in
-                SecretInput.readFromTerminal(prompt: prompt) ?? ""
+                readPassphrase(prompt: "\(prompt) ")
             }
         )
     }
 
     static let live = PromptClient.console(.standard)
+}
+
+private func readPassphrase(prompt: String) -> String {
+    var buffer = [CChar](repeating: 0, count: 1024)
+    return buffer.withUnsafeMutableBufferPointer { buffer in
+        defer { memset_s(buffer.baseAddress, buffer.count, 0, buffer.count) }
+        guard let passphrase = readpassphrase(prompt, buffer.baseAddress, buffer.count, RPP_ECHO_OFF | RPP_REQUIRE_TTY) else {
+            return ""
+        }
+        return String(cString: passphrase)
+    }
 }
