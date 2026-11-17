@@ -6,18 +6,18 @@
 import Foundation
 
 public struct PromptClient: Sendable {
-    public var ask: @Sendable (_ message: String, _ invalidMessage: String, _ isInvalid: @escaping @Sendable (String) -> Bool) -> String
-    public var choose: @Sendable (_ message: String, _ choices: [String]) -> Int
-    public var agree: @Sendable (_ message: String) -> Bool
-    public var readLine: @Sendable (_ prompt: String) -> String
-    public var readSecret: @Sendable (_ prompt: String) -> String
+    public var ask: @Sendable (_ message: String, _ invalidMessage: String, _ isInvalid: @escaping @Sendable (String) -> Bool) async -> String
+    public var choose: @Sendable (_ message: String, _ choices: [String]) async -> Int
+    public var agree: @Sendable (_ message: String) async -> Bool
+    public var readLine: @Sendable (_ prompt: String) async -> String
+    public var readSecret: @Sendable (_ prompt: String) async -> String
 
     public init(
-        ask: @escaping @Sendable (String, String, @escaping @Sendable (String) -> Bool) -> String,
-        choose: @escaping @Sendable (String, [String]) -> Int,
-        agree: @escaping @Sendable (String) -> Bool,
-        readLine: @escaping @Sendable (String) -> String,
-        readSecret: @escaping @Sendable (String) -> String
+        ask: @escaping @Sendable (String, String, @escaping @Sendable (String) -> Bool) async -> String,
+        choose: @escaping @Sendable (String, [String]) async -> Int,
+        agree: @escaping @Sendable (String) async -> Bool,
+        readLine: @escaping @Sendable (String) async -> String,
+        readSecret: @escaping @Sendable (String) async -> String
     ) {
         self.ask = ask
         self.choose = choose

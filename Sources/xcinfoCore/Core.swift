@@ -245,8 +245,10 @@ public struct Core: Sendable {
             logger.success("Using the existing \(file.path) (\(reason)).")
             return file
         case let .unusable(reason):
-            let replaces = options.overwritesExistingFile
-                || (isatty(STDIN_FILENO) != 0 && prompt.agree("\(file.path) exists, but \(reason). Move it to the Trash and download it anew?"))
+            var replaces = options.overwritesExistingFile
+            if !replaces, isatty(STDIN_FILENO) != 0 {
+                replaces = await prompt.agree("\(file.path) exists, but \(reason). Move it to the Trash and download it anew?")
+            }
             guard replaces else { throw CoreError.destinationExists(file, reason: reason) }
             let trashed = try fileSystem.trashItem(file)
             logger.log("Moved the existing file to the Trash\(trashed.map { ": \($0.path)" } ?? ".")")
@@ -321,7 +323,7 @@ public struct Core: Sendable {
             let xcode = try await identifyVersion(version, updateVersionList: updateVersionList)
             if options.downloadOptions.verifiesChecksum, let mismatch = try await checksumMismatch(of: url, xcode: xcode) {
                 logger.warn(mismatch.localizedDescription)
-                guard prompt.agree("Install from this archive anyway?") else {
+                guard await prompt.agree("Install from this archive anyway?") else {
                     throw mismatch
                 }
             }
@@ -369,7 +371,7 @@ public struct Core: Sendable {
         logger.log("The archive contains Xcode \(xcode.displayName).")
         if options.downloadOptions.verifiesChecksum, let mismatch = try await checksumMismatch(of: archive, xcode: xcode) {
             logger.warn(mismatch.localizedDescription)
-            guard prompt.agree("Install from this archive anyway?") else {
+            guard await prompt.agree("Install from this archive anyway?") else {
                 try? FileManager.default.removeItem(at: extracted)
                 throw mismatch
             }
@@ -410,7 +412,7 @@ public struct Core: Sendable {
             let choices = xcodes.map { xcodeApp in
                 "\(xcodeApp.xcode.displayName.paddedWithSpaces(to: longestXcodeNameLength)) – \(xcodeApp.url.path)"
             }
-            selected = xcodes[prompt.choose("Please choose the version you want to uninstall: ", choices)]
+            selected = xcodes[await prompt.choose("Please choose the version you want to uninstall: ", choices)]
         } else {
             selected = xcodes[0]
         }
@@ -418,7 +420,7 @@ public struct Core: Sendable {
         let question = deletePermanently
             ? "Permanently delete Xcode \(selected.xcode.displayName) at \(selected.url.path)? This cannot be undone."
             : "Move Xcode \(selected.xcode.displayName) at \(selected.url.path) to the Trash?"
-        guard prompt.agree(question) else {
+        guard await prompt.agree(question) else {
             logger.log("Nothing was uninstalled.")
             return nil
         }
@@ -505,7 +507,7 @@ extension Core {
         let availableXcodes = try await findXcodes(for: version, shouldUpdate: updateVersionList)
 
         guard
-            let xcode = chooseXcode(
+            let xcode = await chooseXcode(
                 version: version,
                 from: availableXcodes,
                 prompt: "Please choose the version you want to install: "
@@ -610,7 +612,7 @@ extension Core {
         let passwordPrompt = "Mac administrator password for \(NSUserName()) (sudo):"
 
         for attempt in 1 ... 3 {
-            let password = prompt.readSecret(attempt == 1 ? passwordPrompt : "Sorry, try again. \(passwordPrompt)")
+            let password = await prompt.readSecret(attempt == 1 ? passwordPrompt : "Sorry, try again. \(passwordPrompt)")
             if try await processes.runPrivileged("ls", password, []).exitStatus == EXIT_SUCCESS {
                 return password
             }
@@ -681,7 +683,7 @@ extension Core {
         return (fullVersion, betaVersion)
     }
 
-    private func chooseXcode(version: XcodeVersion, from xcodes: [Xcode], prompt: String) -> Xcode? {
+    private func chooseXcode(version: XcodeVersion, from xcodes: [Xcode], prompt: String) async -> Xcode? {
         switch xcodes.count {
         case 0:
             return nil
@@ -692,7 +694,7 @@ extension Core {
             logger
                 .log("Found multiple possibilities for the requested version '\(version.description)'.")
 
-            let index = self.prompt.choose(prompt, xcodes.map(\.displayName))
+            let index = await self.prompt.choose(prompt, xcodes.map(\.displayName))
             return xcodes[index]
         }
     }

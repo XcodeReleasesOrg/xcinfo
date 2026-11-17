@@ -184,7 +184,7 @@ struct CredentialsTests {
         let (service, _) = service(storage: FakeVaultStorage(contents: VaultContents(accountName: "user@example.invalid")), prompt: prompt)
 
         #expect(try await service.accountName() == "user@example.invalid")
-        #expect(try service.password(for: "user@example.invalid") == "secret")
+        #expect(try await service.password(for: "user@example.invalid") == "secret")
         #expect(prompt.lines.values.isEmpty)
         #expect(prompt.secrets.values == ["Apple ID password for user@example.invalid (not your Mac password):"])
         #expect(prompt.agreed.values.isEmpty)
@@ -197,7 +197,7 @@ struct CredentialsTests {
         let (service, vault) = service(storage: storage, prompt: prompt)
 
         #expect(try await service.accountName() == "user@example.invalid")
-        _ = try service.password(for: "user@example.invalid")
+        _ = try await service.password(for: "user@example.invalid")
         try await vault.commit { _ in }
 
         #expect(prompt.lines.values == ["Apple ID (email):"])
@@ -216,7 +216,7 @@ struct CredentialsTests {
         )
 
         #expect(try await service.accountName() == "env@example.invalid")
-        #expect(try service.password(for: "env@example.invalid") == "from-env")
+        #expect(try await service.password(for: "env@example.invalid") == "from-env")
         #expect(prompt.secrets.values.isEmpty)
     }
 
@@ -225,7 +225,7 @@ struct CredentialsTests {
         let (service, _) = service(storage: FakeVaultStorage(contents: VaultContents(accountName: "user")), isInteractive: false)
 
         #expect(try await service.accountName() == "user")
-        #expect(throws: CredentialsError.passwordUnavailable) { try service.password(for: "user") }
+        await #expect(throws: CredentialsError.passwordUnavailable) { try await service.password(for: "user") }
     }
 
     @Test
@@ -303,7 +303,7 @@ struct PasswordBytesTests {
             }
             let olymp = OlympUs(logger: LogRecorder().logger(), session: server.session(), sessionStore: InMemorySessionStore().store, prompt: prompt.client)
 
-            let typed = try credentials.password(for: "user")
+            let typed = try await credentials.password(for: "user")
             let result = try await olymp.signIn(accountName: "user", password: typed, serviceKey: "key")
 
             #expect(typed == password)
@@ -312,10 +312,10 @@ struct PasswordBytesTests {
     }
 
     @Test
-    func `a password from the environment is used unchanged`() throws {
+    func `a password from the environment is used unchanged`() async throws {
         let credentials = CredentialService(environment: ["XCINFO_APPLE_PASSWORD": " Grüße 🎉 "], isInteractive: false)
 
-        #expect(try credentials.password(for: "user") == " Grüße 🎉 ")
+        #expect(try await credentials.password(for: "user") == " Grüße 🎉 ")
     }
 }
 
@@ -360,7 +360,7 @@ struct SignInStorageTests {
             let accountName = try await credentials.accountName()
             let olymp = OlympUs(logger: logs.logger(), session: server.session(), sessionStore: .vault(keychain), prompt: prompt.client)
             try await AppleAuthenticator(olymp: olymp, logger: logs.logger()).authenticate(username: accountName) {
-                try credentials.password(for: accountName)
+                try await credentials.password(for: accountName)
             }
         }
 

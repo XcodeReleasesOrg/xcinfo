@@ -569,14 +569,14 @@ public actor OlympUs {
         if !trustedPhoneNumbers.isEmpty {
             logger.log("Type 'sms' to get the code by text message on a trusted phone number instead.")
         }
-        let input = prompt.ask("Apple ID verification code: ", "Enter \(requiredCodeLength) digits") { value in
+        let input = await prompt.ask("Apple ID verification code: ", "Enter \(requiredCodeLength) digits") { value in
             !(value == "sms" && !trustedPhoneNumbers.isEmpty) && requiredCodeLength != value.count
         }
         guard input == "sms" else {
             return .securityCode(input)
         }
 
-        let phoneIndex = prompt.choose(
+        let phoneIndex = await prompt.choose(
             "Choose the trusted phone number for the text message: ",
             trustedPhoneNumbers.map(\.numberWithDialCode)
         )
@@ -592,7 +592,7 @@ public actor OlympUs {
         } catch {
             throw OlympUsError.requestSmsFailed
         }
-        let smsCode = prompt.ask(
+        let smsCode = await prompt.ask(
             "Verification code from the text message: ",
             "Enter \(requiredCodeLength) digits"
         ) { value in
