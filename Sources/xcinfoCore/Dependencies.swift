@@ -91,7 +91,7 @@ extension XcodeReleasesClient: DependencyKey {
 extension CredentialsClient: DependencyKey {
     public static let liveValue = CredentialsClient(
         accountName: { try await CredentialService().accountName() },
-        password: { accountName in try CredentialService().password(for: accountName) },
+        password: { accountName in try await CredentialService().password(for: accountName) },
         removeAll: { await CredentialService().cleanup() }
     )
 

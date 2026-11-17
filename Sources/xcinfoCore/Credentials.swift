@@ -63,7 +63,7 @@ struct CredentialService {
             throw CredentialsError.accountNameUnavailable
         }
         logger.log("Downloading Xcode needs a sign-in to Apple's Developer Portal with the Apple ID of your developer account.")
-        let accountName = prompt.readLine("Apple ID (email):").trimmingCharacters(in: .whitespaces)
+        let accountName = await prompt.readLine("Apple ID (email):").trimmingCharacters(in: .whitespaces)
         guard !accountName.isEmpty else {
             throw CredentialsError.accountNameUnavailable
         }
@@ -71,7 +71,7 @@ struct CredentialService {
         return accountName
     }
 
-    func password(for accountName: String) throws -> String {
+    func password(for accountName: String) async throws -> String {
         if let password = environment[Self.passwordVariable], !password.isEmpty {
             return password
         }
@@ -79,7 +79,7 @@ struct CredentialService {
             throw CredentialsError.passwordUnavailable
         }
         logger.log("Apple needs a new sign-in. xcinfo does not store your Apple ID password, so it asks for it now.")
-        let password = prompt.readSecret("Apple ID password for \(accountName) (not your Mac password):")
+        let password = await prompt.readSecret("Apple ID password for \(accountName) (not your Mac password):")
         guard !password.isEmpty else {
             throw CredentialsError.invalidPassword
         }
