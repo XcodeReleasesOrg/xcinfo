@@ -93,16 +93,74 @@ struct DownloaderTests {
         }
     }
 
-    @Test(.disabled("Crashes the process: URLSession raises an NSException for resume data that was not produced by a real download"))
-    func `cached resume data is used and removed after a successful download`() async throws {
-        let server = StubServer { _ in StubResponse(body: Data("rest".utf8)) }
+    @Test
+    func `unusable cached resume data is removed and the download starts over`() async throws {
+        let server = StubServer { _ in StubResponse(body: Data("fresh".utf8)) }
         let fixture = try fixture(server: server)
         let cacheURL = try #require(fixture.downloader.cacheURL(for: downloadURL))
         try Data("resume".utf8).write(to: cacheURL)
 
-        _ = try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
+        let url = try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
 
-        #expect(!FileManager.default.fileExists(atPath: cacheURL.path), "Known issue: resume data is never cleared")
+        #expect(try String(contentsOf: url, encoding: .utf8) == "fresh")
+        #expect(!FileManager.default.fileExists(atPath: cacheURL.path))
+        #expect(fixture.logs.messages.contains("The saved progress of an earlier download could not be used. The download starts over."))
+    }
+
+    @Test
+    func `cancelling a running download stops it and reports the interruption`() async throws {
+        let server = StubServer { _ in
+            StubResponse(headers: ["Content-Length": "1000"], body: Data(repeating: 1, count: 100), isHanging: true)
+        }
+        let fixture = try fixture(server: server)
+        let download = Task { [downloadURL] in
+            try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
+        }
+        while server.requests.values.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        download.cancel()
+
+        await #expect {
+            try await download.value
+        } throws: { error in
+            guard case XCAPIError.downloadInterrupted = error else { return false }
+            return true
+        }
+        #expect(fixture.logs.messages.contains {
+            $0 == "The download is paused. Start it again to resume where it stopped."
+                || $0 == "The download stopped before any progress could be saved. It starts over next time."
+        })
+        #expect(!fixture.logs.messages.contains { $0.contains("cancelled") })
+    }
+
+    @Test(arguments: [
+        ("plain", true, 1234 as Int64?),
+        ("other url", false, nil),
+        ("missing version", false, nil),
+        ("archive", true, nil),
+        ("garbage", false, nil),
+    ] as [(String, Bool, Int64?)])
+    func `resume data is checked before it is used`(kind: String, isUsable: Bool, bytesReceived: Int64?) throws {
+        let plist: Any? = switch kind {
+        case "plain":
+            ["NSURLSessionResumeInfoVersion": 2, "NSURLSessionDownloadURL": downloadURL.absoluteString, "NSURLSessionResumeBytesReceived": 1234]
+        case "other url":
+            ["NSURLSessionResumeInfoVersion": 2, "NSURLSessionDownloadURL": "https://example.invalid/other.xip"]
+        case "missing version":
+            ["NSURLSessionDownloadURL": downloadURL.absoluteString]
+        case "archive":
+            ["$archiver": "NSKeyedArchiver", "$top": ["root": 1], "$version": 100000]
+        default:
+            nil
+        }
+        let data = try plist.map { try PropertyListSerialization.data(fromPropertyList: $0, format: .xml, options: 0) } ?? Data("resume".utf8)
+
+        let resumeData = ResumeData(data, for: downloadURL)
+
+        #expect((resumeData != nil) == isUsable)
+        #expect(resumeData?.bytesReceived == bytesReceived)
     }
 
     @Test(.disabled("Crashes the process: the retry after a recoverable error resumes with resume data that URLSession rejects with an NSException"))

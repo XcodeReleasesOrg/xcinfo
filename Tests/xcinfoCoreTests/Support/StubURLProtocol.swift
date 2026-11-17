@@ -6,6 +6,7 @@ struct StubResponse: Sendable {
     var headers: [String: String] = [:]
     var body: Data = Data()
     var error: URLError?
+    var isHanging = false
 
     static func json(_ string: String, statusCode: Int = 200, headers: [String: String] = [:]) -> StubResponse {
         StubResponse(
@@ -97,7 +98,9 @@ final class StubURLProtocol: URLProtocol {
         )!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: stub.body)
-        client?.urlProtocolDidFinishLoading(self)
+        if !stub.isHanging {
+            client?.urlProtocolDidFinishLoading(self)
+        }
     }
 
     override func stopLoading() {}

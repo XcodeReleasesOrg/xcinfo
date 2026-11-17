@@ -29,6 +29,8 @@ extension Error {
             }
         case is XCAPIError, is DecodingError, is URLError, is CocoaError:
             9
+        case let error as Interrupted:
+            128 + error.signal
         default:
             1
         }
@@ -38,6 +40,10 @@ extension Error {
         switch self {
         case let error as XCAPIError:
             error.description
+        case let error as Interrupted where error.signal == SIGINT:
+            "Stopped with Ctrl-C."
+        case let error as Interrupted:
+            "Stopped by signal \(error.signal)."
         case is DecodingError:
             "The list of Xcode versions could not be read."
         case let error as CocoaError where error.code == .fileReadNoSuchFile:

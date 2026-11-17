@@ -56,6 +56,20 @@ struct Downloader: Sendable {
         logger.verbose(resumeData == nil ? "Starting download" : "Resuming download")
         logger.log("Source: \(url)")
 
+        do {
+            return try await follow(download, url: url, start: start)
+        } catch XCAPIError.downloadInterrupted where Task.isCancelled {
+            if let resumeData = await download.cancel() {
+                saveResumeData(resumeData, for: url)
+                logger.log("The download is paused. Start it again to resume where it stopped.")
+            } else {
+                logger.warn("The download stopped before any progress could be saved. It starts over next time.")
+            }
+            throw XCAPIError.downloadInterrupted
+        }
+    }
+
+    private func follow(_ download: FileDownload, url: URL, start: ContinuousClock.Instant) async throws -> URL {
         var progress = DownloadProgress()
         var lastDisplay: ContinuousClock.Instant?
         var lastMilestone = 0
@@ -107,6 +121,10 @@ struct Downloader: Sendable {
                 switch resumeData {
                 case let resumeData? where isCancelled:
                     saveResumeData(resumeData, for: url)
+                    logger.log("The download is paused. Start it again to resume where it stopped.")
+                    throw XCAPIError.downloadInterrupted
+                case nil where isCancelled:
+                    logger.warn("The download stopped before any progress could be saved. It starts over next time.")
                     throw XCAPIError.downloadInterrupted
                 case let resumeData?:
                     throw XCAPIError.recoverableDownloadError(url: url, resumeData: resumeData)
@@ -149,8 +167,26 @@ struct Downloader: Sendable {
         try? FileManager.default.removeItem(at: cacheURL)
     }
 
+    func cachedResumeData(for url: URL) -> ResumeData? {
+        guard let cacheURL = cacheURL(for: url), let data = try? Data(contentsOf: cacheURL) else { return nil }
+        guard let resumeData = ResumeData(data, for: url) else {
+            logger.warn("The saved progress of an earlier download could not be used. The download starts over.")
+            removeCachedResumeData(for: url)
+            return nil
+        }
+        return resumeData
+    }
+
     func download(url: URL, destination: URL, disableSleep: Bool) async throws -> URL {
-        var resumeData = cacheURL(for: url).flatMap { try? Data(contentsOf: $0) }
+        let cached = cachedResumeData(for: url)
+        if let cached {
+            let received = cached.bytesReceived.map { bytes in
+                ", \(Self.bytes(Measurement(value: Double(bytes), unit: .bytes))) already downloaded"
+            }
+            logger.log("Resuming the earlier download\(received ?? "").")
+        }
+        var resumeData = cached?.data
+        var isResumingCachedDownload = cached != nil
 
         let tmpURL: URL
         var retries = 0
@@ -158,13 +194,21 @@ struct Downloader: Sendable {
             do {
                 tmpURL = try await start(url: url, disableSleep: disableSleep, resumeData: resumeData)
                 break
+            } catch XCAPIError.downloadInterrupted {
+                throw XCAPIError.downloadInterrupted
             } catch let XCAPIError.recoverableDownloadError(_, recoveredResumeData) where retries < Self.maximumRetries {
                 retries += 1
                 resumeData = recoveredResumeData
+                isResumingCachedDownload = false
                 try await clock.sleep(for: .seconds(3))
             } catch let XCAPIError.recoverableDownloadError(_, recoveredResumeData) {
                 saveResumeData(recoveredResumeData, for: url)
                 throw XCAPIError.recoverableDownloadError(url: url, resumeData: recoveredResumeData)
+            } catch where isResumingCachedDownload && !Task.isCancelled {
+                logger.warn("The earlier download could not be resumed (\(error)). Starting over.")
+                removeCachedResumeData(for: url)
+                resumeData = nil
+                isResumingCachedDownload = false
             }
         }
         removeCachedResumeData(for: url)
@@ -179,5 +223,27 @@ struct Downloader: Sendable {
         } catch let error as NSError {
             throw XCAPIError.couldNotMoveToDestinationFolder(tmpURL, destFile, error)
         }
+    }
+}
+
+struct ResumeData: Sendable, Equatable {
+    let data: Data
+    let bytesReceived: Int64?
+
+    init?(_ data: Data, for url: URL) {
+        guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
+            return nil
+        }
+        if plist["$archiver"] as? String == "NSKeyedArchiver", plist["$top"] != nil {
+            self.data = data
+            bytesReceived = nil
+            return
+        }
+        guard plist["NSURLSessionResumeInfoVersion"] != nil else { return nil }
+        if let downloadURL = plist["NSURLSessionDownloadURL"] as? String, downloadURL != url.absoluteString {
+            return nil
+        }
+        self.data = data
+        bytesReceived = (plist["NSURLSessionResumeBytesReceived"] as? NSNumber)?.int64Value
     }
 }

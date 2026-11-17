@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import XCIFoundation
 @testable import xcinfo
 @preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
@@ -111,6 +112,8 @@ struct PresentationTests {
             (CoreError.unsupportedFile("dmg"), 6),
             (CoreError.extractionFailed(CocoaError(.fileNoSuchFile)), 6),
             (CoreError.incorrectSuperUserPassword, 7),
+            (Interrupted(signal: SIGINT), 130),
+            (Interrupted(signal: SIGTERM), 143),
             (CoreError.installationFailed, 7),
             (CoreError.uninstallationFailed("x"), 8),
             (XCAPIError.invalidResponse, 9),
@@ -128,6 +131,8 @@ struct PresentationTests {
     func `errors have specific messages`() {
         #expect(CoreError.incorrectSuperUserPassword.message == "The administrator password was rejected three times.")
         #expect(XCAPIError.invalidResponse.message == "Invalid response")
+        #expect(Interrupted(signal: SIGINT).message == "Stopped with Ctrl-C.")
+        #expect(Interrupted(signal: SIGTERM).message == "Stopped by signal 15.")
         #expect(CocoaError(.fileReadNoSuchFile).message == "No cached list of Xcode versions. Run the command again without --no-update-list.")
     }
 
