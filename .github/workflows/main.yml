@@ -16,6 +16,8 @@ jobs:
       uses: actions/setup-node@v2
       with:
         node-version: '16'
+    - name: Running the tests
+      run: swift test
     - name: Building a Universal xcinfo
       run: make
     - name: Installing
