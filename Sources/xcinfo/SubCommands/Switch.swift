@@ -12,7 +12,7 @@ extension XCInfo {
         static let configuration = CommandConfiguration(
             abstract: "Switch to another installed Xcode",
             discussion: """
-            Points /Applications/Xcode.app to the chosen installed Xcode and selects it with xcode-select, \\
+            Points /Applications/Xcode.app to the chosen installed Xcode and selects it with xcode-select, \
             which needs the Mac administrator password. With several matches, xcinfo asks which one to use.
             """
         )
