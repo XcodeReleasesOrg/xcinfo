@@ -239,9 +239,9 @@ public actor OlympUs {
         }
         if let stored = try? JSONDecoder().decode(StoredSession.self, from: data) {
             logger.verbose("Stored session found.")
-            restoreCookies(from: stored.cookies)
+            let droppedCookies = restoreCookies(from: stored.cookies)
             loadedAssets = stored.assets
-            savedSession = SavedSessionKey(assets: stored.assets, cookies: cookieKeys)
+            savedSession = droppedCookies ? nil : SavedSessionKey(assets: stored.assets, cookies: cookieKeys)
         } else if let legacyAssets = try? JSONDecoder().decode(AuthenticationAssets.self, from: data) {
             logger.verbose("Stored session found in the old format. It is saved in the new format after the next sign-in step.")
             restoreCookies(from: await sessionStore.loadLegacyCookies())
@@ -266,7 +266,7 @@ public actor OlympUs {
         do {
             try await sessionStore.save(data, account)
             savedSession = key
-            logger.verbose("Saved the session with \(cookieNames.count) cookies.")
+            logger.verbose("Saved the session with \(sessionCookies.count) cookies.")
             return true
         } catch {
             if !hasWarnedAboutSaving {
@@ -668,43 +668,14 @@ public actor OlympUs {
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
             return false
         }
-
-        let allHeaderFields = response.allHeaderFields
-
-        guard let originalCookies = allHeaderFields["Set-Cookie"] as? String else {
-            return true
-        }
-
-        let regex = try! NSRegularExpression(pattern: #"(?<!Expires=\w{3}),"#, options: [])
-        var cookieDict: [String: String] = [:]
-        var startIndex = originalCookies.startIndex
-        regex.enumerateMatches(
-            in: originalCookies,
-            options: [],
-            range: NSRange(originalCookies.startIndex..., in: originalCookies)
-        ) { result, _, _ in
-            guard let nsrange = result?.range,
-                  let range = Range<String.Index>(nsrange, in: originalCookies) else { return }
-            let match = originalCookies[startIndex ..< range.lowerBound]
-            startIndex = range.upperBound
-            let keyValuePair = match.split(separator: "=")
-            let key = String(keyValuePair[0]).trimmingCharacters(in: .whitespaces)
-            cookieDict[key] = String(keyValuePair.dropFirst().joined(separator: "="))
-        }
-
-        let lastMatch = originalCookies[startIndex...]
-        let keyValuePair = lastMatch.split(separator: "=")
-        let key = String(keyValuePair[0]).trimmingCharacters(in: .whitespaces)
-        cookieDict[key] = String(keyValuePair.dropFirst().joined(separator: "="))
-
-        let appleURL = URL(string: "apple.com")!
-        let cookies = cookieDict
-            .flatMap {
-                HTTPCookie.cookies(withResponseHeaderFields: ["Set-Cookie": "\($0.key)=\($0.value)"], for: appleURL)
+        if let url = response.url {
+            let headers = response.allHeaderFields.reduce(into: [String: String]()) { headers, field in
+                if let key = field.key as? String, let value = field.value as? String {
+                    headers[key] = value
+                }
             }
-
-        cookies.forEach {
-            session.configuration.httpCookieStorage?.setCookie($0)
+            let cookies = HTTPCookie.cookies(withResponseHeaderFields: headers, for: url)
+            session.configuration.httpCookieStorage?.setCookies(cookies, for: url, mainDocumentURL: nil)
         }
         return true
     }
@@ -769,11 +740,12 @@ struct SavedSessionKey: Equatable {
 
 extension OlympUs {
     private var cookieKeys: Set<String> {
-        Set((session.configuration.httpCookieStorage?.cookies ?? []).map { "\($0.domain)|\($0.path)|\($0.name)|\($0.value)" })
+        Set(sessionCookies.map { "\($0.domain)|\($0.path)|\($0.name)|\($0.value)" })
     }
 
-    private var cookieNames: [String] {
-        (session.configuration.httpCookieStorage?.cookies ?? []).map(\.name).sorted()
+    private var sessionCookies: [HTTPCookie] {
+        let date = now()
+        return (session.configuration.httpCookieStorage?.cookies ?? []).filter { $0.isNeededForSession(at: date) }
     }
 
     private func removeCookiesExceptTrust() {
@@ -784,28 +756,61 @@ extension OlympUs {
     }
 
     private func cookieData() -> Data? {
-        guard let cookies = session.configuration.httpCookieStorage?.cookies, !cookies.isEmpty else { return nil }
+        let date = now()
+        let allCookies = session.configuration.httpCookieStorage?.cookies ?? []
+        let cookies = allCookies.filter { $0.isNeededForSession(at: date) }
+        let dropped = allCookies.filter { !$0.isNeededForSession(at: date) }
+        logger.verbose("Keeping cookies: \(cookies.nameList). Dropping cookies: \(dropped.nameList).")
+        guard !cookies.isEmpty else { return nil }
         let properties = cookies.compactMap { cookie in
             cookie.properties.map { Dictionary(uniqueKeysWithValues: $0.map { ($0.key.rawValue, $0.value) }) }
         }
         return try? PropertyListSerialization.data(fromPropertyList: properties, format: .binary, options: 0)
     }
 
-    private func restoreCookies(from data: Data?) {
+    @discardableResult
+    private func restoreCookies(from data: Data?) -> Bool {
         guard
             let cookieStorage = session.configuration.httpCookieStorage,
             let data,
             let cookies = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Any]]
-        else { return }
+        else { return false }
 
-        var restored: [String] = []
+        let date = now()
+        var restored: [HTTPCookie] = []
+        var dropped: [HTTPCookie] = []
         for cookieProperties in cookies {
             let properties = Dictionary(uniqueKeysWithValues: cookieProperties.map { (HTTPCookiePropertyKey($0.key), $0.value) })
-            if let cookie = HTTPCookie(properties: properties) {
+            guard let cookie = HTTPCookie(properties: properties) else { continue }
+            if cookie.isNeededForSession(at: date) {
                 cookieStorage.setCookie(cookie)
-                restored.append(cookie.name)
+                restored.append(cookie)
+            } else {
+                dropped.append(cookie)
             }
         }
-        logger.verbose("Restored \(restored.count) cookies: \(restored.sorted().joined(separator: ", "))")
+        logger.verbose("Restored \(restored.count) cookies: \(restored.nameList)")
+        if !dropped.isEmpty {
+            logger.verbose("Dropped \(dropped.count) stored cookies: \(dropped.nameList)")
+        }
+        return !dropped.isEmpty
+    }
+}
+
+extension HTTPCookie {
+    static let sessionCookieNames: Set<String> = [
+        "ADCDownloadAuth", "DSESSIONID", "aasp", "acn01", "dqsid", "itcdq", "itctx", "myacinfo",
+    ]
+
+    func isNeededForSession(at date: Date) -> Bool {
+        guard domain == "apple.com" || domain.hasSuffix(".apple.com") else { return false }
+        if let expiresDate, expiresDate <= date { return false }
+        return name.hasPrefix("DES") || Self.sessionCookieNames.contains(name)
+    }
+}
+
+extension [HTTPCookie] {
+    var nameList: String {
+        isEmpty ? "none" : map(\.name).sorted().joined(separator: ", ")
     }
 }
