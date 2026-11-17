@@ -7,7 +7,9 @@ import Foundation
 import Rainbow
 import XCIFoundation
 import xcinfoCore
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable
+
+// annotations.
 
 extension Error {
     var exitCode: Int32 {
@@ -24,7 +26,8 @@ extension Error {
                 5
             case .extractionFailed, .unsupportedFile, .invalidExtractionOutputURL:
                 6
-            case .installationFailed, .gatekeeperVerificationFailed, .codesignVerificationFailed, .incorrectSuperUserPassword:
+            case .installationFailed, .gatekeeperVerificationFailed, .codesignVerificationFailed,
+                 .incorrectSuperUserPassword:
                 7
             case .uninstallationFailed:
                 8
@@ -77,13 +80,13 @@ extension TerminalRenderer {
     }
 
     func printJSON(_ value: some Encodable) throws {
-        print(try Self.json(value))
+        try print(Self.json(value))
     }
 
     static func json(_ value: some Encodable) throws -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return String(decoding: try encoder.encode(value), as: UTF8.self)
+        return try String(decoding: encoder.encode(value), as: UTF8.self)
     }
 }
 
@@ -92,15 +95,19 @@ extension Xcode {
         "\(displayVersion.cyan) (\(version.build ?? ""))"
     }
 
+    var attributedLabeledName: String {
+        attributedDisplayName + (architecture.map { " · \($0.label)" } ?? "")
+    }
+
     var infoLines: [String] {
         let locale = Locale(identifier: "en_US_POSIX")
         var lines = [
             "",
             "Version info".cyan.bold,
-            description,
+            labeledName,
             "Release date: \(releaseDate.formatted(Date.FormatStyle().year().month(.wide).day().locale(locale)))"
                 + " (\(releaseDate.formatted(.relative(presentation: .named, unitsStyle: .wide).locale(locale))))",
-            "Requires macOS \(requires)",
+            "Requires macOS \(requires)"
         ]
 
         if let sdks = sdks?.keyed(), !sdks.isEmpty {
@@ -138,15 +145,19 @@ extension XcodeList {
             return ["No matching Xcode versions found.".yellow]
         }
 
-        let columnWidth = (listed + installed + notInstallable).map(\.description.count).max()! + 12
-        var lines = columns(listed.map(\.attributedDisplayName), width: columnWidth, terminalColumns: terminalColumns)
+        let columnWidth = (listed + installed + notInstallable).map(\.labeledName.count).max()! + 12
+        var lines = columns(listed.map(\.attributedLabeledName), width: columnWidth, terminalColumns: terminalColumns)
         if !installed.isEmpty {
             lines += ["", "Already installed:"]
-            lines += columns(installed.map(\.attributedDisplayName), width: columnWidth, terminalColumns: terminalColumns)
+            lines += columns(
+                installed.map(\.attributedDisplayName),
+                width: columnWidth,
+                terminalColumns: terminalColumns
+            )
         }
         if !notInstallable.isEmpty {
             lines += ["", "Not installable:"]
-            lines += columns(notInstallable.map(\.description), width: columnWidth, terminalColumns: terminalColumns)
+            lines += columns(notInstallable.map(\.labeledName), width: columnWidth, terminalColumns: terminalColumns)
         }
         return lines
     }
@@ -167,7 +178,7 @@ extension XcodeList {
     }
 }
 
-extension Array where Element == XcodeApplication {
+extension [XcodeApplication] {
     var lines: [String] {
         let width = map(\.xcode.description.count).max() ?? 0
         return map { application in
@@ -191,21 +202,44 @@ struct ApplicationPayload: Encodable {
     }
 }
 
+struct XcodePayload: Encodable {
+    private enum CodingKeys: String, CodingKey {
+        case architecture
+    }
+
+    var xcode: Xcode
+
+    init(_ xcode: Xcode) {
+        self.xcode = xcode
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        try xcode.encode(to: encoder)
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(xcode.architecture, forKey: .architecture)
+    }
+}
+
 struct ListPayload: Encodable {
-    var listed: [Xcode]
-    var installed: [Xcode]
-    var notInstallable: [Xcode]
+    var listed: [XcodePayload]
+    var installed: [XcodePayload]
+    var notInstallable: [XcodePayload]
 
     init(_ list: XcodeList) {
-        listed = list.listed
-        installed = list.installed
-        notInstallable = list.notInstallable
+        listed = list.listed.map(XcodePayload.init)
+        installed = list.installed.map(XcodePayload.init)
+        notInstallable = list.notInstallable.map(XcodePayload.init)
     }
 }
 
 struct DownloadPayload: Encodable {
     var path: String
-    var xcode: Xcode
+    var xcode: XcodePayload
+
+    init(path: String, xcode: Xcode) {
+        self.path = path
+        self.xcode = XcodePayload(xcode)
+    }
 }
 
 struct PathPayload: Encodable {

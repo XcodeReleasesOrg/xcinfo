@@ -85,7 +85,7 @@ public struct TUIInstallSetup: Sendable, Equatable {
             focus == field ? "›" : " "
         }
         return [
-            "Install Xcode \(xcode.displayName)",
+            "Install Xcode \(xcode.labeledName)",
             "",
             "\(marker(.folder)) Folder: \(focus == .folder ? folder.display(width: fieldWidth) : options.folder)",
             "\(marker(.symlink)) [\(options.createsSymlink ? "x" : " ")] Point /Applications/Xcode.app to it",
