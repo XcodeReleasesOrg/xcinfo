@@ -488,6 +488,7 @@ public struct Core: Sendable {
         xcodeReleases.removeCookies()
 
         logger.success("Removed stored cookies.")
+        logger.log("Downloaded archives, saved download progress and the cached list of Xcode versions were kept.")
     }
 }
 
