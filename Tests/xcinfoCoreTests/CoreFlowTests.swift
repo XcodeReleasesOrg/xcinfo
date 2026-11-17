@@ -541,13 +541,15 @@ struct CoreInstallTests {
         let xip = try caches.file("Xcode_15.xip", contents: .xipMagic)
         let prompt = FakePrompt(cancelsOnSecret: true)
         let shell = FakeShell()
-        let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt)
+        let logs = LogRecorder()
+        let core = core(logs: logs, caches: caches, applications: applications, shell: shell, prompt: prompt)
 
         await #expect(throws: CancellationError.self) {
             try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveArchive: true), updateVersionList: true)
         }
         #expect(prompt.secrets.values.count == 1)
         #expect(shell.privilegedCalls.isEmpty)
+        #expect(logs.messages.contains { $0.contains("is at \(applications.url.path)") && $0.contains("did not finish") })
     }
 
     @Test
