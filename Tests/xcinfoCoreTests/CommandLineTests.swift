@@ -216,6 +216,8 @@ struct CommandLineTests {
         (["uninstall", "15.0 Beta 2"], "15.0 Beta 2"),
     ])
     func `uninstall takes an optional version`(arguments: [String], version: String?) throws {
+        #expect(try !parse(XCInfo.Uninstall.self, arguments).deletePermanently)
+        #expect(try parse(XCInfo.Uninstall.self, arguments + ["--delete-permanently"]).deletePermanently)
         let uninstall = try parse(XCInfo.Uninstall.self, arguments)
 
         #expect(uninstall.xcodeVersion == version)
