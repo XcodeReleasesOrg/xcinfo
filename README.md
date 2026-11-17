@@ -131,6 +131,7 @@ Xcode comes as `.xip` and, from Xcode 27.3, also as Apple Encrypted Archive (`.a
 - A signed `.aea` is opened with the AppleArchive framework, after its embedded certificate chain is checked against Apple Root CA - G3 and the "Apple Platform Signing ECC CA 1 - G1" intermediate. A chain or signature that does not check out stops the extraction; nothing is extracted.
 - Other `.aea` profiles are extracted with Apple's `archiveutil extractXcodeAEA`, available from macOS 15.
 - xcodereleases.com lists SHA-1 checksums for `.xip` archives only. An `.aea` is not compared with them; its signature is checked instead.
+- `install --archive-path <file>` needs no version: xcinfo reads the build from the extracted app and looks it up on xcodereleases.com. A version given as well is used, with a warning if the archive contains another build.
 - `--archive-path` and `--preserve-archive` replace `--xip-path` and `--preserve-xip`, which still work.
 - `-v` during a download lists which Xcode archives Apple offers and which of them as `.aea`.
 

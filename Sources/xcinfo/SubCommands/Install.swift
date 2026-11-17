@@ -28,7 +28,7 @@ extension XCInfo {
             try await globals.run { core, output in
                 let application = try await core.install(
                     options: .init(
-                        version: installationOptions.versionOptions.xcodeVersion,
+                        version: installationOptions.xcodeVersion,
                         archiveFile: installationOptions.archiveFile,
                         downloadOptions: installationOptions.downloadOptions.options,
                         extractionOptions: installationOptions.extractionOptions.options,

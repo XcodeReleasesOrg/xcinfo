@@ -14,8 +14,10 @@ extension Error {
         switch self {
         case let error as CoreError:
             switch error {
-            case .versionNotFound, .invalidDownloadURL:
+            case .versionNotFound, .invalidDownloadURL, .unknownArchiveVersion:
                 3
+            case .versionRequired:
+                64
             case .authenticationFailed, .signInFailed:
                 4
             case .downloadFailed, .checksumMismatch:

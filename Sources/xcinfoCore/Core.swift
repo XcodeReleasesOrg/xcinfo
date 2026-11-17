@@ -24,6 +24,8 @@ public enum CoreError: LocalizedError, Sendable {
     case uninstallationFailed(String)
     case invalidExtractionOutputURL(URL)
     case checksumMismatch(file: URL, expected: String, actual: String)
+    case versionRequired
+    case unknownArchiveVersion(String?)
 
     public var errorDescription: String? {
         switch self {
@@ -51,6 +53,10 @@ public enum CoreError: LocalizedError, Sendable {
             return "The administrator password was rejected three times."
         case .invalidExtractionOutputURL(let output):
             return "Failed to access output directory at \(output.path)."
+        case .versionRequired:
+            return "Give an Xcode version, or an archive with --archive-path."
+        case let .unknownArchiveVersion(build):
+            return "The archive contains \(build.map { "Xcode build \($0)" } ?? "no readable Xcode version"), which xcodereleases.com does not list. Run install again with the version."
         case let .checksumMismatch(file, expected, actual):
             return """
             The archive at \(file.path) is corrupt: its SHA-1 is \(actual), but xcodereleases.com lists \(expected).
@@ -98,7 +104,7 @@ public struct Core: Sendable {
 
     public struct InstallationOptions: Sendable {
         public init(
-            version: XcodeVersion,
+            version: XcodeVersion?,
             archiveFile: URL?,
             downloadOptions: Core.DownloadOptions,
             extractionOptions: Core.ExtractionOptions,
@@ -115,7 +121,7 @@ public struct Core: Sendable {
             self.shouldPreserveArchive = shouldPreserveArchive
         }
 
-        public var version: XcodeVersion
+        public var version: XcodeVersion?
         public var archiveFile: URL?
         public var downloadOptions: DownloadOptions
         public var extractionOptions: ExtractionOptions
@@ -217,8 +223,13 @@ public struct Core: Sendable {
 
         let downloadResult: DownloadResult
 
+        guard let version = options.version else {
+            guard let archive = options.archiveFile else { throw CoreError.versionRequired }
+            return try await installIdentifyingArchive(archive, options: options, updateVersionList: updateVersionList)
+        }
+
         if let url = options.archiveFile {
-            let xcode = try await identifyVersion(options.version, updateVersionList: updateVersionList)
+            let xcode = try await identifyVersion(version, updateVersionList: updateVersionList)
             if options.downloadOptions.verifiesChecksum, let mismatch = try await checksumMismatch(of: url, xcode: xcode) {
                 logger.warn(mismatch.localizedDescription)
                 guard prompt.agree("Install from this archive anyway?") else {
@@ -228,7 +239,7 @@ public struct Core: Sendable {
             downloadResult = (xcode, url)
         } else {
             downloadResult = try await download(
-                version: options.version,
+                version: version,
                 options: options.downloadOptions,
                 updateVersionList: updateVersionList
             )
@@ -244,7 +255,45 @@ public struct Core: Sendable {
             try deleteDownload(at: downloadResult.url)
         }
 
+        if let build = applicationURL.xcodeBuild, let expected = downloadResult.xcode.version.build, build != expected {
+            logger.warn("The archive contains Xcode build \(build), not \(expected) as requested. xcinfo continues with Xcode \(downloadResult.xcode.displayName).")
+        }
+
         let app = XcodeApplication(url: applicationURL, xcode: downloadResult.xcode)
+        try await installXcode(app, options: options)
+        return app
+    }
+
+    private func installIdentifyingArchive(_ archive: URL, options: InstallationOptions, updateVersionList: Bool) async throws -> XcodeApplication {
+        let knownVersions = try await list(shouldUpdate: updateVersionList)
+        let destination = options.extractionOptions.destination
+        let extracted = try await extractArchive(
+            source: archive,
+            options: options.extractionOptions,
+            appFilename: ".xcinfo-\(UUID().uuidString).app"
+        )
+        let build = extracted.xcodeBuild
+        guard let xcode = knownVersions.first(where: { $0.version.build == build }) else {
+            try? FileManager.default.removeItem(at: extracted)
+            throw CoreError.unknownArchiveVersion(build)
+        }
+        logger.log("The archive contains Xcode \(xcode.displayName).")
+        if options.downloadOptions.verifiesChecksum, let mismatch = try await checksumMismatch(of: archive, xcode: xcode) {
+            logger.warn(mismatch.localizedDescription)
+            guard prompt.agree("Install from this archive anyway?") else {
+                try? FileManager.default.removeItem(at: extracted)
+                throw mismatch
+            }
+        }
+        let applicationURL = destination.appendingPathComponent(xcode.filename(in: destination))
+        do {
+            try FileManager.default.moveItem(at: extracted, to: applicationURL)
+        } catch {
+            throw CoreError.extractionFailed(error)
+        }
+        logger.log("Renamed the extracted app to \(applicationURL.lastPathComponent).")
+
+        let app = XcodeApplication(url: applicationURL, xcode: xcode)
         try await installXcode(app, options: options)
         return app
     }
@@ -312,6 +361,10 @@ public struct Core: Sendable {
         options: ExtractionOptions,
         xcode: Xcode? = nil
     ) async throws -> URL {
+        try await extractArchive(source: source, options: options, appFilename: xcode?.filename(in: options.destination))
+    }
+
+    private func extractArchive(source: URL, options: ExtractionOptions, appFilename: String?) async throws -> URL {
         logger.beginSection("Extracting")
 
         guard let format = ArchiveFormat(contentsOf: source) else {
@@ -328,7 +381,7 @@ public struct Core: Sendable {
             let destinationURL = try await extraction.extract(
                 source,
                 options.destination,
-                xcode?.filename(in: options.destination),
+                appFilename,
                 options.useLegacyUnxip
             )
             logger.success("Extracted to \(destinationURL.path)")
@@ -729,5 +782,11 @@ extension Xcode {
             return self.version.number?.lowercased().hasPrefix(fullVersion ?? version) == true ||
             self.version.build?.lowercased() == version
         }
+    }
+}
+
+extension URL {
+    var xcodeBuild: String? {
+        NSDictionary(contentsOf: appendingPathComponent("Contents/version.plist"))?["ProductBuildVersion"] as? String
     }
 }
