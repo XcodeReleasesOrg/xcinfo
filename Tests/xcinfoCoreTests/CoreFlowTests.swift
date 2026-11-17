@@ -944,7 +944,11 @@ struct CoreCleanupTests {
         await core.cleanup()
 
         #expect(calls.values == ["credentials", "authentication", "cookies"])
-        #expect(logs.messages == ["\nCleanup", "Removed stored cookies."])
+        #expect(logs.messages == [
+            "\nCleanup",
+            "Removed stored cookies.",
+            "Downloaded archives, saved download progress and the cached list of Xcode versions were kept.",
+        ])
     }
 }
 
