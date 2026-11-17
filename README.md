@@ -234,7 +234,7 @@ Versions with two downloads have an extra `"architecture"` field (`"appleSilicon
 
 ## License
 
-xcinfo is licensed under the GNU Lesser General Public License 3.0 ([LICENSE.md](LICENSE.md)), which builds on the GNU General Public License 3.0 ([COPYING](COPYING)).
+xcinfo is licensed under the GNU Lesser General Public License 3.0 ([COPYING.LESSER](COPYING.LESSER)), which builds on the GNU General Public License 3.0 ([COPYING](COPYING)).
 
 ## Changelog
 

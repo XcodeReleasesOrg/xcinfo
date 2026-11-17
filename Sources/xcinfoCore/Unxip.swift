@@ -1,6 +1,6 @@
 //
 //  Copyright © 2022 xcodereleases.com
-//  LGPL-3.0 license - see LICENSE.md
+//  LGPL-3.0 license - see COPYING.LESSER
 //
 
 // Many thanks to Saagar Jha: https://github.com/saagarjha/unxip

@@ -1,6 +1,6 @@
 //
 //  Copyright © 2026 xcodereleases.com
-//  LGPL-3.0 license - see LICENSE.md
+//  LGPL-3.0 license - see COPYING.LESSER
 //
 
 import Foundation
@@ -11,9 +11,11 @@ struct LicenseHeaderTests {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
 
     @Test
-    func `every source header names the license in LICENSE.md`() throws {
-        let license = try String(contentsOf: Self.root.appendingPathComponent("LICENSE.md"), encoding: .utf8)
+    func `every source header names the license in COPYING.LESSER`() throws {
+        let license = try String(contentsOf: Self.root.appendingPathComponent("COPYING.LESSER"), encoding: .utf8)
+        let gpl = try String(contentsOf: Self.root.appendingPathComponent("COPYING"), encoding: .utf8)
         #expect(license.contains("GNU LESSER GENERAL PUBLIC LICENSE"))
+        #expect(gpl.contains("GNU GENERAL PUBLIC LICENSE"))
 
         let files = ["Sources", "Tests"].flatMap { folder in
             (FileManager.default.enumerator(at: Self.root.appendingPathComponent(folder), includingPropertiesForKeys: nil)?
@@ -23,7 +25,7 @@ struct LicenseHeaderTests {
         #expect(!files.isEmpty)
         for file in files {
             let header = try String(contentsOf: file, encoding: .utf8).prefix(300)
-            #expect(!header.contains("MIT license"), "\(file.lastPathComponent)")
+            #expect(!header.contains("MIT license") && !header.contains("see LICENSE.md"), "\(file.lastPathComponent)")
         }
     }
 }
