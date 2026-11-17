@@ -24,6 +24,8 @@ struct CommandLineTests {
 
         #expect(!list.globals.isVerbose)
         #expect(list.globals.useANSI)
+        #expect(!list.globals.isQuiet)
+        #expect(!list.globals.isJSON)
         #expect(list.listOptions.updateList)
         #expect(!list.showAllVersions)
         #expect(list.listFilter == nil)
@@ -56,6 +58,21 @@ struct CommandLineTests {
         #expect(list.showAllVersions == showAll)
         #expect(list.listFilter == filter)
         #expect(list.listOptions.updateList == updateList)
+    }
+
+    @Test(arguments: [
+        (["list", "-q"], true, false),
+        (["list", "--quiet"], true, false),
+        (["list", "--json"], false, true),
+        (["list", "--quiet", "--json"], true, true),
+    ])
+    func `output modes are parsed`(arguments: [String], isQuiet: Bool, isJSON: Bool) throws {
+        let list = try parse(XCInfo.List.self, arguments)
+
+        #expect(list.globals.isQuiet == isQuiet)
+        #expect(list.globals.isJSON == isJSON)
+        #expect(list.globals.renderer.options.isQuiet == isQuiet)
+        #expect(list.globals.renderer.options.isJSON == isJSON)
     }
 
     @Test
@@ -109,10 +126,11 @@ struct CommandLineTests {
         let noSleep = try parse(XCInfo.Download.self, ["download", "15.0", "--no-sleep"])
         let sleep = try parse(XCInfo.Download.self, ["download", "15.0", "--sleep"])
 
-        withKnownIssue("--sleep and --no-sleep are inverted: --sleep disables sleep") {
-            #expect(noSleep.downloadOptions.options.disableSleep)
-            #expect(!sleep.downloadOptions.options.disableSleep)
-        }
+        let preventSleep = try parse(XCInfo.Download.self, ["download", "15.0", "--prevent-sleep"])
+
+        #expect(noSleep.downloadOptions.options.disableSleep)
+        #expect(!sleep.downloadOptions.options.disableSleep)
+        #expect(preventSleep.downloadOptions.options.disableSleep)
     }
 
     @Test

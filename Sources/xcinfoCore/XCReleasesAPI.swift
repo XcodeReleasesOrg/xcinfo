@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import Rainbow
 import XCIFoundation
 @preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 
@@ -35,7 +34,7 @@ public extension Xcode {
 }
 
 extension Xcode: @retroactive CustomStringConvertible, @retroactive CustomDebugStringConvertible {
-    var displayVersion: String {
+    public var displayVersion: String {
         var components: [String] = []
         if let number = version.number {
             components.append(number)
@@ -82,7 +81,7 @@ extension Xcode: @retroactive CustomStringConvertible, @retroactive CustomDebugS
         return components.joined(separator: "_")
     }
 
-    var displayName: String { "\(displayVersion) (\(version.build ?? ""))" }
+    public var displayName: String { "\(displayVersion) (\(version.build ?? ""))" }
 
     func filename(in applicationsDirectory: URL) -> String {
         let fileManager = FileManager.default
@@ -98,9 +97,6 @@ extension Xcode: @retroactive CustomStringConvertible, @retroactive CustomDebugS
     public var description: String { displayName }
     public var debugDescription: String { displayName }
 
-    var attributedDisplayVersion: String { displayVersion.cyan }
-
-    public var attributedDisplayName: String { "\(attributedDisplayVersion) (\(version.build ?? ""))" }
 }
 
 extension Xcode {
@@ -197,8 +193,8 @@ extension Version: @retroactive Equatable, @retroactive Comparable, @retroactive
     }
 }
 
-protocol KeyedVersions {}
-extension KeyedVersions {
+public protocol KeyedVersions {}
+public extension KeyedVersions {
     func keyed() -> [String: [Version]] {
         let mirror = Mirror(reflecting: self)
         var dict: [String: [Version]] = [:]

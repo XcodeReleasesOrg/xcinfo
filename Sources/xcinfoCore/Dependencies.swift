@@ -211,10 +211,10 @@ extension WorkspaceClient: DependencyKey {
 }
 
 extension Logger: DependencyKey {
-    public static let liveValue = Logger(isVerbose: false)
+    public static let liveValue = TerminalRenderer(options: .detect(isVerbose: false, isQuiet: false, isJSON: false, allowsColors: true)).logger
 
-    public static let testValue = Logger(isVerbose: true) { message in
-        reportIssue("Unimplemented: logger was asked to write \"\(message)\"")
+    public static let testValue = Logger { event in
+        reportIssue("Unimplemented: logger was asked to emit \(event)")
     }
 }
 

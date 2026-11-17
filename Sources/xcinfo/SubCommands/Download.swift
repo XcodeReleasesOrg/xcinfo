@@ -27,17 +27,15 @@ extension XCInfo {
         var listOptions: ListOptions
 
         func run() async throws {
-            do {
-                try await globals.run { core in
-                    try await core.download(
-                        version: versionOptions.xcodeVersion,
-                        options: downloadOptions.options,
-                        updateVersionList: listOptions.updateList
-                    )
+            try await globals.run { core, output in
+                let (xcode, url) = try await core.download(
+                    version: versionOptions.xcodeVersion,
+                    options: downloadOptions.options,
+                    updateVersionList: listOptions.updateList
+                )
+                if output.options.isJSON {
+                    try output.printJSON(DownloadPayload(path: url.path, xcode: xcode))
                 }
-            } catch let error as CoreError {
-                globals.logger.error(error.localizedDescription)
-                throw ExitCode.failure
             }
         }
     }

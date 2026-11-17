@@ -81,7 +81,6 @@ struct OlympUsServiceKeyTests {
 
         #expect(key == "service-key")
         #expect(fixture.logs.messages == ["[1/7] Requesting service key"])
-        #expect(fixture.logs.rawMessages.first?.hasPrefix("\u{1B}[1A") == true)
     }
 
     @Test
@@ -401,7 +400,6 @@ struct OlympUsSessionTests {
         #expect(fixture.server.requests(to: AppleEndpoint.session).count == 1)
         #expect(fixture.logs.messages.contains("Reusing valid session."))
         #expect(fixture.logs.messages.first == "[0/7] Validating existing session")
-        #expect(fixture.logs.rawMessages.first?.hasPrefix("\u{1B}[1A") == false)
     }
 
     @Test

@@ -46,7 +46,6 @@ struct XcodeModelTests {
         #expect(xcode.displayName == "\(displayVersion) (15A1)")
         #expect(xcode.description == xcode.displayName)
         #expect(xcode.debugDescription == xcode.displayName)
-        #expect(xcode.attributedDisplayName.strippingANSI == xcode.displayName)
     }
 
     @Test
