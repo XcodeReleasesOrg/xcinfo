@@ -8,8 +8,15 @@ import XCIFoundation
 struct InstallFromArchiveTests {
     private let xcodes = [Xcode.fixture("15.0", build: "15A240d"), .fixture("16.0", build: "16A1")]
 
-    private func core(logs: LogRecorder, caches: TemporaryDirectory, applications: TemporaryDirectory, archiveBuild: String) -> Core {
-        let xcodes = xcodes
+    private func core(
+        logs: LogRecorder,
+        caches: TemporaryDirectory,
+        applications: TemporaryDirectory,
+        archiveBuild: String,
+        sha1: String? = nil,
+        agrees: Bool = true
+    ) -> Core {
+        let xcodes = [Xcode.fixture("15.0", build: "15A240d", sha1: sha1), .fixture("16.0", build: "16A1")]
         return Core.test(
             logs: logs,
             isVerbose: true,
@@ -24,7 +31,7 @@ struct InstallFromArchiveTests {
                 return app
             },
             shell: FakeShell(),
-            prompt: FakePrompt(passwords: ["sudo-password"]),
+            prompt: FakePrompt(agree: agrees, passwords: ["sudo-password"]),
             applicationsDirectory: applications.url,
             revealInFinder: { _ in }
         )
@@ -56,6 +63,24 @@ struct InstallFromArchiveTests {
         #expect(FileManager.default.fileExists(atPath: app.url.path))
         #expect(try FileManager.default.contentsOfDirectory(atPath: applications.url.path) == ["Xcode_16.0.app"])
         #expect(logs.messages.contains("The archive contains Xcode 16.0 (16A1)."))
+        #expect(FileManager.default.fileExists(atPath: archive.path))
+    }
+
+    @Test
+    func `a xip without a version is identified the same way and then checked against its sha1`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let archive = try caches.file("Xcode.xip", contents: .xipMagic)
+        let logs = LogRecorder()
+        let core = core(logs: logs, caches: caches, applications: applications, archiveBuild: "15A240d", sha1: "0000000000000000000000000000000000000000", agrees: false)
+
+        await #expect(throws: CoreError.self) {
+            try await core.install(options: options(archive: archive, version: nil, destination: applications.url), updateVersionList: true)
+        }
+
+        #expect(logs.messages.contains("The archive contains Xcode 15.0 (15A240d)."))
+        #expect(logs.messages.contains { $0.contains("is corrupt") })
+        #expect(try FileManager.default.contentsOfDirectory(atPath: applications.url.path).isEmpty)
         #expect(FileManager.default.fileExists(atPath: archive.path))
     }
 
