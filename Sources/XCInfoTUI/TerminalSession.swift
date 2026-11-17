@@ -60,6 +60,12 @@ final class TerminalSession {
         write(frame)
     }
 
+    private func write(_ text: String) {
+        FileHandle.standardOutput.write(Data(text.utf8))
+    }
+}
+
+struct TerminalInput: Sendable {
     func readKeys(timeout: Duration) -> [Key] {
         guard waitForInput(timeout: timeout) else { return [] }
         var buffer = [UInt8](repeating: 0, count: 64)
@@ -81,7 +87,4 @@ final class TerminalSession {
         return poll(&descriptor, 1, milliseconds) > 0
     }
 
-    private func write(_ text: String) {
-        FileHandle.standardOutput.write(Data(text.utf8))
-    }
 }
