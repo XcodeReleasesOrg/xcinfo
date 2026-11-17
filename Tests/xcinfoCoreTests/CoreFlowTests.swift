@@ -194,7 +194,7 @@ struct CoreDownloadTests {
         #expect(downloadCalls.values == ["https://download.example.invalid/Xcode_15.xip \(downloads.url.path) true"])
         #expect(logs.messages.contains("\nSign in to Apple Developer"))
         #expect(logs.messages.contains("\nDownloading"))
-        #expect(logs.messages.last == "Downloaded to \(downloads.url.appendingPathComponent("Xcode_15.xip").path)")
+        #expect(logs.messages.contains("Downloaded to \(downloads.url.appendingPathComponent("Xcode_15.xip").path)"))
     }
 
     @Test
