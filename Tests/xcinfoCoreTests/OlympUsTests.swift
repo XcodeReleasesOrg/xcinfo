@@ -732,20 +732,18 @@ struct OlympUsSessionTests {
     func `cleanup removes the stored session and cookies`() async throws {
         let fixture = OlympUsFixture(storedAssets: ["user": InMemorySessionStore.session(cookies: [])], legacyCookies: [HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "old", .value: "1"])!]) { _ in StubResponse() }
 
-        await fixture.olymp.cleanup()
+        #expect(await fixture.olymp.cleanup())
 
         #expect(fixture.sessionStore.accounts.isEmpty)
         #expect(!fixture.sessionStore.hasLegacyCookies)
-        #expect(fixture.logs.messages == ["Deleted Apple developer portal session info from keychain."])
     }
 
     @Test
     func `cleanup reports when nothing was stored`() async {
         let fixture = OlympUsFixture { _ in StubResponse() }
 
-        await fixture.olymp.cleanup()
-
-        #expect(fixture.logs.messages == ["No Apple developer portal session info was stored."])
+        #expect(await !fixture.olymp.cleanup())
+        #expect(fixture.logs.messages.isEmpty)
     }
 
     @Test
@@ -763,9 +761,8 @@ struct OlympUsSessionTests {
             prompt: FakePrompt().client
         )
 
-        await olymp.cleanup()
-
-        #expect(logs.messages == ["Error deleting Keychain entries. Please open Keychain Access.app and remove the item named 'xcinfo'."])
+        #expect(await !olymp.cleanup())
+        #expect(logs.messages == ["Error deleting the Apple session. Please open Keychain Access.app and remove the item named 'xcinfo'."])
     }
 
     @Test
