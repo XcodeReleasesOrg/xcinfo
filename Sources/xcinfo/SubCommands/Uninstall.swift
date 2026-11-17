@@ -26,13 +26,11 @@ extension XCInfo {
         var listOptions: ListOptions
 
         func run() async throws {
-            do {
-                try await globals.run { core in
-                    try await core.uninstall(xcodeVersion?.lowercased(), updateVersionList: listOptions.updateList)
+            try await globals.run { core, output in
+                let removed = try await core.uninstall(xcodeVersion?.lowercased(), updateVersionList: listOptions.updateList)
+                if output.options.isJSON {
+                    try output.printJSON(PathPayload(path: removed?.url.path))
                 }
-            } catch let error as CoreError {
-                globals.logger.error(error.localizedDescription)
-                throw ExitCode.failure
             }
         }
     }

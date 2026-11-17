@@ -4,23 +4,19 @@
 //
 
 import Foundation
+import Rainbow
 
-struct ProgressDisplay {
-    var ratio: Double
-    let width: Int
-    var fullChar = "█"
+public struct ProgressDisplay: Sendable {
+    public var ratio: Double
+    public let width: Int
     var partChars = [" ", "▏", "▎", "▍", "▌", "▋", "▊", "▉"]
 
-    private let formatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en-US")
-        formatter.maximumFractionDigits = 1
-        formatter.minimumFractionDigits = 1
-        formatter.numberStyle = .percent
-        return formatter
-    }()
+    public init(ratio: Double, width: Int) {
+        self.ratio = ratio
+        self.width = width
+    }
 
-    var representation: String {
+    public var representation: String {
         let progress = min(1, max(0, ratio))
         let widthPercentage = progress * Double(width)
         let fullCharWidth = widthPercentage.rounded(.down)
@@ -31,7 +27,7 @@ struct ProgressDisplay {
         if fullCharWidth < Double(width) {
             let emptyChars = String(repeating: " ", count: Int(Double(width) - fullCharWidth - 1))
             let bar = fullChars + partChars[partWidth] + emptyChars
-            return "[\(bar.cyan)] \(formatter.string(for: ratio) ?? "0")"
+            return "[\(bar.cyan)] \(ratio.formatted(.percent.precision(.fractionLength(1)).locale(Locale(identifier: "en_US"))))"
         } else {
             return "[\(fullChars)] 100.0%"
         }

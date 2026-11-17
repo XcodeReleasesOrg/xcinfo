@@ -166,7 +166,7 @@ public actor OlympUs {
     private func displayState() {
         guard let state, let index = OlympUsState.allCases.firstIndex(of: state) else { return }
         let message = "[\(index)/\(OlympUsState.allCases.count - 1)] \(state.description)"
-        logger.log(message, onSameLine: state != OlympUsState.allCases.first!)
+        logger.log(message)
     }
 
     // MARK: - Step 0: request a service key a.k.a. widget key -

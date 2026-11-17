@@ -24,13 +24,13 @@ extension XCInfo {
         var globals: DefaultOptions
 
         func run() async throws {
-            do {
-                try await globals.run { core in
-                    try await core.info(version: versionOption.xcodeVersion, shouldUpdate: listOptions.updateList)
+            try await globals.run { core, output in
+                let xcode = try await core.info(version: versionOption.xcodeVersion, shouldUpdate: listOptions.updateList)
+                if output.options.isJSON {
+                    try output.printJSON(xcode)
+                } else {
+                    xcode.infoLines.forEach(output.print)
                 }
-            } catch {
-                globals.logger.error(error.localizedDescription)
-                throw ExitCode.failure
             }
         }
     }
