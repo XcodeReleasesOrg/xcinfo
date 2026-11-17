@@ -80,6 +80,7 @@ final class FakeAppleSRPServer: Sendable {
     let iterations: Int
     let passwordProtocol: PasswordProtocol
     private let verifier: BigUInt
+    let serverPublicKey: BigUInt
     private let serverPrivateKey = BigUInt(hex: "E487CB59D31AC550471E81F00F6928E01DDA08E974A004F49E61F5D105284D20")!
     private let clientPublicKey = OSAllocatedUnfairLock<BigUInt?>(initialState: nil)
     private let group = SRPGroup.rfc5054_2048
@@ -93,15 +94,11 @@ final class FakeAppleSRPServer: Sendable {
         let client = SRPClient(group: .rfc5054_2048, hash: .sha256, privateKey: .one)
         let exponent = client.passwordVerifierExponent(identity: "", password: key, salt: salt)
         verifier = SRPGroup.rfc5054_2048.generator.power(exponent, modulus: SRPGroup.rfc5054_2048.prime)
+        let group = SRPGroup.rfc5054_2048
+        let serverPrivateKey = BigUInt(hex: "E487CB59D31AC550471E81F00F6928E01DDA08E974A004F49E61F5D105284D20")!
+        serverPublicKey = (client.multiplier * verifier + group.generator.power(serverPrivateKey, modulus: group.prime)) % group.prime
     }
 
-    private var multiplier: BigUInt {
-        SRPClient(group: group, hash: .sha256, privateKey: .one).multiplier
-    }
-
-    var serverPublicKey: BigUInt {
-        (multiplier * verifier + group.generator.power(serverPrivateKey, modulus: group.prime)) % group.prime
-    }
 
     func initResponse(for request: URLRequest) -> StubResponse {
         guard

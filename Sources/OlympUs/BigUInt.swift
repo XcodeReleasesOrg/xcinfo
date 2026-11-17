@@ -258,6 +258,9 @@ struct BigUInt: Sendable, Hashable, Comparable, CustomStringConvertible {
 
     func power(_ exponent: BigUInt, modulus: BigUInt) -> BigUInt {
         precondition(!modulus.isZero, "Modulus must not be zero")
+        if let montgomery = Montgomery(modulus: modulus) {
+            return montgomery.power(self, exponent)
+        }
         var result = BigUInt.one % modulus
         var base = self % modulus
         for index in 0 ..< exponent.bitWidth {
