@@ -1,4 +1,5 @@
 import Foundation
+import OlympUs
 import Testing
 import XCIFoundation
 @preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
@@ -239,6 +240,27 @@ struct CoreDownloadTests {
             try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
         } throws: { error in
             isCoreError(error) { if case .authenticationFailed = $0 { true } else { false } }
+        }
+    }
+
+    @Test
+    func `sign in errors from apple keep their reason`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let xcodes = [xcode]
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            listXcodes: { xcodes },
+            getCredentials: { Credentials(username: "user", password: "secret") },
+            authenticate: { _ in throw OlympUsError.incorrectVerificationCode },
+            applicationsDirectory: applications.url
+        )
+
+        await #expect {
+            try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+        } throws: { error in
+            isCoreError(error) { if case let .signInFailed(reason) = $0 { reason == "The verification code is incorrect." } else { false } }
         }
     }
 

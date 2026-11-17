@@ -21,7 +21,7 @@
 - Shared mutable state lives in an `actor`. Everything else is a value type or a `final class` with only `let` properties
 - Values that cross actors are `Sendable`, and closures stored in clients are `@Sendable`
 - No global or static `var`s. Use `static let` or put the state in an actor
-- `@preconcurrency import`, `@unchecked Sendable` and `nonisolated(unsafe)` only where a dependency truly forces it, with a one-line comment at that place saying why. Current sites: `Rainbow` (global color switch, wrapped once in `Logger.isANSIEnabled`), `XCModel` (unannotated value types) and `UserDefaults` in `OlympUs` (thread-safe, not annotated)
+- `@preconcurrency import`, `@unchecked Sendable` and `nonisolated(unsafe)` only where a dependency truly forces it, with a one-line comment at that place saying why. Current sites: `Rainbow` (global color switch, wrapped once in `Logger.isANSIEnabled`) and `XCModel` (unannotated value types)
 - Don't fix a diagnostic with `-strict-concurrency=minimal`, `swiftLanguageModes: [.v5]` or by wrapping work in an unstructured `Task` to hop isolation
 
 ## Terminal I/O
@@ -40,7 +40,13 @@
 - CLI subcommands, flags and their defaults (deprecated flags stay as aliases)
 - The text output of `list` and `installed` when piped
 - Keychain service names `xcinfo.appleid` and `xcinfo.session`, the `cookies` user defaults key, and the cache file `~/Library/Caches/xcinfo/xcinfo.json`
-- The Apple sign-in sequence in `OlympUs`
+- Keychain service names `xcinfo.cookies` (session cookies, migrated once from the old `cookies` user defaults key)
+
+## Apple sign-in
+
+- `OlympUs` signs in with SRP-6a (`signin/init`, `signin/complete`, RFC 5054 2048-bit group, SHA-256, PBKDF2 for `s2k` / `s2k_fo`) and sends a hashcash stamp in `X-Apple-HC`. The password never leaves the machine
+- The SRP and big-integer code is checked against the RFC 5054 test vectors and a fake server in the tests. It has not been verified against Apple's live service; treat every change here as unverified until someone signs in by hand
+- Never sign in to Apple from tests or automation, and never read a developer's stored credentials: repeated attempts can lock the account
 
 ## Swift syntax
 

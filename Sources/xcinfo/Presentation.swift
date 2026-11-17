@@ -16,7 +16,7 @@ extension Error {
             switch error {
             case .versionNotFound, .invalidDownloadURL:
                 3
-            case .authenticationFailed:
+            case .authenticationFailed, .signInFailed:
                 4
             case .downloadFailed, .checksumMismatch:
                 5
