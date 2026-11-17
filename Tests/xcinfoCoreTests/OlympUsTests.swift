@@ -496,6 +496,22 @@ struct OlympUsSessionTests {
     }
 
     @Test
+    func `an expired stored cookie alone does not cause a keychain write`() async throws {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let stored = InMemorySessionStore.session(cookies: [
+            HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "account"])!,
+            HTTPCookie(properties: [.domain: "appstoreconnect.apple.com", .path: "/", .name: "dqsid", .value: "old", .expires: now.addingTimeInterval(-60)])!,
+        ])
+        let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in StubResponse(headers: ["Set-Cookie": downloadAuthCookie]) }
+
+        try await fixture.olymp.validateSession(for: "user")
+        try await fixture.olymp.getDownloadAuth(assets: assets)
+
+        #expect(fixture.sessionStore.saves.values.isEmpty)
+        #expect(fixture.logs.messages.contains("The session is unchanged and is not saved again."))
+    }
+
+    @Test
     func `a refreshed cookie value saves the session and names the cookie`() async throws {
         let stored = InMemorySessionStore.session(cookies: [HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "old"])!])
         let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in
@@ -968,6 +984,7 @@ struct SessionCookieTests {
 
         #expect(fixture.cookieNames == ["ADCDownloadAuth", "myacinfo"])
         #expect(fixture.logs.messages.contains("Dropped 3 stored cookies: ADCDownloadAuth on .apple.com, renewed on every run; dslang on .apple.com, not needed; site on .apple.com, not needed"))
+        #expect(fixture.logs.messages.contains("Saving the session because the stored session still had cookies it no longer needs: ADCDownloadAuth, dslang, site."))
         #expect(fixture.sessionStore.saves.values == ["user"])
         #expect(fixture.sessionStore.cookieNames(for: "user") == ["myacinfo"])
     }
