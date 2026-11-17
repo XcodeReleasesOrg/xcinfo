@@ -42,7 +42,7 @@ struct Extractor: Sendable {
         try FileManager.default.ensureFolderExists(target)
         defer { try? FileManager.default.removeItem(at: target) }
 
-        logger.verbose("Extracting xip to \(target.path)")
+        logger.verbose("Extracting the .xip archive into a temporary folder: \(target.path)")
 
         let (progressUpdates, continuation) = AsyncStream.makeStream(
             of: Double.self,
@@ -90,7 +90,7 @@ struct Extractor: Sendable {
 
         let target = temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: target) }
-        logger.verbose("Extracting xip to \(target.path)")
+        logger.verbose("Extracting the .xip archive into a temporary folder: \(target.path)")
 
         let (events, continuation) = AsyncStream.makeStream(of: UnarchivingEvent.self)
         container.startUnarchiving(atPath: target.path, notifyOn: .main, progress: { progress, statusMessage in
