@@ -811,7 +811,7 @@ extension OlympUs {
 
 extension HTTPCookie {
     static let sessionCookieNames: Set<String> = [
-        "ADCDownloadAuth", "DSESSIONID", "aasp", "acn01", "dqsid", "itcdq", "itctx", "myacinfo",
+        "DSESSIONID", "aasp", "acn01", "dqsid", "itcdq", "itctx", "myacinfo",
     ]
 
     func isNeededForSession(at date: Date) -> Bool {
@@ -823,6 +823,8 @@ extension HTTPCookie {
             "not an Apple domain"
         } else if let expiresDate, expiresDate <= date {
             "expired"
+        } else if name == "ADCDownloadAuth" {
+            "renewed on every run"
         } else if !(name.hasPrefix("DES") || Self.sessionCookieNames.contains(name)) {
             "not needed"
         } else {
