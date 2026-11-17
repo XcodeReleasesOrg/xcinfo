@@ -21,13 +21,13 @@ extension XCInfo {
         var listOptions: ListOptions
 
         func run() async throws {
-            do {
-                try await globals.run { core in
-                    try await core.installedXcodes(shouldUpdate: listOptions.updateList)
+            try await globals.run { core, output in
+                let applications = try await core.installedXcodes(shouldUpdate: listOptions.updateList)
+                if output.options.isJSON {
+                    try output.printJSON(applications.map(ApplicationPayload.init))
+                } else {
+                    applications.lines.forEach(output.print)
                 }
-            } catch {
-                globals.logger.error(error.localizedDescription)
-                throw ExitCode.failure
             }
         }
     }

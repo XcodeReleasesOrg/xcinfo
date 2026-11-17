@@ -25,24 +25,22 @@ extension XCInfo {
         var globals: DefaultOptions
 
         func run() async throws {
-            do {
-                try await globals.run { core in
-                    try await core.install(
-                        options: .init(
-                            version: installationOptions.versionOptions.xcodeVersion,
-                            xipFile: installationOptions.xipFile,
-                            downloadOptions: installationOptions.downloadOptions.options,
-                            extractionOptions: installationOptions.extractionOptions.options,
-                            skipSymlinkCreation: installationOptions.skipSymlinkCreation,
-                            skipXcodeSelection: installationOptions.skipXcodeSelection,
-                            shouldPreserveXIP: installationOptions.shouldPreserveXIP
-                        ),
-                        updateVersionList: listOptions.updateList
-                    )
+            try await globals.run { core, output in
+                let application = try await core.install(
+                    options: .init(
+                        version: installationOptions.versionOptions.xcodeVersion,
+                        xipFile: installationOptions.xipFile,
+                        downloadOptions: installationOptions.downloadOptions.options,
+                        extractionOptions: installationOptions.extractionOptions.options,
+                        skipSymlinkCreation: installationOptions.skipSymlinkCreation,
+                        skipXcodeSelection: installationOptions.skipXcodeSelection,
+                        shouldPreserveXIP: installationOptions.shouldPreserveXIP
+                    ),
+                    updateVersionList: listOptions.updateList
+                )
+                if output.options.isJSON {
+                    try output.printJSON(ApplicationPayload(application))
                 }
-            } catch let error as CoreError {
-                globals.logger.error(error.localizedDescription)
-                throw ExitCode.failure
             }
         }
     }

@@ -70,6 +70,30 @@ $ brew install xcinfo
 ### cleanup
 - if something goes wrong this removes all entries stored in the keychain, all cookies, and user defaults
 
+### Output
+
+- Progress and status go to standard output, warnings and errors to standard error.
+- Colors are used only when the output is a terminal. They are off when `NO_COLOR` is set, when `TERM` is `dumb`, or with `--no-ansi`.
+- Progress updates a single line on a terminal. When the output is piped, it prints a plain line every 10 %.
+- `-q`, `--quiet` shows only results, warnings and errors.
+- `--json` prints the result of the command as JSON on standard output, without progress or status. Errors are printed as `{"error": "...", "code": n}` on standard error.
+- `download` and `install` keep the Mac awake with `--prevent-sleep`. `--no-sleep` still works but is deprecated.
+
+Exit codes:
+
+| Code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | Unexpected error |
+| 3 | Version not found |
+| 4 | Sign-in failed |
+| 5 | Download failed |
+| 6 | Extraction failed |
+| 7 | Installation failed |
+| 8 | Uninstallation failed |
+| 9 | xcodereleases.com or the cached list is unavailable |
+| 64 | Invalid arguments |
+
 ## CI
 - no-ansi flag to suppress colored output
 - verbose flag

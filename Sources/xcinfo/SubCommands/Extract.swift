@@ -24,13 +24,11 @@ extension XCInfo {
         var globals: DefaultOptions
 
         func run() async throws {
-            do {
-                try await globals.run { core in
-                    try await core.extractXIP(source: source, options: extractionOptions.options)
+            try await globals.run { core, output in
+                let url = try await core.extractXIP(source: source, options: extractionOptions.options)
+                if output.options.isJSON {
+                    try output.printJSON(PathPayload(path: url.path))
                 }
-            } catch let error as CoreError {
-                globals.logger.error(error.localizedDescription)
-                throw ExitCode.failure
             }
         }
     }

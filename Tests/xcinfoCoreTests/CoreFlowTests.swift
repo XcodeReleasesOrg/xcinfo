@@ -22,7 +22,7 @@ struct CoreInfoTests {
     )
 
     @Test
-    func `info prints the version details`() async throws {
+    func `info identifies the version`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let logs = LogRecorder()
@@ -34,44 +34,14 @@ struct CoreInfoTests {
             applicationsDirectory: applications.url
         )
 
-        try await core.info(version: .version("15.0"), shouldUpdate: true)
+        let found = try await core.info(version: .version("15.0"), shouldUpdate: true)
 
-        let messages = logs.messages
-        #expect(Array(messages.prefix(4)) == [
+        #expect(found.version.build == "15A240d")
+        #expect(found.sdks?.keyed()["macOS"]?.first?.build == "23A334")
+        #expect(logs.messages == [
             "\nIdentifying",
             "Found matching Xcode 15.0 (15A240d).",
-            "\nVersion info",
-            "15.0 (15A240d)",
         ])
-        #expect(messages[4].hasPrefix("Release date: September 18, 2023 ("))
-        #expect(Array(messages.dropFirst(5)) == [
-            "Requires macOS 13.5",
-            "\nSDKs",
-            "macOS SDK: 23A334",
-            "\nCompilers",
-            "swift 5.9: 5.9.0.128.108",
-            "\nLinks",
-            "Download:      https://download.example.invalid/Xcode_15.xip",
-            "Release Notes: https://notes.example.invalid/15",
-        ])
-    }
-
-    @Test
-    func `info without links stops after the compilers`() async throws {
-        let caches = try TemporaryDirectory()
-        let applications = try TemporaryDirectory()
-        let logs = LogRecorder()
-        let xcodes = [Xcode(version: Version("15A240d", "15.0", .release), date: (2023, 9, 18), requires: "13.5")]
-        let core = Core.test(
-            logs: logs,
-            cachesDirectory: caches.url,
-            listXcodes: { xcodes },
-            applicationsDirectory: applications.url
-        )
-
-        try await core.info(version: .version("15A240d"), shouldUpdate: true)
-
-        #expect(logs.messages.last == "Requires macOS 13.5")
     }
 
     @Test
@@ -82,9 +52,9 @@ struct CoreInfoTests {
         let logs = LogRecorder()
         let core = Core.test(logs: logs, cachesDirectory: caches.url, applicationsDirectory: applications.url)
 
-        try await core.info(version: .version("15.0"), shouldUpdate: false)
+        let found = try await core.info(version: .version("15.0"), shouldUpdate: false)
 
-        #expect(logs.messages.contains("15.0 (15A240d)"))
+        #expect(found.version.build == "15A240d")
     }
 
     @Test
@@ -100,7 +70,7 @@ struct CoreInfoTests {
             applicationsDirectory: applications.url
         )
 
-        try await core.info(version: .latest, shouldUpdate: true)
+        _ = try await core.info(version: .latest, shouldUpdate: true)
 
         #expect(logs.messages.contains("Found matching Xcode 14.0 (14A1)."))
     }
@@ -124,11 +94,12 @@ struct CoreInfoTests {
             applicationsDirectory: applications.url
         )
 
-        try await core.info(version: .version("15"), shouldUpdate: true)
+        let found = try await core.info(version: .version("15"), shouldUpdate: true)
+        #expect(found.version.build == "15A507")
 
         #expect(prompt.chosen.values == [["15.0 (15A240d)", "15.0.1 (15A507)"]])
         #expect(logs.messages.contains("Found multiple possibilities for the requested version '15'."))
-        #expect(logs.messages.contains("15.0.1 (15A507)"))
+
     }
 
     @Test
@@ -144,7 +115,7 @@ struct CoreInfoTests {
             applicationsDirectory: applications.url
         )
 
-        try await core.info(version: .version("14A3"), shouldUpdate: true)
+        _ = try await core.info(version: .version("14A3"), shouldUpdate: true)
 
         #expect(logs.messages.contains("Found matching Xcode 14.0 (14A309)."))
     }
@@ -165,7 +136,7 @@ struct CoreInfoTests {
         )
 
         await #expect {
-            try await core.info(version: version, shouldUpdate: true)
+            _ = try await core.info(version: version, shouldUpdate: true)
         } throws: { error in
             isCoreError(error) { if case .versionNotFound = $0 { true } else { false } }
         }
@@ -178,7 +149,7 @@ struct CoreInfoTests {
         let core = Core.test(logs: LogRecorder(), cachesDirectory: caches.url, listXcodes: { [] }, applicationsDirectory: applications.url)
 
         await #expect {
-            try await core.info(version: .latest, shouldUpdate: true)
+            _ = try await core.info(version: .latest, shouldUpdate: true)
         } throws: { error in
             isCoreError(error) { if case .versionNotFound = $0 { true } else { false } }
         }
@@ -222,7 +193,7 @@ struct CoreDownloadTests {
         #expect(downloadCalls.values == ["https://download.example.invalid/Xcode_15.xip \(downloads.url.path) true"])
         #expect(logs.messages.contains("\nSign in to Apple Developer"))
         #expect(logs.messages.contains("\nDownloading"))
-        #expect(logs.messages.last == "Download to \(downloads.url.path) complete.")
+        #expect(logs.messages.last == "Downloaded to \(downloads.url.appendingPathComponent("Xcode_15.xip").path)")
     }
 
     @Test
@@ -612,29 +583,28 @@ struct CoreExtractTests {
             applicationsDirectory: directory.url
         )
 
-        let application = try await core.extractXIP(source: source, options: .init(destination: directory.url))
+        let extracted = try await core.extractXIP(source: source, options: .init(destination: directory.url))
 
-        #expect(application == nil)
+        #expect(extracted == directory.url.appendingPathComponent("Xcode.app"))
         #expect(extractions.values == ["\(name) - false"])
         #expect(logs.messages.first == "\nExtracting")
-        #expect(logs.messages.contains("XIP successfully extracted to \(directory.url.appendingPathComponent("Xcode.app").path)"))
+        #expect(logs.messages.contains("Extracted to \(directory.url.appendingPathComponent("Xcode.app").path)"))
         #expect(logs.messages.last?.hasPrefix("Extraction time: ") == true)
     }
 
     @Test
-    func `extracting for an xcode returns the application`() async throws {
+    func `extracting for an xcode uses its file name`() async throws {
         let directory = try TemporaryDirectory()
         let source = try directory.file("Xcode.xip")
         let core = Core.test(logs: LogRecorder(), cachesDirectory: directory.url, extract: { _, destination, filename, _ in destination.appendingPathComponent(filename ?? "Xcode.app") }, applicationsDirectory: directory.url)
 
-        let application = try await core.extractXIP(
+        let extracted = try await core.extractXIP(
             source: source,
             options: .init(destination: directory.url),
             xcode: .fixture("15.0", build: "15A240d")
         )
 
-        #expect(application?.url == directory.url.appendingPathComponent("Xcode_15.0.app"))
-        #expect(application?.xcode.version.build == "15A240d")
+        #expect(extracted == directory.url.appendingPathComponent("Xcode_15.0.app"))
     }
 
     @Test(arguments: ["Xcode.dmg", "Xcode", "Xcode.xip.zip"])
@@ -700,7 +670,7 @@ struct CoreUninstallTests {
         #expect(!FileManager.default.fileExists(atPath: app16.path))
         #expect(FileManager.default.fileExists(atPath: app15.path))
         #expect(prompt.agreed.values == ["Are you sure you want to uninstall Xcode 16.0 (16A1)?"])
-        #expect(logs.messages.last == "16.0 (16A1) uninstalled!")
+        #expect(logs.messages.last == "16.0 (16A1) uninstalled.")
     }
 
     @Test
@@ -722,7 +692,7 @@ struct CoreUninstallTests {
         try await core.uninstall("16a1", updateVersionList: true)
 
         #expect(FileManager.default.fileExists(atPath: app.path))
-        #expect(logs.messages.last == "kthxbye")
+        #expect(logs.messages.last == "Nothing was uninstalled.")
     }
 
     @Test
@@ -826,7 +796,7 @@ struct CoreCleanupTests {
         core.cleanup()
 
         #expect(calls.values == ["credentials", "authentication", "cookies"])
-        #expect(logs.messages == ["\nCleanup", "", "Removed stored cookies."])
+        #expect(logs.messages == ["\nCleanup", "Removed stored cookies."])
     }
 }
 
@@ -844,7 +814,7 @@ struct CoreErrorTests {
         #expect(CoreError.installationFailed.errorDescription == "Xcode could not be installed.")
         #expect(CoreError.gatekeeperVerificationFailed(url).errorDescription == "Gatekeeper could not verify Xcode at /tmp/Xcode.app")
         #expect(CoreError.codesignVerificationFailed(url).errorDescription == "Code sign could not verify Xcode at /tmp/Xcode.app")
-        #expect(CoreError.incorrectSuperUserPassword.errorDescription == "")
+        #expect(CoreError.incorrectSuperUserPassword.errorDescription == "The administrator password was rejected three times.")
         #expect(CoreError.invalidExtractionOutputURL(url).errorDescription == "Failed to access output directory at /tmp/Xcode.app.")
         #expect(CoreError.extractionFailed(Extractor.ExtractionError("inner")).errorDescription == "inner")
     }
@@ -863,5 +833,7 @@ struct CoreErrorTests {
         #expect(XCAPIError.couldNotMoveToTemporaryFile.description == "Could not move downloaded file into temporary directory")
         #expect(XCAPIError.couldNotMoveToDestinationFolder(source, destination, error).description == "Could not move downloaded file from /tmp/a.xip to /tmp/b.xip. Disk full)")
         #expect(XCAPIError.timeout.description == "The request timed out")
+        #expect(XCAPIError.unexpectedStatusCode(403).description == "The server responded with HTTP status 403")
+        #expect(XCAPIError.unauthorized.description == "The Apple Developer Portal did not authorize the download")
     }
 }

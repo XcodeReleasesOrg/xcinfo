@@ -42,8 +42,7 @@ struct Extractor: Sendable {
         try FileManager.default.ensureFolderExists(target)
         defer { try? FileManager.default.removeItem(at: target) }
 
-        logger.log("")
-        logger.verbose("Extracting xip to \(target.path)", onSameLine: true)
+        logger.verbose("Extracting xip to \(target.path)")
 
         let (progressUpdates, continuation) = AsyncStream.makeStream(
             of: Double.self,
@@ -57,26 +56,17 @@ struct Extractor: Sendable {
                 }
         }()
 
-        let input = source.lastPathComponent
-        var previouslyDisplayedNonANSIProgress = -1
-        var progressDisplay = ProgressDisplay(ratio: 0, width: 20)
+        var milestones = ProgressMilestones()
         for await progress in progressUpdates {
-            progressDisplay.ratio = progress
-            if Logger.isANSIEnabled && !logger.isVerbose {
-                logger.log("\(progressDisplay.representation)", onSameLine: true)
-            } else {
-                let percent = Int(progress * 100)
-                if percent.isMultiple(of: 5), previouslyDisplayedNonANSIProgress != Int(progress) {
-                    if progress < 1 {
-                        logger.log("Expanding items from \(input): \(percent) %")
-                    }
-                    previouslyDisplayedNonANSIProgress = percent
-                }
-            }
+            logger.progress(OutputProgress(
+                title: "Extracting",
+                fraction: min(progress, 0.999),
+                isMilestone: milestones.reached(progress)
+            ))
         }
         try await extraction
-
-        logger.success("Done extracting: \(target.path)")
+        logger.progress(OutputProgress(title: "Extracting", fraction: 1))
+        logger.verbose("Done extracting: \(target.path)")
 
         if let applicationURL = moveToDestinationFolder(tempFolder: target) {
             return applicationURL
@@ -110,41 +100,38 @@ struct Extractor: Sendable {
             continuation.finish()
         })
 
-        var previouslyDisplayedNonANSIProgress = -1
-        var progressDisplay = ProgressDisplay(ratio: 0, width: 20)
+        var milestones = ProgressMilestones()
         for await event in events {
             guard case let .progress(progress, statusMessage) = event else { break }
             let ratio = progress / 100
             switch ratio {
             case _ where ratio < 0:
-                logger.log(statusMessage)
+                logger.verbose(statusMessage)
             case _ where ratio > 1:
-                logger.log("Probably done: \(statusMessage)")
+                logger.verbose("Probably done: \(statusMessage)")
             default:
-                progressDisplay.ratio = ratio
-                if Logger.isANSIEnabled {
-                    logger.log("\(progressDisplay.representation)", onSameLine: true)
-                } else {
-                    if Int(progress).isMultiple(of: 5), previouslyDisplayedNonANSIProgress != Int(progress) {
-                        logger.log("\(statusMessage.isEmpty ? "Done" : statusMessage): \(Int(progress)) %")
-                        previouslyDisplayedNonANSIProgress = Int(progress)
-                    }
-                }
+                logger.progress(OutputProgress(
+                    title: "Extracting",
+                    fraction: min(ratio, 0.999),
+                    detail: statusMessage.isEmpty ? nil : statusMessage,
+                    isMilestone: milestones.reached(ratio)
+                ))
             }
         }
         withExtendedLifetime(container) {}
 
         guard FileManager.default.fileExists(atPath: target.path) else {
             let result = try await ProcessRunner.run("/usr/bin/xip", arguments: ["--expand", source.path])
+            let message = result.stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             let prefix = "xip: error: "
-            throw ExtractionError(String(result.stderr.suffix(from: prefix.endIndex)))
+            throw ExtractionError(message.hasPrefix(prefix) ? String(message.dropFirst(prefix.count)) : message)
         }
 
-        logger.success("Done extracting: \(target.path)")
+        logger.progress(OutputProgress(title: "Extracting", fraction: 1))
+        logger.verbose("Done extracting: \(target.path)")
         if let applicationURL = moveToDestinationFolder(tempFolder: target) {
             return applicationURL
         } else {
-            logger.error("Extraction failed", onSameLine: true)
             throw ExtractionError("Application could not be moved to \(destination.path).")
         }
     }
@@ -173,5 +160,16 @@ struct Extractor: Sendable {
             logger.error("Moving application failed. Error: \(error.localizedDescription)")
             return nil
         }
+    }
+}
+
+struct ProgressMilestones {
+    private var reachedTenths = 0
+
+    mutating func reached(_ fraction: Double) -> Bool {
+        let tenths = Int(fraction * 10)
+        guard tenths > reachedTenths else { return false }
+        reachedTenths = tenths
+        return true
     }
 }

@@ -95,7 +95,7 @@ struct ProcessRunnerTests {
 
 struct LoggerTests {
     @Test
-    func `log levels write their message`() {
+    func `log levels emit typed events`() {
         let logs = LogRecorder()
         let logger = logs.logger()
 
@@ -104,58 +104,24 @@ struct LoggerTests {
         logger.error("error")
         logger.warn("warning")
         logger.emphasized("emphasized")
-
-        #expect(logs.messages == ["plain", "success", "error", "warning", "emphasized"])
-    }
-
-    @Test
-    func `sections and paragraphs start on a new line`() {
-        let logs = LogRecorder()
-        let logger = logs.logger()
-
+        logger.verbose("details")
         logger.beginSection("Section")
         logger.beginParagraph("Paragraph")
+        logger.check("Step", .passed)
+        logger.progress(OutputProgress(title: "Downloading", fraction: 0.5))
 
-        #expect(logs.messages == ["\nSection", "\nParagraph"])
-    }
-
-    @Test
-    func `verbose messages are written only when verbose`() {
-        let quiet = LogRecorder()
-        quiet.logger(isVerbose: false).verbose("details")
-        #expect(quiet.messages.isEmpty)
-
-        let verbose = LogRecorder()
-        verbose.logger(isVerbose: true).verbose("details")
-        #expect(verbose.messages == ["details"])
-    }
-
-    @Test
-    func `same line messages move the cursor up and clear the line`() {
-        let logs = LogRecorder()
-        let logger = logs.logger(isVerbose: true)
-
-        logger.log("progress", onSameLine: true)
-        logger.verbose("detail", onSameLine: true)
-        logger.error("failure", onSameLine: true)
-        logger.warn("warning", onSameLine: true)
-        logger.log("next line")
-
-        let prefix = "\u{1B}[1A\u{1B}[K"
-        #expect(logs.rawMessages[0] == prefix + "progress")
-        #expect(logs.rawMessages[1] == prefix + "detail")
-        #expect(logs.rawMessages[2].hasPrefix(prefix))
-        #expect(logs.rawMessages[3].hasPrefix(prefix))
-        #expect(logs.rawMessages[4] == "next line")
-    }
-
-    @Test
-    func `success ignores the same line flag`() {
-        let logs = LogRecorder()
-
-        logs.logger().success("done", onSameLine: true)
-
-        #expect(!logs.rawMessages[0].hasPrefix("\u{1B}[1A"))
+        #expect(logs.events == [
+            .message("plain", .plain),
+            .message("success", .success),
+            .message("error", .error),
+            .message("warning", .warning),
+            .message("emphasized", .emphasized),
+            .verbose("details"),
+            .section("Section"),
+            .paragraph("Paragraph"),
+            .check("Step", .passed),
+            .progress(OutputProgress(title: "Downloading", fraction: 0.5)),
+        ])
     }
 }
 
