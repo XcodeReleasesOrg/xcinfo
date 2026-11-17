@@ -122,6 +122,17 @@ struct CommandLineTests {
     }
 
     @Test
+    func `no verify turns off the checksum for download and install`() throws {
+        let verified = try parse(XCInfo.Download.self, ["download", "15.0"])
+        let download = try parse(XCInfo.Download.self, ["download", "15.0", "--no-verify"])
+        let install = try parse(XCInfo.Install.self, ["install", "15.0", "--no-verify"])
+
+        #expect(verified.downloadOptions.options.verifiesChecksum)
+        #expect(!download.downloadOptions.options.verifiesChecksum)
+        #expect(!install.installationOptions.downloadOptions.options.verifiesChecksum)
+    }
+
+    @Test
     func `no sleep keeps the system awake`() throws {
         let noSleep = try parse(XCInfo.Download.self, ["download", "15.0", "--no-sleep"])
         let sleep = try parse(XCInfo.Download.self, ["download", "15.0", "--sleep"])

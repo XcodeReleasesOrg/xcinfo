@@ -21,6 +21,7 @@ public enum CoreError: LocalizedError, Sendable {
     case incorrectSuperUserPassword
     case uninstallationFailed(String)
     case invalidExtractionOutputURL(URL)
+    case checksumMismatch(file: URL, expected: String, actual: String)
 
     public var errorDescription: String? {
         switch self {
@@ -46,6 +47,11 @@ public enum CoreError: LocalizedError, Sendable {
             return "The administrator password was rejected three times."
         case .invalidExtractionOutputURL(let output):
             return "Failed to access output directory at \(output.path)."
+        case let .checksumMismatch(file, expected, actual):
+            return """
+            The archive at \(file.path) is corrupt: its SHA-1 is \(actual), but xcodereleases.com lists \(expected).
+            The file was kept. Delete it and run the command again to download it anew, or pass --no-verify to skip the check.
+            """
         }
     }
 }
@@ -65,13 +71,15 @@ public struct Core: Sendable {
     }
 
     public struct DownloadOptions: Sendable {
-        public init(destination: URL, disableSleep: Bool) {
+        public init(destination: URL, disableSleep: Bool, verifiesChecksum: Bool = true) {
             self.destination = destination
             self.disableSleep = disableSleep
+            self.verifiesChecksum = verifiesChecksum
         }
 
         public var destination: URL
         public var disableSleep: Bool
+        public var verifiesChecksum: Bool
     }
 
     public struct ExtractionOptions: Sendable {
@@ -167,10 +175,26 @@ public struct Core: Sendable {
                 options.disableSleep
             )
             logger.success("Downloaded to \(downloadURL.path)")
+            if options.verifiesChecksum, let mismatch = try await checksumMismatch(of: downloadURL, xcode: xcode) {
+                throw mismatch
+            }
             return (xcode, downloadURL)
         } catch let error as XCAPIError {
             throw CoreError.downloadFailed(error.description)
         }
+    }
+
+    private func checksumMismatch(of archive: URL, xcode: Xcode) async throws -> CoreError? {
+        guard let expected = xcode.checksums?.sha1?.lowercased(), !expected.isEmpty else {
+            logger.verbose("xcodereleases.com has no checksum for Xcode \(xcode.displayVersion); skipping the SHA-1 check.")
+            return nil
+        }
+        let actual = try await ArchiveChecksum(url: archive).sha1(logger: logger)
+        guard actual != expected else {
+            logger.verbose("SHA-1 \(actual) matches xcodereleases.com.")
+            return nil
+        }
+        return CoreError.checksumMismatch(file: archive, expected: expected, actual: actual)
     }
 
     @discardableResult
@@ -181,6 +205,12 @@ public struct Core: Sendable {
 
         if let url = options.xipFile {
             let xcode = try await identifyVersion(options.version, updateVersionList: updateVersionList)
+            if options.downloadOptions.verifiesChecksum, let mismatch = try await checksumMismatch(of: url, xcode: xcode) {
+                logger.warn(mismatch.localizedDescription)
+                guard prompt.agree("Install from this archive anyway?") else {
+                    throw mismatch
+                }
+            }
             downloadResult = (xcode, url)
         } else {
             downloadResult = try await download(

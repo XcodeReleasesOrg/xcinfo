@@ -18,7 +18,7 @@ extension Error {
                 3
             case .authenticationFailed:
                 4
-            case .downloadFailed:
+            case .downloadFailed, .checksumMismatch:
                 5
             case .extractionFailed, .unsupportedFile, .invalidExtractionOutputURL:
                 6

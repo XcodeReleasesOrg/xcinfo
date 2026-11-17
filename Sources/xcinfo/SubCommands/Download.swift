@@ -43,6 +43,6 @@ extension XCInfo {
 
 extension DownloadOptions {
     var options: Core.DownloadOptions {
-        .init(destination: downloadDirectory, disableSleep: disableSleep)
+        .init(destination: downloadDirectory, disableSleep: disableSleep, verifiesChecksum: !skipsVerification)
     }
 }
