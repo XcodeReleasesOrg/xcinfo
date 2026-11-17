@@ -19,7 +19,10 @@ private let keyExamples: [([UInt8], [Key])] = [
     ([0x09], [.tab]),
     (Array("jq".utf8), [.character("j"), .character("q")]),
     ([0x1B, 0x5B, 0x41, 0x6A, 0x1B, 0x5B, 0x42], [.up, .character("j"), .down]),
-    ([0x7F, 0x00], []),
+    ([0x7F, 0x00], [.backspace]),
+    ([0x08], [.backspace]),
+    (Array("Grüße🎉".utf8), Array("Grüße🎉").map { .character($0) }),
+    ([0x80, 0x61], [.character("a")]),
 ]
 
 struct KeyTests {

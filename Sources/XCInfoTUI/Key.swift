@@ -3,6 +3,8 @@
 //  MIT license - see LICENSE.md
 //
 
+import Foundation
+
 public enum Key: Sendable, Equatable {
     case up
     case down
@@ -16,6 +18,7 @@ public enum Key: Sendable, Equatable {
     case escape
     case tab
     case interrupt
+    case backspace
     case character(Character)
 
     public static func parse(_ bytes: [UInt8]) -> [Key] {
@@ -42,8 +45,18 @@ public enum Key: Sendable, Equatable {
                 keys.append(.enter)
             case 0x09:
                 keys.append(.tab)
+            case 0x7F, 0x08:
+                keys.append(.backspace)
             case 0x20 ... 0x7E:
                 keys.append(.character(Character(UnicodeScalar(byte))))
+            case 0xC0 ... 0xF7:
+                let length = byte >= 0xF0 ? 4 : byte >= 0xE0 ? 3 : 2
+                let end = min(bytes.count, index + length)
+                if let scalar = String(bytes: bytes[index ..< end], encoding: .utf8), let character = scalar.first {
+                    keys.append(.character(character))
+                }
+                index = end
+                continue
             default:
                 break
             }

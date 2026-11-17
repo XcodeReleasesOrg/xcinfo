@@ -47,7 +47,29 @@ public struct TUIRenderer: Sendable {
         }
         lines.append((model.status ?? "").truncated(to: width).padded(to: width))
         lines.append(style(help(for: model.selectedEntry).truncated(to: width).padded(to: width), .dim))
+        if let dialog = model.dialog {
+            overlay(box(dialog, width: width), on: &lines, height: height)
+        }
         return lines
+    }
+
+    func box(_ dialog: TUIDialog, width: Int) -> [String] {
+        let content = [dialog.prompt, ""] + dialog.lines
+        let innerWidth = max(20, min(width - 6, (content.map(\.count).max() ?? 0) + 2))
+        let border = String(repeating: "─", count: innerWidth)
+        return ["┌" + border + "┐"]
+            + content.map { "│ " + $0.truncated(to: innerWidth - 2).padded(to: innerWidth - 2) + " │" }
+            + ["└" + border + "┘"]
+    }
+
+    private func overlay(_ box: [String], on lines: inout [String], height: Int) {
+        guard let boxWidth = box.first?.count, let width = lines.first.map({ $0.unstyledWidth }) else { return }
+        let top = max(1, (height - box.count) / 2)
+        let left = max(0, (width - boxWidth) / 2)
+        for (offset, row) in box.enumerated() where lines.indices.contains(top + offset) {
+            let text = String(repeating: " ", count: left) + row
+            lines[top + offset] = style(text.padded(to: width), .dialog)
+        }
     }
 
     struct Row: Equatable {
@@ -129,6 +151,7 @@ public struct TUIRenderer: Sendable {
         case heading
         case selected
         case dim
+        case dialog
     }
 
     private func style(_ text: String, _ style: Style) -> String {
@@ -142,12 +165,18 @@ public struct TUIRenderer: Sendable {
             "7"
         case .dim:
             "2"
+        case .dialog:
+            "1"
         }
         return "\u{1B}[\(code)m\(text)\u{1B}[0m"
     }
 }
 
 extension String {
+    var unstyledWidth: Int {
+        replacingOccurrences(of: "\u{1B}\\[[0-9;]*m", with: "", options: .regularExpression).count
+    }
+
     func truncated(to width: Int) -> String {
         guard count > width else { return self }
         guard width > 1 else { return String(prefix(max(0, width))) }
