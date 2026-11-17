@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 @testable import OlympUs
 import os
@@ -8,6 +9,8 @@ import XCIFoundation
 private enum AppleEndpoint {
     static let config = "/olympus/v1/app/config"
     static let signIn = "/appleauth/auth/signin"
+    static let signInInit = "/appleauth/auth/signin/init"
+    static let signInComplete = "/appleauth/auth/signin/complete"
     static let auth = "/appleauth/auth"
     static let verifyPhone = "/appleauth/auth/verify/phone"
     static let trustedDeviceCode = "/appleauth/auth/verify/trusteddevice/securitycode"
@@ -28,10 +31,11 @@ private let authResponse = """
 """
 
 private let downloadAuthCookie = "ADCDownloadAuth=download-token; Path=/; Domain=.apple.com"
+private let sessionHeaders = ["scnt": "scnt-value", "X-Apple-ID-Session-Id": "session-id"]
 
 final class OlympUsFixture: Sendable {
     let server: StubServer
-    let defaults = TemporaryDefaults()
+    let cookieStore: InMemoryCookieStore
     let sessionStore: InMemorySessionStore
     let logs = LogRecorder()
     let prompt: FakePrompt
@@ -39,19 +43,22 @@ final class OlympUsFixture: Sendable {
 
     init(
         storedAssets: [String: Data] = [:],
+        cookies: [HTTPCookie] = [],
         prompt: FakePrompt = FakePrompt(),
         promptClient: PromptClient? = nil,
         handler: @escaping StubServer.Handler
     ) {
         server = StubServer(handler: handler)
+        cookieStore = InMemoryCookieStore(cookies: cookies)
         sessionStore = InMemorySessionStore(storedAssets)
         self.prompt = prompt
         olymp = OlympUs(
             logger: logs.logger(isVerbose: true),
             session: server.session(),
-            userDefaults: defaults.defaults,
+            cookieStore: cookieStore.store,
             sessionStore: sessionStore.store,
-            prompt: promptClient ?? prompt.client
+            prompt: promptClient ?? prompt.client,
+            now: { Date(timeIntervalSince1970: 1_700_000_000) }
         )
     }
 
@@ -65,8 +72,29 @@ private func json(_ request: URLRequest) throws -> NSDictionary {
     return try #require(try JSONSerialization.jsonObject(with: body) as? NSDictionary)
 }
 
-private func isOlympUsError(_ expected: OlympUsError) -> (any Error) -> Bool {
+private func isOlympUsError(_ expected: OlympUsError) -> @Sendable (any Error) -> Bool {
     { ($0 as? OlympUsError) == expected }
+}
+
+private func appleServer(
+    srp: FakeAppleSRPServer,
+    completion: @escaping @Sendable (URLRequest, Bool) -> StubResponse = { _, valid in
+        valid ? .json(#"{"authType":"hsa2"}"#, statusCode: 409, headers: sessionHeaders) : .json("{}", statusCode: 401)
+    },
+    otherwise: @escaping @Sendable (URLRequest) -> StubResponse = { _ in StubResponse() }
+) -> StubServer.Handler {
+    { request in
+        switch request.url?.path {
+        case AppleEndpoint.signIn:
+            StubResponse(headers: ["X-Apple-HC-Bits": "8", "X-Apple-HC-Challenge": "challenge"])
+        case AppleEndpoint.signInInit:
+            srp.initResponse(for: request)
+        case AppleEndpoint.signInComplete:
+            completion(request, srp.isValidCompletion(request))
+        default:
+            otherwise(request)
+        }
+    }
 }
 
 struct OlympUsServiceKeyTests {
@@ -105,48 +133,122 @@ struct OlympUsServiceKeyTests {
 }
 
 struct OlympUsSignInTests {
+    private let srp = FakeAppleSRPServer(accountName: "user@example.invalid", password: "correct horse")
+
+    @Test(arguments: [PasswordProtocol.s2k, .s2kFo])
+    func `sign in proves the password with srp`(passwordProtocol: PasswordProtocol) async throws {
+        let srp = FakeAppleSRPServer(accountName: "user@example.invalid", password: "correct horse", passwordProtocol: passwordProtocol)
+        let fixture = OlympUsFixture(handler: appleServer(srp: srp))
+
+        let result = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
+
+        #expect(result.requiresTwoFactorAuthentication)
+        #expect(result.assets == OlympUs.AuthenticationAssets(serviceKey: "key", scnt: "scnt-value", asid: "session-id", authenticationType: "hsa2"))
+        let completion = try #require(fixture.server.requests(to: AppleEndpoint.signInComplete).first)
+        #expect(completion.url?.query == "isRememberMeEnabled=true")
+        let body = try json(completion)
+        #expect(body["accountName"] as? String == "user@example.invalid")
+        #expect(body["rememberMe"] as? Bool == true)
+        #expect(body["m2"] is String)
+    }
+
     @Test
-    func `sign in posts the credentials and keeps the session headers`() async throws {
-        let fixture = OlympUsFixture { _ in
-            .json(#"{"authType":"hsa2"}"#, headers: ["scnt": "scnt-value", "X-Apple-ID-Session-Id": "session-id"])
+    func `sign in never sends the password`() async throws {
+        let fixture = OlympUsFixture(handler: appleServer(srp: srp))
+
+        _ = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
+
+        let bodies = fixture.server.requests.values.compactMap(\.httpBody).map { String(decoding: $0, as: UTF8.self) }
+        #expect(!bodies.contains { $0.contains("correct horse") })
+        let initBody = try json(try #require(fixture.server.requests(to: AppleEndpoint.signInInit).first))
+        #expect(initBody["protocols"] as? [String] == ["s2k", "s2k_fo"])
+        #expect(initBody["a"] is String)
+    }
+
+    @Test
+    func `sign in sends the widget key and a hashcash stamp`() async throws {
+        let fixture = OlympUsFixture(handler: appleServer(srp: srp))
+
+        _ = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
+
+        let challenge = try #require(fixture.server.requests(to: AppleEndpoint.signIn).first)
+        #expect(challenge.url?.query == "widgetKey=key")
+        for path in [AppleEndpoint.signInInit, AppleEndpoint.signInComplete] {
+            let request = try #require(fixture.server.requests(to: path).first)
+            #expect(request.httpMethod == "POST")
+            #expect(request.value(forHTTPHeaderField: "X-Apple-Widget-Key") == "key")
+            #expect(request.value(forHTTPHeaderField: "X-Requested-With") == "XMLHttpRequest")
+            let stamp = try #require(request.value(forHTTPHeaderField: "X-Apple-HC"))
+            #expect(stamp.hasPrefix("1:8:20231114221320:challenge::"))
+            #expect(Hashcash.hasLeadingZeroBits(8, in: Array(Insecure.SHA1.hash(data: Data(stamp.utf8)))))
+        }
+    }
+
+    @Test
+    func `sign in works without a hashcash challenge`() async throws {
+        let handler = appleServer(srp: srp)
+        let fixture = OlympUsFixture { request in
+            request.url?.path == AppleEndpoint.signIn ? StubResponse() : handler(request)
         }
 
-        let assets = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "secret", serviceKey: "key")
+        _ = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
 
-        #expect(assets.serviceKey == "key")
-        #expect(assets.scnt == "scnt-value")
-        #expect(assets.asid == "session-id")
-        #expect(assets.authenticationType == "hsa2")
-        let request = try #require(fixture.server.requests(to: AppleEndpoint.signIn).first)
-        #expect(request.url?.host == "idmsa.apple.com")
-        #expect(request.httpMethod == "POST")
-        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
-        #expect(request.value(forHTTPHeaderField: "X-Requested-With") == "X-Requested-With")
-        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json, text/javascript")
-        #expect(request.value(forHTTPHeaderField: "X-Apple-Widget-Key") == "key")
-        let body = try json(request)
-        #expect(body["accountName"] as? String == "user@example.invalid")
-        #expect(body["password"] as? String == "secret")
-        #expect(body["rememberMe"] as? Bool == true)
+        #expect(fixture.server.requests(to: AppleEndpoint.signInInit).first?.value(forHTTPHeaderField: "X-Apple-HC") == nil)
     }
 
     @Test
-    func `sign in without session headers still succeeds`() async throws {
-        let fixture = OlympUsFixture { _ in .json(#"{"authType":"sa"}"#) }
+    func `a successful sign in without two factor authentication is reported`() async throws {
+        let fixture = OlympUsFixture(handler: appleServer(srp: srp, completion: { _, valid in
+            valid ? .json("{}", statusCode: 200, headers: sessionHeaders) : .json("{}", statusCode: 401)
+        }))
 
-        let assets = try await fixture.olymp.signIn(accountName: "user", password: "secret", serviceKey: "key")
+        let result = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
 
-        #expect(assets.scnt == nil)
-        #expect(assets.asid == nil)
-        #expect(assets.authenticationType == "sa")
+        #expect(!result.requiresTwoFactorAuthentication)
+        #expect(result.assets.scnt == "scnt-value")
     }
 
     @Test
-    func `a rejected sign in fails`() async throws {
-        let fixture = OlympUsFixture { _ in .json(#"{"serviceErrors":[]}"#, statusCode: 401) }
+    func `a wrong password is reported`() async throws {
+        let fixture = OlympUsFixture(handler: appleServer(srp: srp))
 
         await #expect(performing: {
-            try await fixture.olymp.signIn(accountName: "user", password: "wrong", serviceKey: "key")
+            try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "wrong", serviceKey: "key")
+        }, throws: isOlympUsError(.incorrectCredentials))
+    }
+
+    @Test(arguments: [
+        (401, OlympUsError.incorrectCredentials),
+        (403, .accountLocked),
+        (412, .privacyAcknowledgementRequired),
+        (500, .signInRequestFailed),
+    ])
+    func `rejected sign ins are reported specifically`(statusCode: Int, error: OlympUsError) async throws {
+        let fixture = OlympUsFixture(handler: appleServer(srp: srp, completion: { _, _ in .json("{}", statusCode: statusCode) }))
+
+        await #expect(performing: {
+            try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
+        }, throws: isOlympUsError(error))
+    }
+
+    @Test
+    func `an unknown account is reported when the challenge is refused`() async throws {
+        let fixture = OlympUsFixture(handler: appleServer(srp: srp))
+
+        await #expect(performing: {
+            try await fixture.olymp.signIn(accountName: "someone@example.invalid", password: "correct horse", serviceKey: "key")
+        }, throws: isOlympUsError(.incorrectCredentials))
+        #expect(fixture.server.requests(to: AppleEndpoint.signInComplete).isEmpty)
+    }
+
+    @Test
+    func `a broken challenge fails the sign in`() async throws {
+        let fixture = OlympUsFixture { request in
+            request.url?.path == AppleEndpoint.signInInit ? .json(#"{"unexpected":true}"#) : StubResponse()
+        }
+
+        await #expect(performing: {
+            try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
         }, throws: isOlympUsError(.signInRequestFailed))
     }
 }
@@ -161,20 +263,15 @@ struct OlympUsTwoFactorTests {
 
         let validation = try await fixture.olymp.requestAuthentication(assets: assets)
 
-        guard case let .securityCode(code) = validation else {
-            Issue.record("Expected a security code, got \(validation)")
-            return
-        }
-        #expect(code == "123456")
+        #expect(validation == .securityCode("123456"))
         #expect(prompt.asked.values == ["Apple ID Verification Code: "])
         let request = try #require(fixture.server.requests(to: AppleEndpoint.auth).first)
-        #expect(request.httpMethod == "POST")
+        #expect(request.httpMethod == "GET")
         #expect(request.value(forHTTPHeaderField: "X-Apple-Widget-Key") == "service-key")
         #expect(request.value(forHTTPHeaderField: "scnt") == "scnt-value")
         #expect(request.value(forHTTPHeaderField: "X-Apple-ID-Session-Id") == "session-id")
-        #expect(request.value(forHTTPHeaderField: "Content-Type") == "application/json")
         #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
-        #expect(fixture.logs.messages.contains("Please enter a 6 digit verification code generated on one of your trusted devices."))
+        #expect(fixture.logs.messages.contains("Please enter the 6 digit verification code shown on one of your trusted devices."))
     }
 
     @Test
@@ -196,8 +293,32 @@ struct OlympUsTwoFactorTests {
         _ = try await fixture.olymp.requestAuthentication(assets: assets)
 
         #expect(validators.values == [
-            "Apple ID Verification Code: |Invalide code length|12345=true,123456=false,1234567=true,sms=false",
+            "Apple ID Verification Code: |Invalid code length|12345=true,123456=false,1234567=true,sms=false",
         ])
+    }
+
+    @Test
+    func `sms is only offered with trusted phone numbers`() async throws {
+        let prompt = FakePrompt(answers: ["123456"])
+        let fixture = OlympUsFixture(prompt: prompt) { _ in
+            .json(#"{"securityCode":{"length":6}}"#)
+        }
+
+        let validation = try await fixture.olymp.requestAuthentication(assets: assets)
+
+        #expect(validation == .securityCode("123456"))
+        #expect(!fixture.logs.messages.contains { $0.contains("sms") })
+    }
+
+    @Test
+    func `a locked verification is reported`() async throws {
+        let fixture = OlympUsFixture { _ in
+            .json(#"{"securityCode":{"length":6,"securityCodeLocked":true}}"#)
+        }
+
+        await #expect(performing: {
+            try await fixture.olymp.requestAuthentication(assets: assets)
+        }, throws: isOlympUsError(.verificationCodeLocked))
     }
 
     @Test
@@ -209,12 +330,7 @@ struct OlympUsTwoFactorTests {
 
         let validation = try await fixture.olymp.requestAuthentication(assets: assets)
 
-        guard case let .verificationCode(phoneID, code) = validation else {
-            Issue.record("Expected a verification code, got \(validation)")
-            return
-        }
-        #expect(phoneID == 2)
-        #expect(code == "654321")
+        #expect(validation == .verificationCode(2, "654321"))
         #expect(prompt.chosen.values == [["+1 (•••) •••-••11", "+49 ••• ••••22"]])
         #expect(prompt.asked.values == ["Apple ID Verification Code: ", "Please enter the received verification code:"])
         let request = try #require(fixture.server.requests(to: AppleEndpoint.verifyPhone).first)
@@ -224,11 +340,11 @@ struct OlympUsTwoFactorTests {
         #expect(body["mode"] as? String == "sms")
     }
 
-    @Test
-    func `a failed sms request fails`() async throws {
+    @Test(arguments: [StubResponse.failure(.notConnectedToInternet), StubResponse(statusCode: 423)])
+    func `a failed sms request fails`(failure: StubResponse) async throws {
         let prompt = FakePrompt(answers: ["sms"], choices: [0])
         let fixture = OlympUsFixture(prompt: prompt) { request in
-            request.url?.path == AppleEndpoint.auth ? .json(authResponse) : .failure(.notConnectedToInternet)
+            request.url?.path == AppleEndpoint.auth ? .json(authResponse) : failure
         }
 
         await #expect(performing: {
@@ -254,7 +370,7 @@ struct OlympUsTwoFactorTests {
         #expect(status == 204)
         let request = try #require(fixture.server.requests(to: AppleEndpoint.trustedDeviceCode).first)
         #expect(request.httpMethod == "POST")
-        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json,application/json")
+        #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
         let body = try json(request)
         #expect((body["securityCode"] as? NSDictionary)?["code"] as? String == "123456")
     }
@@ -263,7 +379,7 @@ struct OlympUsTwoFactorTests {
     func `an sms code is sent to the phone endpoint`() async throws {
         let fixture = OlympUsFixture { _ in StubResponse(statusCode: 200) }
 
-        _ = try await fixture.olymp.sendSecurityCode(validationType: .verificationCode(2, "654321"), assets: assets)
+        try await fixture.olymp.sendSecurityCode(validationType: .verificationCode(2, "654321"), assets: assets)
 
         let request = try #require(fixture.server.requests(to: AppleEndpoint.phoneCode).first)
         let body = try json(request)
@@ -272,15 +388,18 @@ struct OlympUsTwoFactorTests {
         #expect((body["securityCode"] as? NSDictionary)?["code"] as? String == "654321")
     }
 
-    @Test(arguments: [400, 401, 412])
-    func `a wrong code fails`(statusCode: Int) async throws {
+    @Test(arguments: [
+        (400, OlympUsError.incorrectVerificationCode),
+        (401, .incorrectVerificationCode),
+        (412, .privacyAcknowledgementRequired),
+        (500, .deviceTrustFailed),
+    ])
+    func `a wrong code fails`(statusCode: Int, error: OlympUsError) async throws {
         let fixture = OlympUsFixture { _ in StubResponse(statusCode: statusCode) }
 
-        await withKnownIssue("A rejected security code counts as success") {
-            await #expect(performing: {
-                try await fixture.olymp.sendSecurityCode(validationType: .securityCode("000000"), assets: assets)
-            }, throws: isOlympUsError(.deviceTrustFailed))
-        }
+        await #expect(performing: {
+            try await fixture.olymp.sendSecurityCode(validationType: .securityCode("000000"), assets: assets)
+        }, throws: isOlympUsError(error))
     }
 
     @Test
@@ -305,9 +424,9 @@ struct OlympUsTwoFactorTests {
         #expect(request.value(forHTTPHeaderField: "Content-Type") == nil)
     }
 
-    @Test
-    func `a failed trust request fails`() async throws {
-        let fixture = OlympUsFixture { _ in .failure(.timedOut) }
+    @Test(arguments: [StubResponse.failure(.timedOut), StubResponse(statusCode: 500)])
+    func `a failed trust request fails`(failure: StubResponse) async throws {
+        let fixture = OlympUsFixture { _ in failure }
 
         await #expect(performing: {
             try await fixture.olymp.requestTrust(assets: assets)
@@ -332,12 +451,10 @@ struct OlympUsSessionTests {
 
         try await fixture.olymp.getOlympusSession(assets: assets, for: "user")
 
-        #expect(fixture.sessionStore.data(for: "user") != nil)
         let stored = try JSONDecoder().decode(OlympUs.AuthenticationAssets.self, from: try #require(fixture.sessionStore.data(for: "user")))
         #expect(stored.scnt == "scnt-value")
         #expect(fixture.cookieNames == ["dqsid", "myacinfo", "nodomain"])
-        let storedCookies = try #require(fixture.defaults.defaults.array(forKey: "cookies") as? [[String: Any]])
-        #expect(Set(storedCookies.compactMap { $0["Name"] as? String }).isSuperset(of: ["dqsid", "myacinfo"]))
+        #expect(fixture.cookieStore.cookieNames == ["dqsid", "myacinfo", "nodomain"])
         #expect(fixture.logs.messages == ["[6/7] Requesting download session"])
     }
 
@@ -348,7 +465,7 @@ struct OlympUsSessionTests {
         try await fixture.olymp.getOlympusSession(assets: assets, for: "user")
 
         #expect(fixture.sessionStore.data(for: "user") != nil)
-        #expect(fixture.defaults.defaults.object(forKey: "cookies") == nil)
+        #expect(fixture.cookieStore.isEmpty)
     }
 
     @Test(arguments: [201, 401, 500])
@@ -427,32 +544,23 @@ struct OlympUsSessionTests {
 
     @Test
     func `stored cookies are restored into the session`() throws {
-        let defaults = TemporaryDefaults()
         let cookie = try #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "restored", .value: "1"]))
-        defaults.defaults.set([cookie.properties!], forKey: "cookies")
-        let server = StubServer { _ in StubResponse() }
 
-        let olymp = OlympUs(
-            logger: LogRecorder().logger(),
-            session: server.session(),
-            userDefaults: defaults.defaults,
-            sessionStore: InMemorySessionStore().store,
-            prompt: FakePrompt().client
-        )
+        let fixture = OlympUsFixture(cookies: [cookie]) { _ in StubResponse() }
 
-        #expect(olymp.session.configuration.httpCookieStorage?.cookies?.map(\.name) == ["restored"])
+        #expect(fixture.cookieNames == ["restored"])
     }
 
     @Test
     func `cleanup removes the stored session and cookies`() throws {
-        let fixture = OlympUsFixture { _ in StubResponse() }
+        let cookie = try #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "stored", .value: "1"]))
+        let fixture = OlympUsFixture(cookies: [cookie]) { _ in StubResponse() }
         try fixture.sessionStore.store.save(Data("assets".utf8), "user")
-        fixture.defaults.defaults.set([["Name": "cookie"]], forKey: "cookies")
 
         fixture.olymp.cleanup()
 
         #expect(fixture.sessionStore.accounts.isEmpty)
-        #expect(fixture.defaults.defaults.object(forKey: "cookies") == nil)
+        #expect(fixture.cookieStore.isEmpty)
         #expect(fixture.logs.messages == ["Deleted Apple developer portal session info from keychain."])
     }
 
@@ -472,7 +580,7 @@ struct OlympUsSessionTests {
         let olymp = OlympUs(
             logger: logs.logger(),
             session: server.session(),
-            userDefaults: TemporaryDefaults().defaults,
+            cookieStore: InMemoryCookieStore().store,
             sessionStore: AuthenticationSessionStore(
                 load: { _ in throw CocoaError(.fileNoSuchFile) },
                 save: { _, _ in },
@@ -485,9 +593,18 @@ struct OlympUsSessionTests {
 
         #expect(logs.messages == ["Error deleting Keychain entries. Please open Keychain Access.app and remove items named 'xcinfo.session'."])
     }
+
+    @Test
+    func `errors describe what went wrong`() {
+        #expect(OlympUsError.incorrectCredentials.description == "The Apple ID or password is incorrect.")
+        #expect(OlympUsError.incorrectVerificationCode.description == "The verification code is incorrect.")
+        #expect(OlympUsError.accountLocked.description.contains("iforgot.apple.com"))
+    }
 }
 
 struct AppleAuthenticatorTests {
+    private let srp = FakeAppleSRPServer(accountName: "user", password: "secret")
+
     @Test
     func `a valid stored session only needs the download auth`() async throws {
         let fixture = OlympUsFixture(storedAssets: ["user": OlympUs.AuthenticationAssets.fixtureData]) { request in
@@ -503,28 +620,24 @@ struct AppleAuthenticatorTests {
     }
 
     @Test
-    func `a new sign in walks through every step`() async throws {
+    func `a new sign in with two factor authentication walks through every step`() async throws {
         let prompt = FakePrompt(answers: ["123456"])
-        let fixture = OlympUsFixture(prompt: prompt) { request in
+        let fixture = OlympUsFixture(prompt: prompt, handler: appleServer(srp: srp, otherwise: { request in
             switch request.url?.path {
             case AppleEndpoint.config:
-                return .json(#"{"authServiceKey":"service-key"}"#)
-            case AppleEndpoint.signIn:
-                return .json(#"{"authType":"hsa2"}"#, headers: ["scnt": "scnt-value", "X-Apple-ID-Session-Id": "session-id"])
+                .json(#"{"authServiceKey":"service-key"}"#)
             case AppleEndpoint.auth:
-                return .json(authResponse)
+                .json(authResponse)
             case AppleEndpoint.trustedDeviceCode:
-                return StubResponse(statusCode: 204)
+                StubResponse(statusCode: 204)
             case AppleEndpoint.trust:
-                return StubResponse(headers: ["Set-Cookie": "myacinfo=trusted; Path=/"])
-            case AppleEndpoint.session:
-                return StubResponse()
+                StubResponse(headers: ["Set-Cookie": "myacinfo=trusted; Path=/"])
             case AppleEndpoint.downloads:
-                return StubResponse(headers: ["Set-Cookie": downloadAuthCookie])
+                StubResponse(headers: ["Set-Cookie": downloadAuthCookie])
             default:
-                return StubResponse(statusCode: 404)
+                StubResponse()
             }
-        }
+        }))
         let authenticator = AppleAuthenticator(olymp: fixture.olymp, logger: fixture.logs.logger())
 
         try await authenticator.authenticate(credentials: Credentials(username: "user", password: "secret"))
@@ -532,6 +645,8 @@ struct AppleAuthenticatorTests {
         #expect(fixture.server.requests.values.compactMap(\.url?.path) == [
             AppleEndpoint.config,
             AppleEndpoint.signIn,
+            AppleEndpoint.signInInit,
+            AppleEndpoint.signInComplete,
             AppleEndpoint.auth,
             AppleEndpoint.trustedDeviceCode,
             AppleEndpoint.trust,
@@ -541,23 +656,47 @@ struct AppleAuthenticatorTests {
         #expect(fixture.sessionStore.data(for: "user") != nil)
         #expect(Array(fixture.logs.messages.prefix(3)) == [
             "[0/7] Validating existing session",
+            "Signing in again.",
             "[1/7] Requesting service key",
-            "[2/7] Signing in with credentials",
         ])
     }
 
     @Test
-    func `a failing step fails the authentication`() async throws {
-        let fixture = OlympUsFixture { request in
-            request.url?.path == AppleEndpoint.config
-                ? .json(#"{"authServiceKey":"service-key"}"#)
-                : StubResponse(statusCode: 401)
-        }
+    func `a sign in without two factor authentication skips the code`() async throws {
+        let fixture = OlympUsFixture(handler: appleServer(
+            srp: srp,
+            completion: { _, valid in valid ? .json("{}", headers: sessionHeaders) : .json("{}", statusCode: 401) },
+            otherwise: { request in
+                switch request.url?.path {
+                case AppleEndpoint.config:
+                    .json(#"{"authServiceKey":"service-key"}"#)
+                case AppleEndpoint.downloads:
+                    StubResponse(headers: ["Set-Cookie": downloadAuthCookie])
+                default:
+                    StubResponse()
+                }
+            }
+        ))
         let authenticator = AppleAuthenticator(olymp: fixture.olymp, logger: fixture.logs.logger())
 
-        await #expect(throws: AuthenticationError.self) {
+        try await authenticator.authenticate(credentials: Credentials(username: "user", password: "secret"))
+
+        let paths = fixture.server.requests.values.compactMap(\.url?.path)
+        #expect(!paths.contains(AppleEndpoint.auth))
+        #expect(!paths.contains(AppleEndpoint.trust))
+        #expect(paths.last == AppleEndpoint.downloads)
+    }
+
+    @Test
+    func `a wrong password fails the authentication`() async throws {
+        let fixture = OlympUsFixture(handler: appleServer(srp: srp, otherwise: { request in
+            request.url?.path == AppleEndpoint.config ? .json(#"{"authServiceKey":"service-key"}"#) : StubResponse(statusCode: 401)
+        }))
+        let authenticator = AppleAuthenticator(olymp: fixture.olymp, logger: fixture.logs.logger())
+
+        await #expect(performing: {
             try await authenticator.authenticate(credentials: Credentials(username: "user", password: "wrong"))
-        }
-        #expect(fixture.server.requests.values.compactMap(\.url?.path) == [AppleEndpoint.config, AppleEndpoint.signIn])
+        }, throws: isOlympUsError(.incorrectCredentials))
+        #expect(!fixture.server.requests.values.compactMap(\.url?.path).contains(AppleEndpoint.auth))
     }
 }

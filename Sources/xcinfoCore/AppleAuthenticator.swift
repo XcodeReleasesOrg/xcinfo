@@ -24,27 +24,24 @@ final class AppleAuthenticator: Sendable {
 
     func authenticate(username: String, password: String) async throws {
         do {
-            var assets: OlympUs.AuthenticationAssets?
-            do {
-                try await olymp.validateSession(for: username)
-            } catch {
-                let serviceKey = try await olymp.getServiceKey(for: username)
-                let authenticationAssets = try await olymp.signIn(
-                    accountName: username,
-                    password: password,
-                    serviceKey: serviceKey
-                )
-                assets = authenticationAssets
-                let validationType = try await olymp.requestAuthentication(assets: authenticationAssets)
-                try await olymp.sendSecurityCode(validationType: validationType, assets: authenticationAssets)
-                try await olymp.requestTrust(assets: authenticationAssets)
-                try await olymp.getOlympusSession(assets: authenticationAssets, for: username)
+            try await olymp.validateSession(for: username)
+            guard let assets = olymp.storedAuthenticationAssets(for: username) else {
+                throw OlympUsError.sessionInvalid
             }
-            try await olymp.getDownloadAuth(
-                assets: assets ?? olymp.storedAuthenticationAssets(for: username)!
-            )
-        } catch {
-            throw AuthenticationError()
+            try await olymp.getDownloadAuth(assets: assets)
+            return
+        } catch OlympUsError.sessionInvalid {
+            logger.verbose("Signing in again.")
         }
+
+        let serviceKey = try await olymp.getServiceKey(for: username)
+        let signIn = try await olymp.signIn(accountName: username, password: password, serviceKey: serviceKey)
+        if signIn.requiresTwoFactorAuthentication {
+            let validationType = try await olymp.requestAuthentication(assets: signIn.assets)
+            try await olymp.sendSecurityCode(validationType: validationType, assets: signIn.assets)
+            try await olymp.requestTrust(assets: signIn.assets)
+        }
+        try await olymp.getOlympusSession(assets: signIn.assets, for: username)
+        try await olymp.getDownloadAuth(assets: signIn.assets)
     }
 }

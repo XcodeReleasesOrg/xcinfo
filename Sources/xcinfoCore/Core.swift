@@ -4,12 +4,14 @@
 //
 
 import Dependencies
+import OlympUs
 import Foundation
 import XCIFoundation
 @preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 
 public enum CoreError: LocalizedError, Sendable {
     case authenticationFailed
+    case signInFailed(String)
     case downloadFailed(String)
     case versionNotFound(XcodeVersion)
     case invalidDownloadURL
@@ -27,6 +29,8 @@ public enum CoreError: LocalizedError, Sendable {
         switch self {
         case .authenticationFailed:
             return "Authentication with Apple failed."
+        case let .signInFailed(reason):
+            return reason
         case let .downloadFailed(description), let .uninstallationFailed(description):
             return description
         case .invalidDownloadURL:
@@ -163,6 +167,8 @@ public struct Core: Sendable {
         let appleID = try credentials.credentials()
         do {
             try await authentication.authenticate(appleID)
+        } catch let error as OlympUsError {
+            throw CoreError.signInFailed(error.description)
         } catch {
             throw CoreError.authenticationFailed
         }

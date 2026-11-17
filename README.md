@@ -70,6 +70,10 @@ $ brew install xcinfo
 ### cleanup
 - if something goes wrong this removes all entries stored in the keychain, all cookies, and user defaults
 
+### Signing in to Apple
+
+`download` and `install` sign in to the Apple Developer Portal with SRP, like Xcode does, so the password is never sent. Session cookies are kept in the Keychain (`xcinfo.cookies`); `xcinfo cleanup` removes them together with the stored credentials.
+
 ### Output
 
 - Progress and status go to standard output, warnings and errors to standard error.
