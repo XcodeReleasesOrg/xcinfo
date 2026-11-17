@@ -1,5 +1,5 @@
 import Foundation
-import OlympUs
+import Dependencies
 import Testing
 @testable import xcinfoCore
 
@@ -10,38 +10,22 @@ struct DownloaderTests {
     private struct Fixture {
         let caches: TemporaryDirectory
         let destination: URL
-        let defaults: TemporaryDefaults
-        let sessionStore: InMemorySessionStore
-        let olymp: OlympUs
         let downloader: Downloader
         let logs: LogRecorder
     }
 
     private func fixture(server: StubServer) throws -> Fixture {
         let caches = try TemporaryDirectory()
-        let defaults = TemporaryDefaults()
-        let sessionStore = InMemorySessionStore()
         let logs = LogRecorder()
-        let proxy = URLSessionDelegateProxy()
-        let olymp = OlympUs(
-            logger: logs.logger(),
-            session: server.session(delegate: proxy),
-            userDefaults: defaults.defaults,
-            sessionStore: sessionStore.store,
-            prompt: FakePrompt().client
-        )
         let downloader = Downloader(
             logger: logs.logger(),
-            olymp: olymp,
-            sessionDelegateProxy: proxy,
-            cachesDirectory: caches.url
+            session: server.session(),
+            cachesDirectory: caches.url,
+            clock: ImmediateClock()
         )
         return Fixture(
             caches: caches,
             destination: caches.url.appendingPathComponent("Downloads"),
-            defaults: defaults,
-            sessionStore: sessionStore,
-            olymp: olymp,
             downloader: downloader,
             logs: logs
         )
@@ -52,7 +36,7 @@ struct DownloaderTests {
         let server = StubServer { _ in StubResponse(headers: ["Content-Length": "11"], body: Data("xip-content".utf8)) }
         let fixture = try fixture(server: server)
 
-        let url = try await fixture.downloader.downloadProviding.download(downloadURL, fixture.destination, false)
+        let url = try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
 
         #expect(url == fixture.destination.appendingPathComponent(downloadURL.lastPathComponent))
         #expect(try String(contentsOf: url, encoding: .utf8) == "xip-content")
@@ -71,7 +55,7 @@ struct DownloaderTests {
         try Data("old".utf8).write(to: fixture.destination.appendingPathComponent(downloadURL.lastPathComponent))
 
         await #expect {
-            try await fixture.downloader.downloadProviding.download(downloadURL, fixture.destination, false)
+            try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
         } throws: { error in
             guard case XCAPIError.couldNotMoveToDestinationFolder = error else { return false }
             return true
@@ -87,7 +71,7 @@ struct DownloaderTests {
         let fixture = try fixture(server: server)
 
         await #expect {
-            try await fixture.downloader.downloadProviding.download(downloadURL, fixture.destination, false)
+            try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
         } throws: { error in
             guard case XCAPIError.downloadInterrupted = error else { return false }
             return true
@@ -102,7 +86,7 @@ struct DownloaderTests {
         let fixture = try fixture(server: server)
 
         await #expect {
-            try await fixture.downloader.downloadProviding.download(downloadURL, fixture.destination, false)
+            try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
         } throws: { error in
             guard case XCAPIError.couldNotMoveToTemporaryFile = error else { return false }
             return true
@@ -116,7 +100,7 @@ struct DownloaderTests {
         let cacheURL = try #require(fixture.downloader.cacheURL(for: downloadURL))
         try Data("resume".utf8).write(to: cacheURL)
 
-        _ = try await fixture.downloader.downloadProviding.download(downloadURL, fixture.destination, false)
+        _ = try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
 
         #expect(!FileManager.default.fileExists(atPath: cacheURL.path), "Known issue: resume data is never cleared")
     }
@@ -132,7 +116,7 @@ struct DownloaderTests {
         }
         let fixture = try fixture(server: server)
 
-        _ = try await fixture.downloader.downloadProviding.download(downloadURL, fixture.destination, false)
+        _ = try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
 
         #expect(attempts.values.count == 2)
     }
@@ -150,17 +134,27 @@ struct DownloaderTests {
         #expect(!FileManager.default.fileExists(atPath: cacheURL.path))
     }
 
-    @Test
-    func `cleanup removes the stored session and cookies`() throws {
-        let server = StubServer { _ in StubResponse() }
+    @Test(arguments: [403, 404, 500])
+    func `a download with an error status is rejected`(statusCode: Int) async throws {
+        let server = StubServer { _ in StubResponse(statusCode: statusCode, body: Data("<html>error</html>".utf8)) }
         let fixture = try fixture(server: server)
-        try fixture.sessionStore.store.save(Data("assets".utf8), "user")
-        fixture.defaults.defaults.set([["Name": "cookie"]], forKey: "cookies")
 
-        fixture.downloader.downloadProviding.cleanup()
+        await #expect {
+            try await fixture.downloader.download(url: downloadURL, destination: fixture.destination, disableSleep: false)
+        } throws: { error in
+            guard case let XCAPIError.unexpectedStatusCode(code) = error else { return false }
+            return code == statusCode
+        }
+        #expect(!FileManager.default.fileExists(atPath: fixture.destination.appendingPathComponent(downloadURL.lastPathComponent).path))
+    }
 
-        #expect(fixture.sessionStore.accounts.isEmpty)
-        #expect(fixture.defaults.defaults.object(forKey: "cookies") == nil)
-        #expect(fixture.logs.messages == ["Deleted Apple developer portal session info from keychain."])
+    @Test
+    func `downloads use long timeouts and the shared cookies`() {
+        let configuration = URLSession.xcinfoDownloads.configuration
+
+        #expect(configuration.timeoutIntervalForRequest == 60)
+        #expect(configuration.timeoutIntervalForResource == 60 * 60 * 24)
+        #expect(configuration.httpCookieStorage === HTTPCookieStorage.shared)
+        #expect(URLSession.xcinfo.configuration.httpCookieStorage === HTTPCookieStorage.shared)
     }
 }

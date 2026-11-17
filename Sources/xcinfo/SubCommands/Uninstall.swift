@@ -4,12 +4,12 @@
 //
 
 import ArgumentParser
-import Rainbow
+import XCIFoundation
 import xcinfoCore
 
 extension XCInfo {
     struct Uninstall: AsyncParsableCommand {
-        static var configuration = CommandConfiguration(
+        static let configuration = CommandConfiguration(
             abstract: "Uninstall an Xcode version",
             discussion: "Uninstall a specific version of Xcode."
         )
@@ -26,13 +26,12 @@ extension XCInfo {
         var listOptions: ListOptions
 
         func run() async throws {
-            Rainbow.enabled = globals.useANSI
-            let environment = Environment.live(isVerboseLoggingEnabled: globals.isVerbose)
-            let core = Core(environment: environment)
             do {
-                try await core.uninstall(xcodeVersion?.lowercased(), updateVersionList: listOptions.updateList)
+                try await globals.run { core in
+                    try await core.uninstall(xcodeVersion?.lowercased(), updateVersionList: listOptions.updateList)
+                }
             } catch let error as CoreError {
-                environment.logger.error(error.localizedDescription)
+                globals.logger.error(error.localizedDescription)
                 throw ExitCode.failure
             }
         }

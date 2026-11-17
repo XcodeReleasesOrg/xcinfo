@@ -2,23 +2,59 @@ import Foundation
 import Testing
 @testable import xcinfoCore
 
+@Suite(.timeLimit(.minutes(1)))
 struct ExtractorTests {
-    @Test(.disabled("Hangs: libunxip reads the archive through DispatchIO on the main queue, which the test runner does not service. Known issue to check once runnable: the working directory is not restored when extraction fails"))
-    func `a broken archive fails and the working directory is restored`() async throws {
+    @Test
+    func `a broken archive fails without changing the working directory`() async throws {
         let directory = try TemporaryDirectory()
         let source = try directory.file("Broken.xip", contents: Data("not a xip archive".utf8))
         let output = try directory.directory("Output")
         let workingDirectory = FileManager.default.currentDirectoryPath
-        defer { FileManager.default.changeCurrentDirectoryPath(workingDirectory) }
 
         await #expect(throws: (any Error).self) {
             try await Unxip(input: source, output: output, logger: LogRecorder().logger()).extract(progress: nil)
         }
 
-        let directoryAfterFailure = FileManager.default.currentDirectoryPath
-        withKnownIssue("The working directory is not restored when extraction fails") {
-            #expect(directoryAfterFailure == workingDirectory)
+        #expect(FileManager.default.currentDirectoryPath == workingDirectory)
+    }
+
+    @Test
+    func `a failed extraction removes its temporary folder`() async throws {
+        let directory = try TemporaryDirectory()
+        let source = try directory.file("Broken.xip", contents: Data("not a xip archive".utf8))
+        let temporary = try directory.directory("Temporary")
+        let extractor = Extractor(
+            forReadingFromContainerAt: source,
+            destination: directory.url,
+            appFilename: nil,
+            temporaryDirectory: temporary,
+            logger: LogRecorder().logger()
+        )
+
+        await #expect(throws: (any Error).self) {
+            try await extractor.extractExperimental()
         }
+
+        #expect(try FileManager.default.contentsOfDirectory(atPath: temporary.path).isEmpty)
+    }
+
+    @Test
+    func `reading an archive reports its progress`() async throws {
+        let directory = try TemporaryDirectory()
+        let source = try directory.file("Data.bin", contents: Data(repeating: 7, count: 100_000))
+        let handle = try FileHandle(forReadingFrom: source)
+        defer { try? handle.close() }
+        let progress = Recorder<Double>()
+
+        var chunks = FileChunks(handle: handle, total: 100_000, progress: { progress.append($0) })
+        chunks.chunkSize = 30000
+        var bytes = 0
+        for try await chunk in chunks {
+            bytes += chunk.count
+        }
+
+        #expect(bytes == 100_000)
+        #expect(progress.values == [0.3, 0.6, 0.9, 1.0])
     }
 
     @Test
@@ -35,7 +71,7 @@ struct ExtractorTests {
         }
     }
 
-    @Test(.disabled("Crashes the process: the legacy extractor force-unwraps the container after PKSignedContainer fails to open the archive"))
+    @Test
     func `the legacy extractor rejects a broken archive`() async throws {
         let directory = try TemporaryDirectory()
         let source = try directory.file("Broken.xip", contents: Data("not a xip archive".utf8))

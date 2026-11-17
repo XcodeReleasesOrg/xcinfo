@@ -3,18 +3,13 @@
 //  MIT license - see LICENSE.md
 //
 
-import Combine
 import Foundation
 import OlympUs
 import XCIFoundation
 
-public struct AuthenticationProviding {
-    var authenticate: (Credentials) async throws -> Void
-}
-
 struct AuthenticationError: Error {}
 
-class AppleAuthenticator {
+final class AppleAuthenticator: Sendable {
     let olymp: OlympUs
     let logger: Logger
 
@@ -23,59 +18,33 @@ class AppleAuthenticator {
         self.logger = logger
     }
 
-    var assets: OlympUs.AuthenticationAssets!
-    private var cancellable: AnyCancellable?
-
-    public func authenticate(credentials: Credentials) async throws {
-        try await authenticate(username: credentials.username, password: credentials.password).singleOutput()
+    func authenticate(credentials: Credentials) async throws {
+        try await authenticate(username: credentials.username, password: credentials.password)
     }
 
-    public func authenticate(username: String, password: String) -> Future<Void, AuthenticationError> {
-        Future { [weak self] promise in
-            guard let self = self else { return }
-            self.cancellable = self.olymp.validateSession(for: username)
-                .catch { _ in
-                    self.olymp.getServiceKey(for: username)
-                        .flatMap { serviceKey in
-                            self.olymp.signIn(
-                                accountName: username,
-                                password: password,
-                                serviceKey: serviceKey
-                            )
-                        }
-                        .flatMap { authenticationAssets -> Future<ValidationType, OlympUsError> in
-                            self.assets = authenticationAssets
-                            return self.olymp.requestAuthentication(assets: self.assets)
-                        }
-                        .flatMap { validationType in
-                            self.olymp.sendSecurityCode(validationType: validationType, assets: self.assets)
-                        }
-                        .flatMap { _ in
-                            self.olymp.requestTrust(assets: self.assets)
-                        }
-                        .flatMap { _ in
-                            self.olymp.getOlympusSession(assets: self.assets, for: username)
-                        }
-                }
-                .flatMap { _ in
-                    self.olymp
-                        .getDownloadAuth(
-                            assets: self.assets != nil
-                                ? self.assets
-                                : self.olymp.storedAuthenticationAssets(for: username)!
-                        )
-                }
-                .sink(receiveCompletion: { _ in
-                    promise(.failure(.init()))
-                }, receiveValue: { _ in
-                    promise(.success(()))
-                })
+    func authenticate(username: String, password: String) async throws {
+        do {
+            var assets: OlympUs.AuthenticationAssets?
+            do {
+                try await olymp.validateSession(for: username)
+            } catch {
+                let serviceKey = try await olymp.getServiceKey(for: username)
+                let authenticationAssets = try await olymp.signIn(
+                    accountName: username,
+                    password: password,
+                    serviceKey: serviceKey
+                )
+                assets = authenticationAssets
+                let validationType = try await olymp.requestAuthentication(assets: authenticationAssets)
+                try await olymp.sendSecurityCode(validationType: validationType, assets: authenticationAssets)
+                try await olymp.requestTrust(assets: authenticationAssets)
+                try await olymp.getOlympusSession(assets: authenticationAssets, for: username)
+            }
+            try await olymp.getDownloadAuth(
+                assets: assets ?? olymp.storedAuthenticationAssets(for: username)!
+            )
+        } catch {
+            throw AuthenticationError()
         }
-    }
-}
-
-extension AppleAuthenticator {
-    var authenticationProviding: AuthenticationProviding {
-        .init(authenticate: authenticate)
     }
 }

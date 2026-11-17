@@ -1,7 +1,8 @@
 import Foundation
 import os
 import XCIFoundation
-import XCModel
+import Dependencies
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
 
 final class TemporaryDirectory: Sendable {
@@ -106,7 +107,7 @@ struct ShellCall: Sendable, Equatable {
 }
 
 final class FakeShell: Sendable {
-    typealias Handler = @Sendable (ShellCall) -> (exitStatus: Int, stdout: String, stderr: String)
+    typealias Handler = @Sendable (ShellCall) -> (exitStatus: Int32, stdout: String, stderr: String)
 
     let calls = Recorder<ShellCall>()
     private let handler: Handler
@@ -124,17 +125,19 @@ final class FakeShell: Sendable {
         }
     }
 
-    var client: ShellClient {
-        ShellClient(
-            execute: { [calls, handler] command, args in
+    var client: ProcessClient {
+        ProcessClient(
+            run: { [calls, handler] command, args in
                 let call = ShellCall(command: command, args: args, password: nil)
                 calls.append(call)
-                return handler(call)
+                let result = handler(call)
+                return ProcessResult(exitStatus: result.exitStatus, stdout: result.stdout, stderr: result.stderr)
             },
-            executePrivileged: { [calls, handler] command, password, args in
+            runPrivileged: { [calls, handler] command, password, args in
                 let call = ShellCall(command: command, args: args, password: password)
                 calls.append(call)
-                return handler(call)
+                let result = handler(call)
+                return ProcessResult(exitStatus: result.exitStatus, stdout: result.stdout, stderr: result.stderr)
             }
         )
     }
@@ -148,6 +151,7 @@ final class FakePrompt: Sendable {
     let asked = Recorder<String>()
     let chosen = Recorder<[String]>()
     let agreed = Recorder<String>()
+    let lines = Recorder<String>()
     let secrets = Recorder<String>()
 
     private let answers: OSAllocatedUnfairLock<[String]>
@@ -176,6 +180,10 @@ final class FakePrompt: Sendable {
                 agreed.append(message.strippingANSI)
                 return agreement
             },
+            readLine: { [lines, answers] prompt in
+                lines.append(prompt)
+                return answers.withLock { $0.isEmpty ? "" : $0.removeFirst() }
+            },
             readSecret: { [secrets, passwords] prompt in
                 secrets.append(prompt)
                 return passwords.withLock { $0.isEmpty ? "" : $0.removeFirst() }
@@ -184,41 +192,45 @@ final class FakePrompt: Sendable {
     }
 }
 
-extension Environment {
+extension Core {
     static func test(
         logs: LogRecorder,
         isVerbose: Bool = false,
         cachesDirectory: URL,
-        listXcodes: @escaping () async throws -> [Xcode] = { [] },
-        removeCookies: @escaping () -> Void = {},
-        getCredentials: @escaping () throws -> Credentials = { Credentials(username: "user", password: "secret") },
-        cleanupCredentials: @escaping () -> Void = {},
-        authenticate: @escaping (Credentials) async throws -> Void = { _ in },
-        download: @escaping (URL, URL, Bool) async throws -> URL = { url, destination, _ in
-            destination.appendingPathComponent(url.lastPathComponent)
-        },
-        cleanupDownloads: @escaping () -> Void = {},
-        extract: @escaping (URL, URL, String?, Bool, XCIFoundation.Logger) async throws -> URL = { _, destination, filename, _, _ in
-            destination.appendingPathComponent(filename ?? "Xcode.app")
-        },
-        shell: FakeShell = FakeShell(),
-        prompt: FakePrompt = FakePrompt(),
+        listXcodes: (@Sendable () async throws -> [Xcode])? = nil,
+        removeCookies: (@Sendable () -> Void)? = nil,
+        getCredentials: (@Sendable () throws -> Credentials)? = nil,
+        cleanupCredentials: (@Sendable () -> Void)? = nil,
+        authenticate: (@Sendable (Credentials) async throws -> Void)? = nil,
+        cleanupAuthentication: (@Sendable () -> Void)? = nil,
+        download: (@Sendable (URL, URL, Bool) async throws -> URL)? = nil,
+        extract: (@Sendable (URL, URL, String?, Bool) async throws -> URL)? = nil,
+        shell: FakeShell? = nil,
+        prompt: FakePrompt? = nil,
         applicationsDirectory: URL,
-        revealInFinder: @escaping (URL) -> Void = { _ in }
-    ) -> Environment {
-        Environment(
-            logger: logs.logger(isVerbose: isVerbose),
-            api: APIClient(listXcodes: listXcodes, removeCookies: removeCookies),
-            cachesDirectory: cachesDirectory,
-            credentialProviding: CredentialProviding(getCredentials: getCredentials, cleanup: cleanupCredentials),
-            authenticationProviding: AuthenticationProviding(authenticate: authenticate),
-            downloadProviding: DownloadProviding(download: download, cleanup: cleanupDownloads),
-            extractionProviding: ExtractionProviding(extract: extract),
-            shell: shell.client,
-            prompt: prompt.client,
-            applicationsDirectory: applicationsDirectory,
-            revealInFinder: revealInFinder
-        )
+        revealInFinder: (@Sendable (URL) -> Void)? = nil
+    ) -> Core {
+        withDependencies {
+            $0.logger = logs.logger(isVerbose: isVerbose)
+            $0.fileSystem = FileSystemClient(
+                cachesDirectory: { cachesDirectory },
+                applicationsDirectory: { applicationsDirectory },
+                temporaryDirectory: { cachesDirectory }
+            )
+            if let listXcodes { $0.xcodeReleases.listXcodes = listXcodes }
+            if let removeCookies { $0.xcodeReleases.removeCookies = removeCookies }
+            if let getCredentials { $0.credentials.credentials = getCredentials }
+            if let cleanupCredentials { $0.credentials.removeAll = cleanupCredentials }
+            if let authenticate { $0.authentication.authenticate = authenticate }
+            if let cleanupAuthentication { $0.authentication.cleanup = cleanupAuthentication }
+            if let download { $0.downloads.download = download }
+            if let extract { $0.extraction.extract = extract }
+            if let shell { $0.processes = shell.client }
+            if let prompt { $0.prompt = prompt.client }
+            if let revealInFinder { $0.workspace.revealInFinder = { revealInFinder($0) } }
+        } operation: {
+            Core()
+        }
     }
 }
 

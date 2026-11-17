@@ -5,7 +5,7 @@
 
 import Foundation
 
-public enum XcodeVersion {
+public enum XcodeVersion: Sendable {
     case version(String)
     case latest
 }

@@ -4,14 +4,14 @@
 //
 
 import ArgumentParser
-import Rainbow
+import XCIFoundation
 import xcinfoCore
 
 extension Core.ListFilter: EnumerableFlag {}
 
 extension XCInfo {
     struct List: AsyncParsableCommand {
-        static var configuration = CommandConfiguration(
+        static let configuration = CommandConfiguration(
             abstract: "List all available Xcode versions",
             discussion: "List all available Xcode versions available according to xcodereleases.com."
         )
@@ -32,17 +32,16 @@ extension XCInfo {
         var listOptions: ListOptions
 
         func run() async throws {
-            Rainbow.enabled = globals.useANSI
-            let environment = Environment.live(isVerboseLoggingEnabled: globals.isVerbose)
-            let core = Core(environment: environment)
             do {
-                try await core.list(
-                    shouldUpdate: listOptions.updateList,
-                    showAllVersions: showAllVersions,
-                    filter: listFilter
-                )
+                try await globals.run { core in
+                    try await core.list(
+                        shouldUpdate: listOptions.updateList,
+                        showAllVersions: showAllVersions,
+                        filter: listFilter
+                    )
+                }
             } catch {
-                environment.logger.error(error.localizedDescription)
+                globals.logger.error(error.localizedDescription)
                 throw ExitCode.failure
             }
         }

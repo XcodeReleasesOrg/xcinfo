@@ -6,13 +6,13 @@
 import Darwin
 import Foundation
 
-struct WindowSize {
+struct WindowSize: Sendable {
     var rows: Int
     var columns: Int
     var pixelWidth: Int
     var pixelHeight: Int
 
-    static var current: WindowSize? = {
+    static let current: WindowSize? = {
         var w = winsize()
         guard ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0, w.ws_col != 0 else {
             return nil

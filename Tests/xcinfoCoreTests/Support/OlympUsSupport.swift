@@ -39,7 +39,7 @@ final class InMemorySessionStore: Sendable {
     }
 }
 
-final class TemporaryDefaults: @unchecked Sendable {
+final class TemporaryDefaults: @unchecked Sendable { // Wraps UserDefaults, which is thread-safe but not annotated Sendable.
     let suiteName = "xcinfo-tests-\(UUID().uuidString)"
     let defaults: UserDefaults
 

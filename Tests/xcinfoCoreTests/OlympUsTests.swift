@@ -77,7 +77,7 @@ struct OlympUsServiceKeyTests {
             return StubResponse()
         }
 
-        let key = try await fixture.olymp.getServiceKey(for: "user").singleOutput()
+        let key = try await fixture.olymp.getServiceKey(for: "user")
 
         #expect(key == "service-key")
         #expect(fixture.logs.messages == ["[1/7] Requesting service key"])
@@ -88,7 +88,7 @@ struct OlympUsServiceKeyTests {
     func `the service key is requested from the app config`() async throws {
         let fixture = OlympUsFixture { _ in .json(#"{"authServiceKey":"fresh-key"}"#) }
 
-        let key = try await fixture.olymp.getServiceKey(for: "user").singleOutput()
+        let key = try await fixture.olymp.getServiceKey(for: "user")
 
         #expect(key == "fresh-key")
         let request = try #require(fixture.server.requests.values.first)
@@ -100,7 +100,7 @@ struct OlympUsServiceKeyTests {
         let fixture = OlympUsFixture { _ in .json("{}", statusCode: 500) }
 
         await #expect(performing: {
-            try await fixture.olymp.getServiceKey(for: "user").singleOutput()
+            try await fixture.olymp.getServiceKey(for: "user")
         }, throws: isOlympUsError(.missingSessionKey))
     }
 }
@@ -112,7 +112,7 @@ struct OlympUsSignInTests {
             .json(#"{"authType":"hsa2"}"#, headers: ["scnt": "scnt-value", "X-Apple-ID-Session-Id": "session-id"])
         }
 
-        let assets = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "secret", serviceKey: "key").singleOutput()
+        let assets = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "secret", serviceKey: "key")
 
         #expect(assets.serviceKey == "key")
         #expect(assets.scnt == "scnt-value")
@@ -135,7 +135,7 @@ struct OlympUsSignInTests {
     func `sign in without session headers still succeeds`() async throws {
         let fixture = OlympUsFixture { _ in .json(#"{"authType":"sa"}"#) }
 
-        let assets = try await fixture.olymp.signIn(accountName: "user", password: "secret", serviceKey: "key").singleOutput()
+        let assets = try await fixture.olymp.signIn(accountName: "user", password: "secret", serviceKey: "key")
 
         #expect(assets.scnt == nil)
         #expect(assets.asid == nil)
@@ -147,7 +147,7 @@ struct OlympUsSignInTests {
         let fixture = OlympUsFixture { _ in .json(#"{"serviceErrors":[]}"#, statusCode: 401) }
 
         await #expect(performing: {
-            try await fixture.olymp.signIn(accountName: "user", password: "wrong", serviceKey: "key").singleOutput()
+            try await fixture.olymp.signIn(accountName: "user", password: "wrong", serviceKey: "key")
         }, throws: isOlympUsError(.signInRequestFailed))
     }
 }
@@ -160,7 +160,7 @@ struct OlympUsTwoFactorTests {
         let prompt = FakePrompt(answers: ["123456"])
         let fixture = OlympUsFixture(prompt: prompt) { _ in .json(authResponse) }
 
-        let validation = try await fixture.olymp.requestAuthentication(assets: assets).singleOutput()
+        let validation = try await fixture.olymp.requestAuthentication(assets: assets)
 
         guard case let .securityCode(code) = validation else {
             Issue.record("Expected a security code, got \(validation)")
@@ -189,11 +189,12 @@ struct OlympUsTwoFactorTests {
             },
             choose: { _, _ in 0 },
             agree: { _ in true },
+            readLine: { _ in "" },
             readSecret: { _ in "" }
         )
         let fixture = OlympUsFixture(promptClient: promptClient) { _ in .json(authResponse) }
 
-        _ = try await fixture.olymp.requestAuthentication(assets: assets).singleOutput()
+        _ = try await fixture.olymp.requestAuthentication(assets: assets)
 
         #expect(validators.values == [
             "Apple ID Verification Code: |Invalide code length|12345=true,123456=false,1234567=true,sms=false",
@@ -207,7 +208,7 @@ struct OlympUsTwoFactorTests {
             request.url?.path == AppleEndpoint.auth ? .json(authResponse) : .json("{}")
         }
 
-        let validation = try await fixture.olymp.requestAuthentication(assets: assets).singleOutput()
+        let validation = try await fixture.olymp.requestAuthentication(assets: assets)
 
         guard case let .verificationCode(phoneID, code) = validation else {
             Issue.record("Expected a verification code, got \(validation)")
@@ -232,7 +233,7 @@ struct OlympUsTwoFactorTests {
         }
 
         await #expect(performing: {
-            try await fixture.olymp.requestAuthentication(assets: assets).singleOutput()
+            try await fixture.olymp.requestAuthentication(assets: assets)
         }, throws: isOlympUsError(.requestSmsFailed))
     }
 
@@ -241,7 +242,7 @@ struct OlympUsTwoFactorTests {
         let fixture = OlympUsFixture { _ in .json("{}", statusCode: 409) }
 
         await #expect(performing: {
-            try await fixture.olymp.requestAuthentication(assets: assets).singleOutput()
+            try await fixture.olymp.requestAuthentication(assets: assets)
         }, throws: isOlympUsError(.requestAuthentication))
     }
 
@@ -249,7 +250,7 @@ struct OlympUsTwoFactorTests {
     func `a trusted device code is sent to the trusted device endpoint`() async throws {
         let fixture = OlympUsFixture { _ in StubResponse(statusCode: 204) }
 
-        let status = try await fixture.olymp.sendSecurityCode(validationType: .securityCode("123456"), assets: assets).singleOutput()
+        let status = try await fixture.olymp.sendSecurityCode(validationType: .securityCode("123456"), assets: assets)
 
         #expect(status == 204)
         let request = try #require(fixture.server.requests(to: AppleEndpoint.trustedDeviceCode).first)
@@ -263,7 +264,7 @@ struct OlympUsTwoFactorTests {
     func `an sms code is sent to the phone endpoint`() async throws {
         let fixture = OlympUsFixture { _ in StubResponse(statusCode: 200) }
 
-        _ = try await fixture.olymp.sendSecurityCode(validationType: .verificationCode(2, "654321"), assets: assets).singleOutput()
+        _ = try await fixture.olymp.sendSecurityCode(validationType: .verificationCode(2, "654321"), assets: assets)
 
         let request = try #require(fixture.server.requests(to: AppleEndpoint.phoneCode).first)
         let body = try json(request)
@@ -278,7 +279,7 @@ struct OlympUsTwoFactorTests {
 
         await withKnownIssue("A rejected security code counts as success") {
             await #expect(performing: {
-                try await fixture.olymp.sendSecurityCode(validationType: .securityCode("000000"), assets: assets).singleOutput()
+                try await fixture.olymp.sendSecurityCode(validationType: .securityCode("000000"), assets: assets)
             }, throws: isOlympUsError(.deviceTrustFailed))
         }
     }
@@ -288,7 +289,7 @@ struct OlympUsTwoFactorTests {
         let fixture = OlympUsFixture { _ in .failure(.timedOut) }
 
         await #expect(performing: {
-            try await fixture.olymp.sendSecurityCode(validationType: .securityCode("123456"), assets: assets).singleOutput()
+            try await fixture.olymp.sendSecurityCode(validationType: .securityCode("123456"), assets: assets)
         }, throws: isOlympUsError(.deviceTrustFailed))
     }
 
@@ -296,7 +297,7 @@ struct OlympUsTwoFactorTests {
     func `trust returns the cookies of the response`() async throws {
         let fixture = OlympUsFixture { _ in StubResponse(headers: ["Set-Cookie": "myacinfo=trusted; Path=/"]) }
 
-        let cookies = try await fixture.olymp.requestTrust(assets: assets).singleOutput()
+        let cookies = try await fixture.olymp.requestTrust(assets: assets)
 
         #expect(cookies.map(\.name) == ["myacinfo"])
         #expect(cookies.map(\.value) == ["trusted"])
@@ -310,7 +311,7 @@ struct OlympUsTwoFactorTests {
         let fixture = OlympUsFixture { _ in .failure(.timedOut) }
 
         await #expect(performing: {
-            try await fixture.olymp.requestTrust(assets: assets).singleOutput()
+            try await fixture.olymp.requestTrust(assets: assets)
         }, throws: isOlympUsError(.deviceTrustFailed))
     }
 
@@ -330,7 +331,7 @@ struct OlympUsSessionTests {
             StubResponse(headers: ["Set-Cookie": "dqsid=abc; Path=/; Domain=.apple.com, myacinfo=def; Expires=Wed, 21 Oct 2099 07:28:00 GMT; Path=/; Domain=.apple.com, nodomain=1; Path=/"])
         }
 
-        try await fixture.olymp.getOlympusSession(assets: assets, for: "user").singleOutput()
+        try await fixture.olymp.getOlympusSession(assets: assets, for: "user")
 
         #expect(fixture.sessionStore.data(for: "user") != nil)
         let stored = try JSONDecoder().decode(OlympUs.AuthenticationAssets.self, from: try #require(fixture.sessionStore.data(for: "user")))
@@ -345,7 +346,7 @@ struct OlympUsSessionTests {
     func `a session without cookies is accepted`() async throws {
         let fixture = OlympUsFixture { _ in StubResponse() }
 
-        try await fixture.olymp.getOlympusSession(assets: assets, for: "user").singleOutput()
+        try await fixture.olymp.getOlympusSession(assets: assets, for: "user")
 
         #expect(fixture.sessionStore.data(for: "user") != nil)
         #expect(fixture.defaults.defaults.object(forKey: "cookies") == nil)
@@ -356,7 +357,7 @@ struct OlympUsSessionTests {
         let fixture = OlympUsFixture { _ in StubResponse(statusCode: statusCode) }
 
         await #expect(performing: {
-            try await fixture.olymp.getOlympusSession(assets: assets, for: "user").singleOutput()
+            try await fixture.olymp.getOlympusSession(assets: assets, for: "user")
         }, throws: isOlympUsError(.olympusSessionFailed))
         #expect(fixture.sessionStore.accounts.isEmpty)
     }
@@ -365,7 +366,7 @@ struct OlympUsSessionTests {
     func `download auth needs the download cookie`() async throws {
         let fixture = OlympUsFixture { _ in StubResponse(headers: ["Set-Cookie": downloadAuthCookie]) }
 
-        try await fixture.olymp.getDownloadAuth(assets: assets).singleOutput()
+        try await fixture.olymp.getDownloadAuth(assets: assets)
 
         #expect(fixture.cookieNames.contains("ADCDownloadAuth"))
         let request = try #require(fixture.server.requests(to: AppleEndpoint.downloads).first)
@@ -378,7 +379,7 @@ struct OlympUsSessionTests {
         let fixture = OlympUsFixture { _ in StubResponse(headers: ["Set-Cookie": "other=1; Path=/"]) }
 
         await #expect(performing: {
-            try await fixture.olymp.getDownloadAuth(assets: assets).singleOutput()
+            try await fixture.olymp.getDownloadAuth(assets: assets)
         }, throws: isOlympUsError(.downloadAuthFailed))
     }
 
@@ -387,7 +388,7 @@ struct OlympUsSessionTests {
         let fixture = OlympUsFixture { _ in .failure(.timedOut) }
 
         await #expect(performing: {
-            try await fixture.olymp.getDownloadAuth(assets: assets).singleOutput()
+            try await fixture.olymp.getDownloadAuth(assets: assets)
         }, throws: isOlympUsError(.downloadAuthFailed))
     }
 
@@ -395,7 +396,7 @@ struct OlympUsSessionTests {
     func `a stored session is validated`() async throws {
         let fixture = OlympUsFixture(storedAssets: ["user": OlympUs.AuthenticationAssets.fixtureData]) { _ in StubResponse() }
 
-        try await fixture.olymp.validateSession(for: "user").singleOutput()
+        try await fixture.olymp.validateSession(for: "user")
 
         #expect(fixture.server.requests(to: AppleEndpoint.session).count == 1)
         #expect(fixture.logs.messages.contains("Reusing valid session."))
@@ -408,7 +409,7 @@ struct OlympUsSessionTests {
         let fixture = OlympUsFixture(storedAssets: ["user": OlympUs.AuthenticationAssets.fixtureData]) { _ in StubResponse(statusCode: 401) }
 
         await #expect(performing: {
-            try await fixture.olymp.validateSession(for: "user").singleOutput()
+            try await fixture.olymp.validateSession(for: "user")
         }, throws: isOlympUsError(.sessionInvalid))
         #expect(fixture.logs.messages.contains("Session invalid. Starting authentication."))
     }
@@ -421,7 +422,7 @@ struct OlympUsSessionTests {
         }
 
         await #expect(performing: {
-            try await fixture.olymp.validateSession(for: "user").singleOutput()
+            try await fixture.olymp.validateSession(for: "user")
         }, throws: isOlympUsError(.sessionInvalid))
         #expect(fixture.olymp.storedAuthenticationAssets(for: "user") == nil)
     }
@@ -442,6 +443,19 @@ struct OlympUsSessionTests {
         )
 
         #expect(olymp.session.configuration.httpCookieStorage?.cookies?.map(\.name) == ["restored"])
+    }
+
+    @Test
+    func `cleanup removes the stored session and cookies`() throws {
+        let fixture = OlympUsFixture { _ in StubResponse() }
+        try fixture.sessionStore.store.save(Data("assets".utf8), "user")
+        fixture.defaults.defaults.set([["Name": "cookie"]], forKey: "cookies")
+
+        fixture.olymp.cleanup()
+
+        #expect(fixture.sessionStore.accounts.isEmpty)
+        #expect(fixture.defaults.defaults.object(forKey: "cookies") == nil)
+        #expect(fixture.logs.messages == ["Deleted Apple developer portal session info from keychain."])
     }
 
     @Test
@@ -485,7 +499,7 @@ struct AppleAuthenticatorTests {
         }
         let authenticator = AppleAuthenticator(olymp: fixture.olymp, logger: fixture.logs.logger())
 
-        try await authenticator.authenticationProviding.authenticate(Credentials(username: "user", password: "secret"))
+        try await authenticator.authenticate(credentials: Credentials(username: "user", password: "secret"))
 
         #expect(fixture.server.requests.values.compactMap(\.url?.path) == [AppleEndpoint.session, AppleEndpoint.downloads])
     }

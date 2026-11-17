@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import XCModel
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
 
 private func isCoreError(_ error: any Error, _ predicate: (CoreError) -> Bool) -> Bool {
@@ -27,12 +27,12 @@ struct CoreInfoTests {
         let applications = try TemporaryDirectory()
         let logs = LogRecorder()
         let xcodes = [xcode]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.info(version: .version("15.0"), shouldUpdate: true)
 
@@ -62,16 +62,29 @@ struct CoreInfoTests {
         let applications = try TemporaryDirectory()
         let logs = LogRecorder()
         let xcodes = [Xcode(version: Version("15A240d", "15.0", .release), date: (2023, 9, 18), requires: "13.5")]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.info(version: .version("15A240d"), shouldUpdate: true)
 
         #expect(logs.messages.last == "Requires macOS 13.5")
+    }
+
+    @Test
+    func `info without updating the list uses the cache`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        try JSONEncoder().encode([xcode]).write(to: caches.url.appendingPathComponent("xcinfo.json"))
+        let logs = LogRecorder()
+        let core = Core.test(logs: logs, cachesDirectory: caches.url, applicationsDirectory: applications.url)
+
+        try await core.info(version: .version("15.0"), shouldUpdate: false)
+
+        #expect(logs.messages.contains("15.0 (15A240d)"))
     }
 
     @Test
@@ -80,12 +93,12 @@ struct CoreInfoTests {
         let applications = try TemporaryDirectory()
         let logs = LogRecorder()
         let xcodes = [Xcode.fixture("14.0", build: "14A1"), .fixture("16.0", build: "16A1")]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.info(version: .latest, shouldUpdate: true)
 
@@ -103,13 +116,13 @@ struct CoreInfoTests {
             .fixture("15.0.1", build: "15A507"),
             .fixture("14.0", build: "14A1"),
         ]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             prompt: prompt,
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.info(version: .version("15"), shouldUpdate: true)
 
@@ -124,12 +137,12 @@ struct CoreInfoTests {
         let applications = try TemporaryDirectory()
         let logs = LogRecorder()
         let xcodes = [Xcode.fixture("15.0", build: "15A240d"), .fixture("14.0", build: "14A309")]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.info(version: .version("14A3"), shouldUpdate: true)
 
@@ -144,12 +157,12 @@ struct CoreInfoTests {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let xcodes = [Xcode.fixture("15.0", build: "15A240d")]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             applicationsDirectory: applications.url
-        ))
+        )
 
         await #expect {
             try await core.info(version: version, shouldUpdate: true)
@@ -162,7 +175,7 @@ struct CoreInfoTests {
     func `an empty list finds no version`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let core = Core(environment: .test(logs: LogRecorder(), cachesDirectory: caches.url, applicationsDirectory: applications.url))
+        let core = Core.test(logs: LogRecorder(), cachesDirectory: caches.url, listXcodes: { [] }, applicationsDirectory: applications.url)
 
         await #expect {
             try await core.info(version: .latest, shouldUpdate: true)
@@ -184,7 +197,7 @@ struct CoreDownloadTests {
         let credentials = Recorder<String>()
         let downloadCalls = Recorder<String>()
         let xcodes = [xcode]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
@@ -195,7 +208,7 @@ struct CoreDownloadTests {
                 return destination.appendingPathComponent("Xcode_15.xip")
             },
             applicationsDirectory: applications.url
-        ))
+        )
 
         let (downloaded, url) = try await core.download(
             version: .version("15.0"),
@@ -217,13 +230,13 @@ struct CoreDownloadTests {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let xcodes = [Xcode.fixture("15.0", build: "15A240d", download: nil)]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             authenticate: { _ in Issue.record("Must not sign in") },
             applicationsDirectory: applications.url
-        ))
+        )
 
         await #expect {
             try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
@@ -237,17 +250,18 @@ struct CoreDownloadTests {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let xcodes = [xcode]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
+            getCredentials: { Credentials(username: "user", password: "secret") },
             authenticate: { _ in throw AuthenticationError() },
             download: { _, _, _ in
                 Issue.record("Must not download")
                 return URL(fileURLWithPath: "/")
             },
             applicationsDirectory: applications.url
-        ))
+        )
 
         await #expect {
             try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
@@ -261,13 +275,13 @@ struct CoreDownloadTests {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let xcodes = [xcode]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             getCredentials: { throw CredentialsError.invalidPassword },
             applicationsDirectory: applications.url
-        ))
+        )
 
         await #expect(throws: CredentialsError.self) {
             try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
@@ -283,13 +297,15 @@ struct CoreDownloadTests {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let xcodes = [xcode]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
+            getCredentials: { Credentials(username: "user", password: "secret") },
+            authenticate: { _ in },
             download: { _, _, _ in throw apiError },
             applicationsDirectory: applications.url
-        ))
+        )
 
         await #expect {
             try await core.download(version: .latest, options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
@@ -302,7 +318,7 @@ struct CoreDownloadTests {
 struct CoreInstallTests {
     private let xcode = Xcode.fixture("15.0", build: "15A240d")
 
-    private func environment(
+    private func core(
         logs: LogRecorder,
         caches: TemporaryDirectory,
         applications: TemporaryDirectory,
@@ -310,18 +326,17 @@ struct CoreInstallTests {
         prompt: FakePrompt = FakePrompt(passwords: ["sudo-password"]),
         extractions: Recorder<String> = Recorder(),
         revealed: Recorder<URL> = Recorder(),
-        download: @escaping (URL, URL, Bool) async throws -> URL = { _, _, _ in
-            Issue.record("Must not download")
-            return URL(fileURLWithPath: "/")
-        }
-    ) -> Environment {
+        download: (@Sendable (URL, URL, Bool) async throws -> URL)? = nil
+    ) -> Core {
         let xcodes = [xcode]
         return .test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
+            getCredentials: { Credentials(username: "user", password: "secret") },
+            authenticate: { _ in },
             download: download,
-            extract: { source, destination, filename, useLegacyUnxip, _ in
+            extract: { source, destination, filename, useLegacyUnxip in
                 extractions.append("\(source.lastPathComponent) \(destination.path) \(filename ?? "-") \(useLegacyUnxip)")
                 return destination.appendingPathComponent(filename ?? "Xcode.app")
             },
@@ -361,14 +376,14 @@ struct CoreInstallTests {
         let shell = FakeShell()
         let extractions = Recorder<String>()
         let revealed = Recorder<URL>()
-        let core = Core(environment: environment(
+        let core = core(
             logs: logs,
             caches: caches,
             applications: applications,
             shell: shell,
             extractions: extractions,
             revealed: revealed
-        ))
+        )
 
         try await core.install(
             options: options(xip: xip, destination: applications.url, useLegacyUnxip: true, shouldPreserveXIP: true),
@@ -400,7 +415,7 @@ struct CoreInstallTests {
         let applications = try TemporaryDirectory()
         let xip = try caches.file("Xcode_15.xip")
         let shell = FakeShell()
-        let core = Core(environment: environment(logs: LogRecorder(), caches: caches, applications: applications, shell: shell))
+        let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell)
 
         try await core.install(
             options: options(xip: xip, destination: applications.url, skipSymlinkCreation: true, skipXcodeSelection: true, shouldPreserveXIP: true),
@@ -419,7 +434,7 @@ struct CoreInstallTests {
         let previous = try applications.directory("Xcode_14.app")
         let symlink = applications.url.appendingPathComponent("Xcode.app")
         try FileManager.default.createSymbolicLink(at: symlink, withDestinationURL: previous)
-        let core = Core(environment: environment(logs: LogRecorder(), caches: caches, applications: applications))
+        let core = core(logs: LogRecorder(), caches: caches, applications: applications)
 
         try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
 
@@ -433,12 +448,12 @@ struct CoreInstallTests {
         let applications = try TemporaryDirectory()
         let xip = try caches.file("Xcode_15.xip")
         let existing = try applications.fakeXcode(named: "Xcode.app", build: "15A240d")
-        let core = Core(environment: environment(
+        let core = core(
             logs: LogRecorder(),
             caches: caches,
             applications: applications,
             shell: .installedXcodes([existing])
-        ))
+        )
 
         try await core.install(options: options(xip: xip, destination: caches.url, shouldPreserveXIP: true), updateVersionList: true)
 
@@ -454,7 +469,7 @@ struct CoreInstallTests {
             let applications = try TemporaryDirectory()
             let downloads = try TemporaryDirectory()
             let archive = downloads.url.appendingPathComponent("Xcode_15.xip")
-            let core = Core(environment: environment(
+            let core = core(
                 logs: LogRecorder(),
                 caches: caches,
                 applications: applications,
@@ -463,7 +478,7 @@ struct CoreInstallTests {
                     try Data("xip".utf8).write(to: url)
                     return url
                 }
-            ))
+            )
 
             try await core.install(
                 options: options(xip: nil, destination: downloads.url, shouldPreserveXIP: shouldPreserveXIP),
@@ -479,13 +494,11 @@ struct CoreInstallTests {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let xip = try caches.file("Users-own.xip")
-        let core = Core(environment: environment(logs: LogRecorder(), caches: caches, applications: applications))
+        let core = core(logs: LogRecorder(), caches: caches, applications: applications)
 
         try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: false), updateVersionList: true)
 
-        withKnownIssue("install --xip-path deletes the user's own archive unless --preserve-xip is given") {
-            #expect(FileManager.default.fileExists(atPath: xip.path))
-        }
+        #expect(FileManager.default.fileExists(atPath: xip.path))
     }
 
     @Test
@@ -495,7 +508,7 @@ struct CoreInstallTests {
         let xip = try caches.file("Xcode_15.xip")
         let prompt = FakePrompt(passwords: ["one", "two", "three"])
         let shell = FakeShell { call in call.command == "ls" ? (1, "", "") : (0, "", "") }
-        let core = Core(environment: environment(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt))
+        let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt)
 
         await #expect {
             try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
@@ -513,7 +526,7 @@ struct CoreInstallTests {
         let xip = try caches.file("Xcode_15.xip")
         let prompt = FakePrompt(passwords: ["wrong", "right"])
         let shell = FakeShell { call in call.password == "wrong" ? (1, "", "") : (0, "", "") }
-        let core = Core(environment: environment(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt))
+        let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt)
 
         try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
 
@@ -530,7 +543,7 @@ struct CoreInstallTests {
         let xip = try caches.file("Xcode_15.xip")
         let prompt = FakePrompt()
         let shell = FakeShell { call in call.command == command ? (3, "", "") : (0, "", "") }
-        let core = Core(environment: environment(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt))
+        let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell, prompt: prompt)
 
         await #expect {
             try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
@@ -556,7 +569,7 @@ struct CoreInstallTests {
         let applications = try TemporaryDirectory()
         let xip = try caches.file("Xcode_15.xip")
         let shell = FakeShell { call in call.command == command ? (1, "", "") : (0, "", "") }
-        let core = Core(environment: environment(logs: LogRecorder(), caches: caches, applications: applications, shell: shell))
+        let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell)
 
         await #expect {
             try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
@@ -571,7 +584,7 @@ struct CoreInstallTests {
         let applications = try TemporaryDirectory()
         let xip = try caches.file("Xcode_15.xip")
         let shell = FakeShell { call in call.args == ["-license", "accept"] ? (1, "", "") : (0, "", "") }
-        let core = Core(environment: environment(logs: LogRecorder(), caches: caches, applications: applications, shell: shell))
+        let core = core(logs: LogRecorder(), caches: caches, applications: applications, shell: shell)
 
         await #expect {
             try await core.install(options: options(xip: xip, destination: applications.url, shouldPreserveXIP: true), updateVersionList: true)
@@ -588,16 +601,16 @@ struct CoreExtractTests {
         let source = try directory.file(name)
         let logs = LogRecorder()
         let extractions = Recorder<String>()
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             isVerbose: true,
             cachesDirectory: directory.url,
-            extract: { source, destination, filename, useLegacyUnxip, _ in
+            extract: { source, destination, filename, useLegacyUnxip in
                 extractions.append("\(source.lastPathComponent) \(filename ?? "-") \(useLegacyUnxip)")
                 return destination.appendingPathComponent("Xcode.app")
             },
             applicationsDirectory: directory.url
-        ))
+        )
 
         let application = try await core.extractXIP(source: source, options: .init(destination: directory.url))
 
@@ -612,7 +625,7 @@ struct CoreExtractTests {
     func `extracting for an xcode returns the application`() async throws {
         let directory = try TemporaryDirectory()
         let source = try directory.file("Xcode.xip")
-        let core = Core(environment: .test(logs: LogRecorder(), cachesDirectory: directory.url, applicationsDirectory: directory.url))
+        let core = Core.test(logs: LogRecorder(), cachesDirectory: directory.url, extract: { _, destination, filename, _ in destination.appendingPathComponent(filename ?? "Xcode.app") }, applicationsDirectory: directory.url)
 
         let application = try await core.extractXIP(
             source: source,
@@ -628,7 +641,7 @@ struct CoreExtractTests {
     func `only xip archives can be extracted`(name: String) async throws {
         let directory = try TemporaryDirectory()
         let source = try directory.file(name)
-        let core = Core(environment: .test(logs: LogRecorder(), cachesDirectory: directory.url, applicationsDirectory: directory.url))
+        let core = Core.test(logs: LogRecorder(), cachesDirectory: directory.url, applicationsDirectory: directory.url)
 
         await #expect {
             try await core.extractXIP(source: source, options: .init(destination: directory.url))
@@ -641,12 +654,12 @@ struct CoreExtractTests {
     func `extraction errors are wrapped`() async throws {
         let directory = try TemporaryDirectory()
         let source = try directory.file("Xcode.xip")
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: directory.url,
-            extract: { _, _, _, _, _ in throw Extractor.ExtractionError("broken") },
+            extract: { _, _, _, _ in throw Extractor.ExtractionError("broken") },
             applicationsDirectory: directory.url
-        ))
+        )
 
         await #expect {
             try await core.extractXIP(source: source, options: .init(destination: directory.url))
@@ -672,7 +685,7 @@ struct CoreUninstallTests {
         let logs = LogRecorder()
         let prompt = FakePrompt(agree: true)
         let xcodes = xcodes
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             isVerbose: true,
             cachesDirectory: caches.url,
@@ -680,7 +693,7 @@ struct CoreUninstallTests {
             shell: .installedXcodes([app16, app15]),
             prompt: prompt,
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.uninstall("16", updateVersionList: true)
 
@@ -697,14 +710,14 @@ struct CoreUninstallTests {
         let app = try applications.fakeXcode(named: "Xcode-16.app", build: "16A1")
         let logs = LogRecorder()
         let xcodes = xcodes
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             shell: .installedXcodes([app]),
             prompt: FakePrompt(agree: false),
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.uninstall("16a1", updateVersionList: true)
 
@@ -720,14 +733,14 @@ struct CoreUninstallTests {
         let release = try applications.fakeXcode(named: "Xcode-15.app", build: "15A2")
         let prompt = FakePrompt(choices: [1], agree: true)
         let xcodes = xcodes
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             shell: .installedXcodes([beta, release]),
             prompt: prompt,
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.uninstall(nil, updateVersionList: true)
 
@@ -745,14 +758,14 @@ struct CoreUninstallTests {
         let beta = try applications.fakeXcode(named: "Xcode-beta.app", build: "15A1")
         let release = try applications.fakeXcode(named: "Xcode-15.app", build: "15A2")
         let xcodes = xcodes
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             shell: .installedXcodes([beta, release]),
             prompt: FakePrompt(agree: true),
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.uninstall("15.0 beta 2", updateVersionList: true)
 
@@ -766,13 +779,13 @@ struct CoreUninstallTests {
         let applications = try TemporaryDirectory()
         let app = try applications.fakeXcode(named: "Xcode-16.app", build: "16A1")
         let xcodes = xcodes
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             shell: .installedXcodes([app]),
             applicationsDirectory: applications.url
-        ))
+        )
 
         await #expect {
             try await core.uninstall("13", updateVersionList: true)
@@ -785,7 +798,7 @@ struct CoreUninstallTests {
     func `uninstall fails without known releases`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let core = Core(environment: .test(logs: LogRecorder(), cachesDirectory: caches.url, applicationsDirectory: applications.url))
+        let core = Core.test(logs: LogRecorder(), cachesDirectory: caches.url, listXcodes: { [] }, applicationsDirectory: applications.url)
 
         await #expect {
             try await core.uninstall(nil, updateVersionList: true)
@@ -801,18 +814,18 @@ struct CoreCleanupTests {
         let directory = try TemporaryDirectory()
         let logs = LogRecorder()
         let calls = Recorder<String>()
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: directory.url,
             removeCookies: { calls.append("cookies") },
             cleanupCredentials: { calls.append("credentials") },
-            cleanupDownloads: { calls.append("downloads") },
+            cleanupAuthentication: { calls.append("authentication") },
             applicationsDirectory: directory.url
-        ))
+        )
 
         core.cleanup()
 
-        #expect(calls.values == ["credentials", "downloads", "cookies"])
+        #expect(calls.values == ["credentials", "authentication", "cookies"])
         #expect(logs.messages == ["\nCleanup", "", "Removed stored cookies."])
     }
 }

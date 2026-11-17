@@ -53,10 +53,10 @@ struct SpeedMeasurementsTests {
     }
 }
 
-struct ShellTests {
+struct ProcessRunnerTests {
     @Test
-    func `execute captures standard output and the exit status`() {
-        let result = Shell.execute("echo", args: "hello", "world")
+    func `run captures standard output and the exit status`() async throws {
+        let result = try await ProcessRunner.run("echo", arguments: ["hello", "world"])
 
         #expect(result.exitStatus == 0)
         #expect(result.stdout == "hello world\n")
@@ -64,21 +64,30 @@ struct ShellTests {
     }
 
     @Test
-    func `execute reports a failing exit status`() {
-        #expect(Shell.execute("false").exitStatus == 1)
+    func `run reports a failing exit status`() async throws {
+        #expect(try await ProcessRunner.run("false", arguments: []).exitStatus == 1)
     }
 
     @Test
-    func `execute captures standard error`() {
-        let result = Shell.execute("ls", args: ["/nonexistent-xcinfo-test-path"])
+    func `run captures standard error`() async throws {
+        let result = try await ProcessRunner.run("ls", arguments: ["/nonexistent-xcinfo-test-path"])
 
         #expect(result.exitStatus != 0)
         #expect(result.stderr.contains("nonexistent-xcinfo-test-path"))
     }
 
     @Test
-    func `live shell client forwards to the shell`() {
-        let result = ShellClient.live.execute("printf", ["%s", "xcinfo"])
+    func `run reads large output without blocking`() async throws {
+        let result = try await ProcessRunner.run("sh", arguments: ["-c", "yes | head -n 200000; yes error | head -n 100000 >&2"])
+
+        #expect(result.exitStatus == 0)
+        #expect(result.stdout.count == 400_000)
+        #expect(result.stderr.count == 600_000)
+    }
+
+    @Test
+    func `live process client forwards to the runner`() async throws {
+        let result = try await ProcessClient.liveValue.run("printf", ["%s", "xcinfo"])
 
         #expect(result.stdout == "xcinfo")
     }

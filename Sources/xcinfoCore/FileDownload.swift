@@ -3,55 +3,29 @@
 //  MIT license - see LICENSE.md
 //
 
-import Combine
 import Foundation
 import IOKit
 import IOKit.pwr_mgt
-import OlympUs
 import XCIFoundation
 
-class FileDownload: NSObject, URLSessionDownloadDelegate {
-    enum State {
-        case downloading
-        case finished
-        case failed
+final class FileDownload: NSObject, URLSessionDownloadDelegate, Sendable {
+    enum Event: Sendable {
+        case progress(bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64)
+        case finished(downloadedURL: URL?)
+        case rejected(XCAPIError)
+        case failed(resumeData: Data?, isCancelled: Bool)
     }
 
-    public private(set) var objectDidChange = PassthroughSubject<Void, Never>()
+    let name: String
+    let events: AsyncStream<Event>
 
-    public let name: String
-
+    private let continuation: AsyncStream<Event>.Continuation
     private let task: URLSessionDownloadTask
     private let logger: Logger
-    private var sleepAssertionID: IOPMAssertionID = 0
-
-    public private(set) var state: State = .downloading
-    public private(set) var progress: Double = 0
-    public private(set) var downloadedURL: URL?
-    private var startDate: Date!
-
-    public private(set) var resumeData: Data?
-    public private(set) var isCancelled = false
-
-    private var totalBytesExpectedToWriteValue: Double = 0
-    private var downloadSpeedValues = SpeedMeasurements()
-
-    public var totalBytes: Measurement<UnitInformationStorage> {
-        Measurement<UnitInformationStorage>(value: totalBytesExpectedToWriteValue, unit: .bytes)
-    }
-
-    public var remainingBytes: Measurement<UnitInformationStorage> {
-        let bytesRemaining = max(0, totalBytesExpectedToWriteValue - totalBytesExpectedToWriteValue * progress)
-        return Measurement<UnitInformationStorage>(value: bytesRemaining, unit: .bytes)
-    }
-
-    public func downloadSpeed() -> Measurement<UnitInformationStorage> {
-        Measurement<UnitInformationStorage>(value: downloadSpeedValues.averageSpeed(), unit: .bytes)
-    }
+    private let sleepAssertionID: IOPMAssertionID
 
     init(
         task: URLSessionDownloadTask,
-        delegateProxy: URLSessionDelegateProxy,
         logger: Logger,
         disableSleep: Bool = false
     ) {
@@ -59,8 +33,9 @@ class FileDownload: NSObject, URLSessionDownloadDelegate {
             .absoluteString ?? "<unnnamed download>"
         self.task = task
         self.logger = logger
-        super.init()
+        (events, continuation) = AsyncStream.makeStream(of: Event.self)
 
+        var sleepAssertionID: IOPMAssertionID = 0
         if disableSleep {
             let reasonForActivity = "Preventing sleep during large file download"
             let success = IOPMAssertionCreateWithName(
@@ -71,28 +46,41 @@ class FileDownload: NSObject, URLSessionDownloadDelegate {
             )
             logger.verbose("Sleep temporary disabled: \(success == 0)")
         }
-        delegateProxy.add(proxy: self)
-        startDate = Date()
+        self.sleepAssertionID = sleepAssertionID
+        super.init()
+
+        task.delegate = self
         task.resume()
     }
 
-    func urlSession(_: URLSession, downloadTask _: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        let fileName = (name as NSString).lastPathComponent
-        let target = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-        do {
-            if FileManager.default.fileExists(atPath: target.path) {
-                try FileManager.default.removeItem(at: target)
+    func urlSession(_: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
+        if let response = downloadTask.response as? HTTPURLResponse {
+            if response.url?.absoluteString.hasPrefix("https://developer.apple.com/unauthorized") == true {
+                finish(with: .rejected(.unauthorized))
+                return
             }
+            guard (200 ..< 300).contains(response.statusCode) else {
+                finish(with: .rejected(.unexpectedStatusCode(response.statusCode)))
+                return
+            }
+        }
+
+        let fileName = (name as NSString).lastPathComponent
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let target = folder.appendingPathComponent(fileName)
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try FileManager.default.moveItem(at: location, to: target)
-            state = .finished
-            progress = 1.0
-            downloadedURL = target
+            finish(with: .finished(downloadedURL: target))
         } catch {
             logger.error("Could not move temporary file from\n\(location)\nto\n\(target)")
-            downloadedURL = nil
-            state = .failed
+            finish(with: .failed(resumeData: nil, isCancelled: false))
         }
-        notify()
+    }
+
+    private func finish(with event: Event) {
+        continuation.yield(event)
+        continuation.finish()
 
         if sleepAssertionID != 0 {
             let success = IOPMAssertionRelease(sleepAssertionID)
@@ -108,19 +96,13 @@ class FileDownload: NSObject, URLSessionDownloadDelegate {
         totalBytesExpectedToWrite: Int64
     ) {
         guard totalBytesExpectedToWrite > 0 else { return }
-        progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-        totalBytesExpectedToWriteValue = Double(totalBytesExpectedToWrite)
-        downloadSpeedValues.append(Double(bytesWritten))
-        notify()
-    }
-
-    private func notify() {
-        objectDidChange.send()
-    }
-
-    func urlSession(_: URLSession, didBecomeInvalidWithError _: Error?) {
-        state = .failed
-        notify()
+        continuation.yield(
+            .progress(
+                bytesWritten: bytesWritten,
+                totalBytesWritten: totalBytesWritten,
+                totalBytesExpectedToWrite: totalBytesExpectedToWrite
+            )
+        )
     }
 
     func urlSession(_: URLSession, task _: URLSessionTask, didCompleteWithError error: Error?) {
@@ -129,11 +111,32 @@ class FileDownload: NSObject, URLSessionDownloadDelegate {
         }
 
         logger.error(error.localizedDescription)
-        resumeData = error.downloadTaskResumeData
-        isCancelled = error.code == .cancelled
+        finish(with: .failed(resumeData: error.downloadTaskResumeData, isCancelled: error.code == .cancelled))
+    }
+}
 
-        state = .failed
-        notify()
+struct DownloadProgress {
+    private(set) var progress: Double = 0
+    private var totalBytesExpectedToWriteValue: Double = 0
+    private var downloadSpeedValues = SpeedMeasurements()
+
+    mutating func update(bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
+        progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        totalBytesExpectedToWriteValue = Double(totalBytesExpectedToWrite)
+        downloadSpeedValues.append(Double(bytesWritten))
+    }
+
+    var totalBytes: Measurement<UnitInformationStorage> {
+        Measurement<UnitInformationStorage>(value: totalBytesExpectedToWriteValue, unit: .bytes)
+    }
+
+    var remainingBytes: Measurement<UnitInformationStorage> {
+        let bytesRemaining = max(0, totalBytesExpectedToWriteValue - totalBytesExpectedToWriteValue * progress)
+        return Measurement<UnitInformationStorage>(value: bytesRemaining, unit: .bytes)
+    }
+
+    var downloadSpeed: Measurement<UnitInformationStorage> {
+        Measurement<UnitInformationStorage>(value: downloadSpeedValues.averageSpeed(), unit: .bytes)
     }
 }
 

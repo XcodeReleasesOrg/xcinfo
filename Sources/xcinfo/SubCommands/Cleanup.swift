@@ -4,12 +4,13 @@
 //
 
 import ArgumentParser
-import Rainbow
+import Dependencies
+import XCIFoundation
 import xcinfoCore
 
 extension XCInfo {
     struct Cleanup: ParsableCommand {
-        static var configuration = CommandConfiguration(
+        static let configuration = CommandConfiguration(
             abstract: "Remove stored credentials",
             discussion: "Remove stored Apple ID credentials and session authentification items from the macOS keychain."
         )
@@ -18,10 +19,12 @@ extension XCInfo {
         var globals: DefaultOptions
 
         func run() throws {
-            Rainbow.enabled = globals.useANSI
-            let environment = Environment.live(isVerboseLoggingEnabled: globals.isVerbose)
-            let core = Core(environment: environment)
-            core.cleanup()
+            Logger.isANSIEnabled = globals.useANSI
+            withDependencies {
+                $0.logger = globals.logger
+            } operation: {
+                Core().cleanup()
+            }
         }
     }
 }

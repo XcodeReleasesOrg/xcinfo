@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import XCModel
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
 
 struct XcodeModelTests {

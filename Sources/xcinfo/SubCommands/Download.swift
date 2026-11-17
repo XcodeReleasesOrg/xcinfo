@@ -4,12 +4,12 @@
 //
 
 import ArgumentParser
-import Rainbow
+import XCIFoundation
 import xcinfoCore
 
 extension XCInfo {
     struct Download: AsyncParsableCommand {
-        static var configuration = CommandConfiguration(
+        static let configuration = CommandConfiguration(
             abstract: "Downloads an Xcode version",
             discussion: "Downloads a specific version of Xcode."
         )
@@ -27,17 +27,16 @@ extension XCInfo {
         var listOptions: ListOptions
 
         func run() async throws {
-            Rainbow.enabled = globals.useANSI
-            let environment = Environment.live(isVerboseLoggingEnabled: globals.isVerbose)
-            let core = Core(environment: environment)
             do {
-                try await core.download(
-                    version: versionOptions.xcodeVersion,
-                    options: downloadOptions.options,
-                    updateVersionList: listOptions.updateList
-                )
+                try await globals.run { core in
+                    try await core.download(
+                        version: versionOptions.xcodeVersion,
+                        options: downloadOptions.options,
+                        updateVersionList: listOptions.updateList
+                    )
+                }
             } catch let error as CoreError {
-                environment.logger.error(error.localizedDescription)
+                globals.logger.error(error.localizedDescription)
                 throw ExitCode.failure
             }
         }
