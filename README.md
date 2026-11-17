@@ -232,6 +232,10 @@ Versions with two downloads have an extra `"architecture"` field (`"appleSilicon
 - The `archiveutil` fallback for `.aea` archives that are not signed-only, and `install --archive-path` with an `.aea`, have not been checked with real archives yet.
 - `installed` and the terminal UI can't tell whether an installed Xcode came from the Apple silicon or the Universal download, so installed versions are not labelled.
 
+## License
+
+xcinfo is licensed under the GNU Lesser General Public License 3.0 ([LICENSE.md](LICENSE.md)), which builds on the GNU General Public License 3.0 ([COPYING](COPYING)).
+
 ## Changelog
 
 ### Version 2.0.0
