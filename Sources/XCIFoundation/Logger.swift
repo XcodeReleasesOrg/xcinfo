@@ -4,13 +4,13 @@
 //
 
 import Foundation
-import Rainbow
+@preconcurrency import Rainbow // Rainbow (Swift 4 mode) keeps its color switch in an unannotated global; it is written once at startup before any concurrent work.
 
-public struct Logger {
+public struct Logger: Sendable {
     public private(set) var isVerbose: Bool
-    private let output: (String) -> Void
+    private let output: @Sendable (String) -> Void
 
-    public init(isVerbose: Bool, output: @escaping (String) -> Void = { print($0) }) {
+    public init(isVerbose: Bool, output: @escaping @Sendable (String) -> Void = { print($0) }) {
         self.isVerbose = isVerbose
         self.output = output
     }
@@ -57,7 +57,14 @@ public struct Logger {
         }
         output(msg)
         if onSameLine {
-            fflush(__stdoutp)
+            fflush(nil)
         }
+    }
+}
+
+public extension Logger {
+    static var isANSIEnabled: Bool {
+        get { Rainbow.enabled }
+        set { Rainbow.enabled = newValue }
     }
 }

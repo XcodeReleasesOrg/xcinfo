@@ -3,13 +3,12 @@
 //  MIT license - see LICENSE.md
 //
 
-import Combine
 import Foundation
 import Rainbow
 import XCIFoundation
-import XCModel
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 
-public struct XcodeApplication {
+public struct XcodeApplication: Sendable {
     public init(url: URL, xcode: Xcode) {
         self.url = url
         self.xcode = xcode
@@ -35,7 +34,7 @@ public extension Xcode {
     }
 }
 
-extension Xcode: CustomStringConvertible, CustomDebugStringConvertible {
+extension Xcode: @retroactive CustomStringConvertible, @retroactive CustomDebugStringConvertible {
     var displayVersion: String {
         var components: [String] = []
         if let number = version.number {
@@ -84,10 +83,6 @@ extension Xcode: CustomStringConvertible, CustomDebugStringConvertible {
     }
 
     var displayName: String { "\(displayVersion) (\(version.build ?? ""))" }
-
-    var filename: String {
-        filename(in: URL(fileURLWithPath: "/Applications"))
-    }
 
     func filename(in applicationsDirectory: URL) -> String {
         let fileManager = FileManager.default
@@ -141,7 +136,7 @@ extension Version {
     }
 }
 
-extension Xcode: Comparable, Hashable {
+extension Xcode: @retroactive Equatable, @retroactive Comparable, @retroactive Hashable {
     public static func == (lhs: Xcode, rhs: Xcode) -> Bool {
         lhs.version == rhs.version
     }
@@ -155,7 +150,7 @@ extension Xcode: Comparable, Hashable {
     }
 }
 
-extension Version: Comparable, Hashable {
+extension Version: @retroactive Equatable, @retroactive Comparable, @retroactive Hashable {
     public static func < (lhs: Version, rhs: Version) -> Bool {
         let numberComparision: ComparisonResult = {
             guard let lhsNumber = lhs.number, let rhsNumber = rhs.number else { return .orderedSame }
@@ -182,19 +177,23 @@ extension Version: Comparable, Hashable {
                 return lhsVersion < rhsVersion
             case let (.rc(lhsVersion), .rc(rhsVersion)):
                 return lhsVersion < rhsVersion
+            case (.gm, .release), (.release, .gm), (.release, .release):
+                guard let lhsBuild = lhs.build, let rhsBuild = rhs.build else { return false }
+                return lhsBuild.compare(rhsBuild, options: .numeric) == .orderedAscending
             default:
-                return false
+                return lhs.release.rank < rhs.release.rank
             }
         }
         return numberComparision == .orderedAscending
     }
 
     public static func == (lhs: Version, rhs: Version) -> Bool {
-        lhs.number == rhs.number
+        lhs.number == rhs.number && lhs.build == rhs.build && lhs.release.versionType == rhs.release.versionType
     }
 
     public func hash(into hasher: inout Hasher) {
         hasher.combine(number)
+        hasher.combine(build)
     }
 }
 
@@ -214,7 +213,7 @@ extension KeyedVersions {
 extension SDKs: KeyedVersions {}
 extension Compilers: KeyedVersions {}
 
-public enum XCAPIError: Error, CustomStringConvertible {
+public enum XCAPIError: Error, CustomStringConvertible, Sendable {
     case invalidResponse
     case invalidCache
     case versionNotFound
@@ -223,6 +222,8 @@ public enum XCAPIError: Error, CustomStringConvertible {
     case couldNotMoveToTemporaryFile
     case couldNotMoveToDestinationFolder(URL, URL, NSError)
     case timeout
+    case unexpectedStatusCode(Int)
+    case unauthorized
 
     public var description: String {
         switch self {
@@ -242,18 +243,16 @@ public enum XCAPIError: Error, CustomStringConvertible {
             return "Could not move downloaded file from \(source.standardizedFileURL.path) to \(destination.standardizedFileURL.path). \(error.localizedFailureReason ?? error.localizedDescription))"
         case .timeout:
             return "The request timed out"
+        case let .unexpectedStatusCode(statusCode):
+            return "The server responded with HTTP status \(statusCode)"
+        case .unauthorized:
+            return "The Apple Developer Portal did not authorize the download"
         }
     }
 }
 
-public struct APIClient {
-    public var listXcodes: () async throws -> [Xcode]
-    public var removeCookies: () -> Void
-}
-
-public class XCReleasesAPI {
+public final class XCReleasesAPI: Sendable {
     public let baseURL: URL
-    private var disposeBag = Set<AnyCancellable>()
     private let session: URLSession
 
     init(baseURL: URL, session: URLSession) {
@@ -271,98 +270,8 @@ public class XCReleasesAPI {
         return xcodes
     }
 
-    private func removeCookies() {
+    func removeCookies() {
         session.configuration.httpCookieStorage?.removeCookies(since: Date.distantPast)
-    }
-}
-
-extension XCReleasesAPI {
-    var apiClient: APIClient {
-        .init(listXcodes: listXcodes, removeCookies: removeCookies)
-    }
-}
-
-// - MARK: Deprecations -
-
-extension XCReleasesAPI {
-    @available(*, deprecated, message: "Use listXcodes instead")
-    public func remoteList() -> Future<[Xcode], XCAPIError> {
-        Future { [unowned session] promise in
-            let request = URLRequest(url: self.baseURL)
-            session.dataTaskPublisher(for: request)
-                .map { $0.data }
-                .decode(type: [Xcode].self, decoder: JSONDecoder())
-                .handleEvents(receiveOutput: { values in
-                    self.cacheListResponse(content: values)
-                })
-                .sink(receiveCompletion: { completion in
-                    guard case let .failure(error) = completion else { return }
-                    if (error as NSError).code == NSURLErrorTimedOut {
-                        promise(.failure(.timeout))
-                    } else {
-                        promise(.failure(.invalidResponse))
-                    }
-                }, receiveValue: { values in
-                    promise(.success(values))
-                })
-                .store(in: &self.disposeBag)
-        }
-    }
-
-    @discardableResult
-    private func cacheListResponse(content: [Xcode]) -> Bool {
-        guard let cacheFile = cacheFile else {
-            return false
-        }
-        do {
-            let data = try JSONEncoder().encode(content)
-            try data.write(to: cacheFile)
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    private var cacheDirectory: URL? {
-        guard
-            let cachesDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-        else {
-            return nil
-        }
-        let directory = cachesDirectory.appendingPathComponent("xcinfo")
-        if !FileManager.default.fileExists(atPath: directory.path) {
-            do {
-                try FileManager.default.createDirectory(
-                    at: directory,
-                    withIntermediateDirectories: false,
-                    attributes: nil
-                )
-
-            } catch {
-                return nil
-            }
-        }
-        return directory
-    }
-
-    private var cacheFile: URL? {
-        cacheDirectory?.appendingPathComponent("xcinfo.json")
-    }
-
-    public func cachedList() -> Future<[Xcode], XCAPIError> {
-        Future { promise in
-            guard let cacheFile = self.cacheFile else {
-                promise(.failure(.invalidCache))
-                return
-            }
-            do {
-                let data = try Data(contentsOf: cacheFile)
-                let result = try JSONDecoder().decode([Xcode].self, from: data)
-                promise(.success(result))
-            } catch {
-                promise(.failure(.invalidCache))
-            }
-        }
     }
 }
 
@@ -382,6 +291,16 @@ extension OperatingSystemVersion {
 }
 
 extension Release {
+    var rank: Int {
+        switch self {
+        case .dp: 0
+        case .beta: 1
+        case .rc: 2
+        case .gmSeed: 3
+        case .gm, .release: 4
+        }
+    }
+
     var versionType: VersionParts.VersionType? {
         switch self {
         case .gm:

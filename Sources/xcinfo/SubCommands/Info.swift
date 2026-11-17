@@ -4,12 +4,12 @@
 //
 
 import ArgumentParser
-import Rainbow
+import XCIFoundation
 import xcinfoCore
 
 extension XCInfo {
     struct Info: AsyncParsableCommand {
-        static var configuration = CommandConfiguration(
+        static let configuration = CommandConfiguration(
             abstract: "Xcode version info",
             discussion: "Display information like SDK, release note link, etc of an Xcode version."
         )
@@ -24,13 +24,12 @@ extension XCInfo {
         var globals: DefaultOptions
 
         func run() async throws {
-            Rainbow.enabled = globals.useANSI
-            let environment = Environment.live(isVerboseLoggingEnabled: globals.isVerbose)
-            let core = Core(environment: environment)
             do {
-                try await core.info(version: versionOption.xcodeVersion, shouldUpdate: listOptions.updateList)
+                try await globals.run { core in
+                    try await core.info(version: versionOption.xcodeVersion, shouldUpdate: listOptions.updateList)
+                }
             } catch {
-                environment.logger.error(error.localizedDescription)
+                globals.logger.error(error.localizedDescription)
                 throw ExitCode.failure
             }
         }

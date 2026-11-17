@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import XCModel
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
 
 struct XCReleasesAPITests {
@@ -69,7 +69,7 @@ struct XCReleasesAPITests {
         storage.setCookie(cookie)
         #expect(storage.cookies?.isEmpty == false)
 
-        XCReleasesAPI(baseURL: baseURL, session: session).apiClient.removeCookies()
+        XCReleasesAPI(baseURL: baseURL, session: session).removeCookies()
 
         #expect(storage.cookies?.isEmpty ?? true)
     }

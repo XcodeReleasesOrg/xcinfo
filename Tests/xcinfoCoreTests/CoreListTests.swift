@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import XCModel
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
 
 struct CoreListTests {
@@ -20,13 +20,13 @@ struct CoreListTests {
         let installed = try applications.fakeXcode(named: "Xcode-15.app", build: "15A1")
         let logs = LogRecorder()
         let xcodes = all
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             shell: .installedXcodes([installed]),
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.list(shouldUpdate: true, showAllVersions: false, filter: nil)
 
@@ -45,12 +45,13 @@ struct CoreListTests {
         let applications = try TemporaryDirectory()
         let logs = LogRecorder()
         let xcodes = all
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
+            shell: FakeShell(),
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.list(shouldUpdate: true, showAllVersions: true, filter: nil)
 
@@ -67,30 +68,31 @@ struct CoreListTests {
         let applications = try TemporaryDirectory()
         let logs = LogRecorder()
         let xcodes = [recent, lastSummer, gm]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
+            shell: FakeShell(),
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.list(shouldUpdate: true, showAllVersions: false, filter: filter)
 
         #expect(logs.messages.first == expected)
     }
 
-    @Test(.disabled("Crashes the process: max(by:)! on an empty filtered list"))
+    @Test
     func `list with a filter that matches nothing reports an empty list`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let logs = LogRecorder()
         let xcodes = [recent]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.list(shouldUpdate: true, showAllVersions: false, filter: .onlyGM)
 
@@ -102,7 +104,7 @@ struct CoreListTests {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let logs = LogRecorder()
-        let core = Core(environment: .test(logs: logs, cachesDirectory: caches.url, applicationsDirectory: applications.url))
+        let core = Core.test(logs: logs, cachesDirectory: caches.url, listXcodes: { [] }, applicationsDirectory: applications.url)
 
         try await core.list(shouldUpdate: true, showAllVersions: false, filter: nil)
 
@@ -113,18 +115,14 @@ struct CoreListTests {
     func `updating the list writes the cache and the cache is used without updating`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let requests = Recorder<Void>()
         let xcodes = [recent, lastSummer]
-        let environment = Environment.test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
-            listXcodes: {
-                requests.append(())
-                return xcodes
-            },
+            listXcodes: { xcodes },
+            shell: FakeShell(),
             applicationsDirectory: applications.url
         )
-        let core = Core(environment: environment)
 
         try await core.list(shouldUpdate: true, showAllVersions: true, filter: nil)
         let cacheFile = caches.url.appendingPathComponent("xcinfo.json")
@@ -132,11 +130,9 @@ struct CoreListTests {
         #expect(cached.map(\.version.build) == ["16A1", "15A1"])
 
         let logs = LogRecorder()
-        var offlineEnvironment = environment
-        offlineEnvironment.logger = logs.logger()
-        try await Core(environment: offlineEnvironment).list(shouldUpdate: false, showAllVersions: true, filter: nil)
+        let offlineCore = Core.test(logs: logs, cachesDirectory: caches.url, shell: FakeShell(), applicationsDirectory: applications.url)
+        try await offlineCore.list(shouldUpdate: false, showAllVersions: true, filter: nil)
 
-        #expect(requests.values.count == 1)
         #expect(logs.messages.first == "16.0 (16A1)\n15.0 (15A1)")
     }
 
@@ -144,7 +140,7 @@ struct CoreListTests {
     func `listing without updating fails without a cache`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let core = Core(environment: .test(logs: LogRecorder(), cachesDirectory: caches.url, applicationsDirectory: applications.url))
+        let core = Core.test(logs: LogRecorder(), cachesDirectory: caches.url, applicationsDirectory: applications.url)
 
         await #expect(throws: (any Error).self) {
             try await core.list(shouldUpdate: false, showAllVersions: false, filter: nil)
@@ -156,7 +152,7 @@ struct CoreListTests {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         _ = try caches.file("xcinfo.json", contents: Data("garbage".utf8))
-        let core = Core(environment: .test(logs: LogRecorder(), cachesDirectory: caches.url, applicationsDirectory: applications.url))
+        let core = Core.test(logs: LogRecorder(), cachesDirectory: caches.url, applicationsDirectory: applications.url)
 
         await #expect(throws: DecodingError.self) {
             try await core.list(shouldUpdate: false, showAllVersions: false, filter: nil)
@@ -167,12 +163,12 @@ struct CoreListTests {
     func `list errors from the api are passed on`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: LogRecorder(),
             cachesDirectory: caches.url,
             listXcodes: { throw XCAPIError.invalidResponse },
             applicationsDirectory: applications.url
-        ))
+        )
 
         await #expect(throws: XCAPIError.self) {
             try await core.list(shouldUpdate: true, showAllVersions: false, filter: nil)
@@ -190,13 +186,13 @@ struct CoreListTests {
         let logs = LogRecorder()
         let xcodes = [recent, lastSummer, futureOS]
         let shell = FakeShell.installedXcodes([older, unknown, newer, notAnApp])
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             shell: shell,
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.installedXcodes(shouldUpdate: true)
 
@@ -217,13 +213,13 @@ struct CoreListTests {
         let release = try applications.fakeXcode(named: "Xcode.app", build: "16A1")
         let logs = LogRecorder()
         let xcodes = [recent, Xcode.fixture("17.0", build: "17A1", release: .beta(1))]
-        let core = Core(environment: .test(
+        let core = Core.test(
             logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
             shell: .installedXcodes([beta, release]),
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.installedXcodes(shouldUpdate: true)
 
@@ -233,18 +229,22 @@ struct CoreListTests {
         ])
     }
 
-    @Test(.disabled("Crashes the process: max(by:)! when no Xcode is installed"))
-    func `installed with nothing installed reports an empty list`() async throws {
+    @Test
+    func `installed with nothing installed prints nothing`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
         let xcodes = [recent]
-        let core = Core(environment: .test(
-            logs: LogRecorder(),
+        let logs = LogRecorder()
+        let core = Core.test(
+            logs: logs,
             cachesDirectory: caches.url,
             listXcodes: { xcodes },
+            shell: FakeShell(),
             applicationsDirectory: applications.url
-        ))
+        )
 
         try await core.installedXcodes(shouldUpdate: true)
+
+        #expect(logs.messages.isEmpty)
     }
 }

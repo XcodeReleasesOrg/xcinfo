@@ -1,7 +1,10 @@
-// swift-tools-version:5.7
-// The swift-tools-version declares the minimum version of Swift required to build this package.
+// swift-tools-version:6.4
 
 import PackageDescription
+
+let swiftSettings: [SwiftSetting] = [
+    .treatAllWarnings(as: .error),
+]
 
 let package = Package(
     name: "xcinfo",
@@ -9,26 +12,24 @@ let package = Package(
         .macOS(.v13),
     ],
     products: [
-        // Products define the executables and libraries produced by a package, and make them visible to other packages.
         .executable(
             name: "xcinfo",
             targets: ["xcinfo"]
         ),
     ],
     dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.2.3"),
-        .package(url: "https://github.com/onevcat/Rainbow", from: "4.0.1"),
-        .package(url: "https://github.com/xcodereleases/data.git", branch: "master"),
-        .package(url: "https://github.com/getGuaka/Prompt.git", from: "0.0.0"),
-        .package(url: "https://github.com/saagarjha/unxip", from: "3.0.0"),
-//        .package(url: "https://github.com/Kitura/BlueSignals.git", from: "2.0.1")
+        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.8.2"),
+        .package(url: "https://github.com/onevcat/Rainbow", from: "4.2.2"),
+        .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.17.2"),
+        .package(url: "https://github.com/saagarjha/unxip", from: "3.3.0"),
+        // XCModel was moved out of this repository after this revision, so it stays pinned here.
+        .package(url: "https://github.com/xcodereleases/data.git", revision: "500ee363f568086454a881a1343713704b125855"),
     ],
     targets: [
-        // Targets are the basic building blocks of a package. A target can define a module or a test suite.
-        // Targets can depend on other targets in this package, and on products in packages which this package depends on.
         .target(
             name: "XCIFoundation",
-            dependencies: ["Prompt", "Rainbow"]
+            dependencies: ["Rainbow"],
+            swiftSettings: swiftSettings
         ),
         .target(
             name: "XCUnxip",
@@ -38,11 +39,11 @@ let package = Package(
             name: "xcinfo",
             dependencies: [
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Dependencies", package: "swift-dependencies"),
                 "xcinfoCore",
-                "Prompt",
-                "Rainbow",
                 "XCIFoundation",
             ],
+            swiftSettings: swiftSettings,
             linkerSettings: [
                 LinkerSetting.linkedFramework("PackageKit"),
                 LinkerSetting.unsafeFlags(["-F/System/Library/PrivateFrameworks/"]),
@@ -51,12 +52,15 @@ let package = Package(
         .target(
             name: "xcinfoCore",
             dependencies: [
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "DependenciesMacros", package: "swift-dependencies"),
                 "OlympUs",
                 "XCIFoundation",
                 "XCUnxip",
                 .product(name: "libunxip", package: "unxip"),
                 .product(name: "XCModel", package: "data"),
-            ]
+            ],
+            swiftSettings: swiftSettings
         ),
         .testTarget(
             name: "xcinfoCoreTests",
@@ -66,8 +70,11 @@ let package = Package(
                 "OlympUs",
                 "XCIFoundation",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Dependencies", package: "swift-dependencies"),
+                .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
                 .product(name: "XCModel", package: "data"),
             ],
+            swiftSettings: swiftSettings,
             linkerSettings: [
                 LinkerSetting.linkedFramework("PackageKit"),
                 LinkerSetting.unsafeFlags(["-F/System/Library/PrivateFrameworks/"]),
@@ -75,7 +82,8 @@ let package = Package(
         ),
         .target(
             name: "OlympUs",
-            dependencies: ["XCIFoundation", "Prompt"]
+            dependencies: ["XCIFoundation"],
+            swiftSettings: swiftSettings
         ),
     ]
 )

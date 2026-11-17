@@ -3,13 +3,18 @@
 //  MIT license - see LICENSE.md
 //
 
+import Dependencies
 import Foundation
-import Prompt
 import XCIFoundation
 
-public struct Credentials {
+public struct Credentials: Sendable, Equatable {
     public var username: String
     public var password: String
+
+    public init(username: String, password: String) {
+        self.username = username
+        self.password = password
+    }
 }
 
 enum CredentialsError: Error {
@@ -17,25 +22,18 @@ enum CredentialsError: Error {
     case invalidPassword
 }
 
-public struct CredentialProviding {
-    var getCredentials: () throws -> Credentials
-    var cleanup: () -> Void
-}
+struct CredentialService {
+    static let service = "xcinfo.appleid"
 
-class CredentialService {
-    let logger: Logger
-
-    init(logger: Logger) {
-        self.logger = logger
-    }
+    @Dependency(\.keychain) private var keychain
+    @Dependency(\.logger) private var logger
+    @Dependency(\.prompt) private var prompt
 
     func appleIDCredentials() throws -> Credentials {
-        if let passwordItem = try? KeychainPasswordItem.passwordItems(forService: "xcinfo.appleid").first {
-            let username = passwordItem.account
-
+        if let username = try? keychain.accounts(Self.service).first {
             do {
-                let password = try passwordItem.readPassword()
-                return .init(username: username, password: password)
+                let password = try keychain.readPassword(Self.service, username)
+                return Credentials(username: username, password: password)
             } catch {
                 logger.warn("Could not read password from the Keychain.")
             }
@@ -44,31 +42,26 @@ class CredentialService {
         logger.log("Apple's Developer Download page requires a login.")
         logger.emphasized("Please provide your Apple Developer Program account credentials.")
 
-        let username = try Shell.ask("Username:")
-        let password = try Shell.ask("Password:", secure: true)
+        let username = prompt.readLine("Username:")
+        let password = prompt.readSecret("Password:")
 
         logger.log("\n")
-        let shouldStoreInKeychain = agree("Do you want to store these credentials in the macOS Keychain?")
+        let shouldStoreInKeychain = prompt.agree("Do you want to store these credentials in the macOS Keychain?")
 
         if shouldStoreInKeychain {
             do {
-                let item = KeychainPasswordItem(service: "xcinfo.appleid", account: username)
-                try item.savePassword(password, overwriteExisting: true)
+                try keychain.savePassword(password, Self.service, username)
             } catch {
                 logger.warn("Could not save password to the Keychain.")
             }
         }
 
-        return .init(username: username, password: password)
+        return Credentials(username: username, password: password)
     }
 
     func cleanup() {
         do {
-            let items = try KeychainPasswordItem.passwordItems(forService: "xcinfo.appleid")
-            if !items.isEmpty {
-                for item in items {
-                    try item.deleteItem()
-                }
+            if try keychain.deleteAll(Self.service) > 0 {
                 logger.success("Deleted stored Apple ID credentials from keychain.")
             } else {
                 logger.log("No Apple ID credentials were stored.")
@@ -78,52 +71,6 @@ class CredentialService {
                 .error(
                     "Error deleting Keychain entries. Please open Keychain Access.app and remove items named 'xcinfo.appleid'."
                 )
-        }
-    }
-}
-
-extension CredentialService {
-    var credentialProviding: CredentialProviding {
-        .init(getCredentials: appleIDCredentials, cleanup: cleanup)
-    }
-}
-
-extension Credentials {
-    @available(*, deprecated, message: "Use listXcodes instead")
-    static func appleIDCredentials() -> (username: String, password: String) {
-        if let passwordItem = try? KeychainPasswordItem.passwordItems(forService: "xcinfo.appleid").first {
-            let username = passwordItem.account
-
-            do {
-                let password = try passwordItem.readPassword()
-                return (username, password)
-            } catch {
-                fail(statusCode: 65, errorMessage: "Could not read password from the Keychain.")
-            }
-        } else {
-            print("Apple's Developer Download page requires a login.")
-            print("Please provide your Apple Developer Program account credentials.".bold)
-
-            do {
-                let username = try Shell.ask("Username:")
-                let password = try Shell.ask("Password:", secure: true)
-
-                print("\n")
-                let shouldStoreInKeychain = agree("Do you want to store these credentials in the macOS Keychain?")
-
-                if shouldStoreInKeychain {
-                    do {
-                        let item = KeychainPasswordItem(service: "xcinfo.appleid", account: username)
-                        try item.savePassword(password, overwriteExisting: true)
-                    } catch {
-                        fail(statusCode: Int(EXIT_FAILURE), errorMessage: "Could not save password to the Keychain.")
-                    }
-                }
-
-                return (username, password)
-            } catch {
-                fail(statusCode: Int(EXIT_FAILURE), errorMessage: "Invalid credentials.")
-            }
         }
     }
 }

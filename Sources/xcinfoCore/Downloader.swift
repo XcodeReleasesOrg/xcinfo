@@ -3,9 +3,7 @@
 //  MIT license - see LICENSE.md
 //
 
-import Combine
 import Foundation
-import OlympUs
 import Rainbow
 import XCIFoundation
 
@@ -13,157 +11,146 @@ enum DownloadError: Error {
     case listUpdateError
 }
 
-public struct DownloadProviding {
-    var download: (URL, URL, Bool) async throws -> URL
-    var cleanup: () -> Void
-}
+struct Downloader: Sendable {
+    static let maximumRetries = 3
 
-class Downloader {
-    private var disposeBag = Set<AnyCancellable>()
-    private let unauthorizedURL = URL(string: "https://developer.apple.com/unauthorized/")!
     private let logger: Logger
-    private let olymp: OlympUs
-    private let sessionDelegateProxy: URLSessionDelegateProxy
-    private let cachesDirectory: URL?
+    private let session: URLSession
+    private let cachesDirectory: URL
+    private let clock: any Clock<Duration>
 
-    init(
-        logger: Logger,
-        olymp: OlympUs,
-        sessionDelegateProxy: URLSessionDelegateProxy,
-        cachesDirectory: URL? = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
-    ) {
+    init(logger: Logger, session: URLSession, cachesDirectory: URL, clock: any Clock<Duration> = ContinuousClock()) {
         self.logger = logger
-        self.olymp = olymp
-        self.sessionDelegateProxy = sessionDelegateProxy
+        self.session = session
         self.cachesDirectory = cachesDirectory
+        self.clock = clock
     }
 
-    private static let byteCountFormatter: ByteCountFormatter = {
+    private static func string(fromByteCount measurement: Measurement<UnitInformationStorage>) -> String {
         let formatter = ByteCountFormatter()
         formatter.zeroPadsFractionDigits = true
-        return formatter
-    }()
+        return formatter.string(from: measurement)
+    }
 
-    private static let dateFormatter: DateFormatter = {
+    private static func timestamp() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = DateFormatter.dateFormat(fromTemplate: "jms", options: 0, locale: nil)
-        return formatter
-    }()
+        return formatter.string(from: Date())
+    }
 
-    public func start(url: URL, disableSleep: Bool, resumeData: Data? = nil) -> Future<URL, XCAPIError> {
+    func start(url: URL, disableSleep: Bool, resumeData: Data? = nil) async throws -> URL {
         var progressDisplay = ProgressDisplay(ratio: 0, width: 20)
         let start = Date()
 
-        return Future { promise in
-            let task: URLSessionDownloadTask
-            if let resumeData = resumeData {
-                task = self.olymp.session.downloadTask(withResumeData: resumeData)
-            } else {
-                var request = URLRequest(url: url)
-                request.addValue(
-                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    forHTTPHeaderField: "Accept"
-                )
-                request.addValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-
-                task = self.olymp.session.downloadTask(with: request)
-            }
-
-            let download = FileDownload(
-                task: task,
-                delegateProxy: self.sessionDelegateProxy,
-                logger: self.logger,
-                disableSleep: disableSleep
+        let task: URLSessionDownloadTask
+        if let resumeData {
+            task = session.downloadTask(withResumeData: resumeData)
+        } else {
+            var request = URLRequest(url: url)
+            request.addValue(
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                forHTTPHeaderField: "Accept"
             )
+            request.addValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
 
-            if resumeData == nil {
-                self.logger.verbose("[\(Self.dateFormatter.string(from: Date()))] Starting download")
-            } else {
-                self.logger.verbose("[\(Self.dateFormatter.string(from: Date()))] Resuming download")
-            }
+            task = session.downloadTask(with: request)
+        }
 
-            self.logger.log("Source: \(url)")
-            var hasLoggedTotalSize = false
-            var previouslyDisplayedNonANSIProgress = -1
+        let download = FileDownload(
+            task: task,
+            logger: logger,
+            disableSleep: disableSleep
+        )
 
-            download.objectDidChange
-                .throttle(for: 1, scheduler: RunLoop.main, latest: true)
-                .sink {
-                    switch download.state {
-                    case .downloading:
-                        if !hasLoggedTotalSize {
-                            self.logger.log(
-                                "Source: \(url) (\(Self.byteCountFormatter.string(from: download.totalBytes)))\n",
-                                onSameLine: true
-                            )
-                            hasLoggedTotalSize = true
-                        }
-                        if Rainbow.enabled {
-                            progressDisplay.ratio = download.progress
-                            let logMessage = [
-                                progressDisplay.representation,
-                                "remaining: \(Self.byteCountFormatter.string(from: download.remainingBytes))",
-                                "speed: \(Self.byteCountFormatter.string(from: download.downloadSpeed()))/s"
-                            ].joined(separator: ", ")
-                            self.logger.log(logMessage, onSameLine: true)
-                        } else {
-                            let progress = Int(100 * download.progress)
-                            print(String(format: "%.1f %", 100 * download.progress))
-                            if progress.isMultiple(of: 5), previouslyDisplayedNonANSIProgress != progress {
-                                self.logger.log("Download progress: \(progress) %")
-                                previouslyDisplayedNonANSIProgress = progress
-                            }
-                        }
-                    case .finished:
-                        let downloadTime = Date().timeIntervalSinceReferenceDate - start.timeIntervalSinceReferenceDate
-                        if Rainbow.enabled {
-                            progressDisplay.ratio = 1
-                            let formatter = DateComponentsFormatter()
-                            formatter.unitsStyle = .abbreviated
-                            formatter.allowedUnits = [.hour, .minute, .second]
-                            let logMessage = [
-                                progressDisplay.representation,
-                                "Download time: \(formatter.string(from: downloadTime) ?? "???")"
-                            ].joined(separator: ", ")
-                            self.logger.log(logMessage, onSameLine: true)
-                        } else {
-                            self.logger.log("Download progress: 100 %")
-                        }
+        if resumeData == nil {
+            logger.verbose("[\(Self.timestamp())] Starting download")
+        } else {
+            logger.verbose("[\(Self.timestamp())] Resuming download")
+        }
 
-                        self.sessionDelegateProxy.remove(proxy: download)
+        logger.log("Source: \(url)")
+        var hasLoggedTotalSize = false
+        var previouslyDisplayedNonANSIProgress = -1
+        var progress = DownloadProgress()
+        let clock = ContinuousClock()
+        var lastDisplay: ContinuousClock.Instant?
 
-                        guard let downloadedURL = download.downloadedURL else {
-                            promise(.failure(.couldNotMoveToTemporaryFile))
-                            return
-                        }
-                        promise(.success(downloadedURL))
-                    case .failed:
-                        self.sessionDelegateProxy.remove(proxy: download)
+        for await event in download.events {
+            switch event {
+            case let .progress(bytesWritten, totalBytesWritten, totalBytesExpectedToWrite):
+                progress.update(
+                    bytesWritten: bytesWritten,
+                    totalBytesWritten: totalBytesWritten,
+                    totalBytesExpectedToWrite: totalBytesExpectedToWrite
+                )
+                let now = clock.now
+                if let lastDisplay, lastDisplay.duration(to: now) < .seconds(1) {
+                    continue
+                }
+                lastDisplay = now
 
-                        switch (download.downloadedURL, download.resumeData) {
-                        case let (nil, resumeData?) where download.isCancelled:
-                            self.saveResumeData(resumeData, for: url)
-                            promise(.failure(.downloadInterrupted))
-                        case let (nil, resumeData?):
-                            promise(.failure(.recoverableDownloadError(url: url, resumeData: resumeData)))
-                        case (nil, nil):
-                            promise(.failure(.couldNotMoveToTemporaryFile))
-                        case (.some, _):
-                            promise(.failure(.downloadInterrupted))
-                        }
+                if !hasLoggedTotalSize {
+                    logger.log(
+                        "Source: \(url) (\(Self.string(fromByteCount: progress.totalBytes)))\n",
+                        onSameLine: true
+                    )
+                    hasLoggedTotalSize = true
+                }
+                if Logger.isANSIEnabled {
+                    progressDisplay.ratio = progress.progress
+                    let logMessage = [
+                        progressDisplay.representation,
+                        "remaining: \(Self.string(fromByteCount: progress.remainingBytes))",
+                        "speed: \(Self.string(fromByteCount: progress.downloadSpeed))/s"
+                    ].joined(separator: ", ")
+                    logger.log(logMessage, onSameLine: true)
+                } else {
+                    let percent = Int(100 * progress.progress)
+                    print(String(format: "%.1f %", 100 * progress.progress))
+                    if percent.isMultiple(of: 5), previouslyDisplayedNonANSIProgress != percent {
+                        logger.log("Download progress: \(percent) %")
+                        previouslyDisplayedNonANSIProgress = percent
                     }
                 }
-                .store(in: &self.disposeBag)
+            case let .finished(downloadedURL):
+                let downloadTime = Date().timeIntervalSinceReferenceDate - start.timeIntervalSinceReferenceDate
+                if Logger.isANSIEnabled {
+                    progressDisplay.ratio = 1
+                    let formatter = DateComponentsFormatter()
+                    formatter.unitsStyle = .abbreviated
+                    formatter.allowedUnits = [.hour, .minute, .second]
+                    let logMessage = [
+                        progressDisplay.representation,
+                        "Download time: \(formatter.string(from: downloadTime) ?? "???")"
+                    ].joined(separator: ", ")
+                    logger.log(logMessage, onSameLine: true)
+                } else {
+                    logger.log("Download progress: 100 %")
+                }
+
+                guard let downloadedURL else {
+                    throw XCAPIError.couldNotMoveToTemporaryFile
+                }
+                return downloadedURL
+            case let .rejected(error):
+                throw error
+            case let .failed(resumeData, isCancelled):
+                switch resumeData {
+                case let resumeData? where isCancelled:
+                    saveResumeData(resumeData, for: url)
+                    throw XCAPIError.downloadInterrupted
+                case let resumeData?:
+                    throw XCAPIError.recoverableDownloadError(url: url, resumeData: resumeData)
+                case nil:
+                    throw XCAPIError.couldNotMoveToTemporaryFile
+                }
+            }
         }
+        throw XCAPIError.downloadInterrupted
     }
 
-    public func cacheURL(for url: URL) -> URL? {
-        guard
-            let cache = cachesDirectory?.appendingPathComponent("xcinfo")
-        else {
-            logger.error("Unable to save unfinished download")
-            return nil
-        }
+    func cacheURL(for url: URL) -> URL? {
+        let cache = cachesDirectory.appendingPathComponent("xcinfo")
 
         try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: false, attributes: nil)
 
@@ -185,7 +172,7 @@ class Downloader {
         }
     }
 
-    public func removeCachedResumeData(for url: URL) {
+    func removeCachedResumeData(for url: URL) {
         guard let cacheURL = cacheURL(for: url) else {
             return
         }
@@ -193,58 +180,35 @@ class Downloader {
         try? FileManager.default.removeItem(at: cacheURL)
     }
 
-    public func download(url: URL, destination: URL, disableSleep: Bool) async throws -> URL {
-        try await download(url: url, destination: destination, disableSleep: disableSleep).singleOutput()
-    }
+    func download(url: URL, destination: URL, disableSleep: Bool) async throws -> URL {
+        var resumeData = cacheURL(for: url).flatMap { try? Data(contentsOf: $0) }
 
-    public func download(
-        url: URL,
-        destination: URL,
-        disableSleep: Bool,
-        resumeData: Data? = nil
-    ) -> AnyPublisher<URL, XCAPIError> {
-        let resumeData = resumeData ?? cacheURL(for: url).flatMap { try? Data(contentsOf: $0) }
-
-        return start(url: url, disableSleep: disableSleep, resumeData: resumeData)
-            .catch { error -> AnyPublisher<URL, XCAPIError> in
-                guard case let XCAPIError.recoverableDownloadError(url, resumeData) = error else {
-                    return Fail(error: error).eraseToAnyPublisher()
-                }
-
-                let foo = Just(())
-                    .setFailureType(to: XCAPIError.self)
-                    .delay(for: .seconds(3), scheduler: DispatchQueue.global())
-                    .flatMap { [unowned self] in
-                        download(url: url, destination: destination, disableSleep: disableSleep, resumeData: resumeData)
-                    }
-                    .eraseToAnyPublisher()
-                return foo
+        let tmpURL: URL
+        var retries = 0
+        while true {
+            do {
+                tmpURL = try await start(url: url, disableSleep: disableSleep, resumeData: resumeData)
+                break
+            } catch let XCAPIError.recoverableDownloadError(_, recoveredResumeData) where retries < Self.maximumRetries {
+                retries += 1
+                resumeData = recoveredResumeData
+                try await clock.sleep(for: .seconds(3))
+            } catch let XCAPIError.recoverableDownloadError(_, recoveredResumeData) {
+                saveResumeData(recoveredResumeData, for: url)
+                throw XCAPIError.recoverableDownloadError(url: url, resumeData: recoveredResumeData)
             }
-            .flatMap { tmpURL -> AnyPublisher<URL, XCAPIError> in
-                let destFile = destination.appendingPathComponent(tmpURL.lastPathComponent)
-                do {
-                    try FileManager.default.ensureFolderExists(destination)
-                    if tmpURL != destFile {
-                        try FileManager.default.moveItem(at: tmpURL, to: destFile)
-                    }
-                    return Just(destFile)
-                        .setFailureType(to: XCAPIError.self)
-                        .eraseToAnyPublisher()
-                } catch let error as NSError {
-                    return Fail(error: XCAPIError.couldNotMoveToDestinationFolder(tmpURL, destFile, error))
-                        .eraseToAnyPublisher()
-                }
+        }
+        removeCachedResumeData(for: url)
+
+        let destFile = destination.appendingPathComponent(tmpURL.lastPathComponent)
+        do {
+            try FileManager.default.ensureFolderExists(destination)
+            if tmpURL != destFile {
+                try FileManager.default.moveItem(at: tmpURL, to: destFile)
             }
-            .eraseToAnyPublisher()
-    }
-
-    public func cleanup() {
-        olymp.cleanup()
-    }
-}
-
-extension Downloader {
-    var downloadProviding: DownloadProviding {
-        .init(download: download, cleanup: cleanup)
+            return destFile
+        } catch let error as NSError {
+            throw XCAPIError.couldNotMoveToDestinationFolder(tmpURL, destFile, error)
+        }
     }
 }

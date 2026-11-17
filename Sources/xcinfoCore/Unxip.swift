@@ -9,119 +9,62 @@ import Foundation
 import libunxip
 import XCIFoundation
 
-struct Unxip {
+struct Unxip: Sendable {
     let input: URL
     let output: URL
     let logger: Logger
 
-    private let statistics: Statistics
-
-    init(input: URL, output: URL, logger: Logger) {
-        self.input = input
-        self.output = output
-        self.logger = logger
-        self.statistics = Statistics()
-    }
-
-    func extract(progress: ((Double) -> Void)?) async throws {
-        await statistics.setProgressHandler(progress)
+    func extract(progress: (@Sendable (Double) -> Void)?) async throws {
         let handle = try FileHandle(forReadingFrom: input)
-        try handle.seekToEnd()
-        try await statistics.setTotal(Int64(handle.offset()))
+        defer { try? handle.close() }
+        let total = try handle.seekToEnd()
         try handle.seek(toOffset: 0)
 
-        let fileManager = FileManager.default
-        let currentDir = fileManager.currentDirectoryPath
-
-        guard fileManager.changeCurrentDirectoryPath(output.path()) else {
+        let outputDescriptor = open(output.path, O_RDONLY | O_DIRECTORY)
+        guard outputDescriptor >= 0 else {
             throw CoreError.invalidExtractionOutputURL(output)
         }
+        defer { close(outputDescriptor) }
 
-        let file = AsyncThrowingStream(erasing: DataReader.data(readingFrom: handle.fileDescriptor))
-        let (data, input) = file.lockstepSplit()
-
-        Task {
-            for try await data in data {
-                await statistics.noteRead(size: data.count)
-            }
-        }
-
+        let chunks = FileChunks(handle: handle, total: total, progress: progress)
         for try await file in libunxip.Unxip.makeStream(
-            from: .xip(wrapping: input),
-            to: .disk,
-            input: DataReader(data: input),
+            from: .xip(),
+            to: .disk(),
+            input: DataReader(data: chunks),
             nil,
             nil,
-            .init(compress: true, dryRun: false)
+            .init(compress: true, dryRun: false, output: outputDescriptor)
         ) {
             logger.verbose("Extracted: \(file.name)")
         }
-
-        fileManager.changeCurrentDirectoryPath(currentDir)
     }
 }
 
-private actor Statistics {
-    // There seems to be a compiler bug where this needs to be outside of init
-    static func start() -> ContinuousClock.Instant? {
-        ContinuousClock.now
-    }
+struct FileChunks: AsyncSequence, Sendable {
+    typealias Element = [UInt8]
 
-    var start: ContinuousClock.Instant?
-    var files = 0
-    var directories = 0
-    var symlinks = 0
-    var hardlinks = 0
-    var read: Int64 = 0
-    var total: Int64?
-    var identifiers = Set<FileIdentifier>()
-    var progressHandler: ((Double) -> Void)?
+    let handle: FileHandle
+    let total: UInt64
+    let progress: (@Sendable (Double) -> Void)?
+    var chunkSize = Int(PIPE_SIZE) * 16
 
-    let source: DispatchSourceSignal
+    struct AsyncIterator: AsyncIteratorProtocol {
+        let chunks: FileChunks
+        var read: UInt64 = 0
 
-    init() {
-        start = Self.start()
-
-        let watchedSignal: CInt
-        watchedSignal = SIGINFO
-
-        let source = DispatchSource.makeSignalSource(signal: watchedSignal)
-        self.source = source
-        source.resume()
-    }
-
-    func setProgressHandler(_ handler: ((Double) -> Void)?) {
-        progressHandler = handler
-    }
-
-    func noteRead(size bytes: Int) {
-        read += Int64(bytes)
-        if let total {
-            progressHandler?(Double(read) / Double(total))
+        mutating func next() async throws -> [UInt8]? {
+            guard let data = try chunks.handle.read(upToCount: chunks.chunkSize), !data.isEmpty else {
+                return nil
+            }
+            read += UInt64(data.count)
+            if chunks.total > 0 {
+                chunks.progress?(Double(read) / Double(chunks.total))
+            }
+            return [UInt8](data)
         }
     }
 
-    func setTotal(_ total: Int64) {
-        self.total = total
-    }
-}
-
-private struct FileIdentifier: Hashable {
-    let dev: Int
-    let ino: Int
-}
-
-private extension File {
-    var identifier: FileIdentifier {
-        FileIdentifier(dev: dev, ino: ino)
-    }
-}
-
-extension AsyncThrowingStream where Failure == Error {
-    init<S: AsyncSequence>(erasing sequence: S) where S.Element == Element {
-        var iterator = sequence.makeAsyncIterator()
-        self.init {
-            try await iterator.next()
-        }
+    func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(chunks: self)
     }
 }

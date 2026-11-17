@@ -3,12 +3,12 @@
 //  MIT license - see LICENSE.md
 //
 
-import AppKit
+import Dependencies
 import Foundation
-import Prompt
-import XCModel
+import XCIFoundation
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 
-public enum CoreError: LocalizedError {
+public enum CoreError: LocalizedError, Sendable {
     case authenticationFailed
     case downloadFailed(String)
     case versionNotFound(XcodeVersion)
@@ -50,13 +50,13 @@ public enum CoreError: LocalizedError {
     }
 }
 
-public class Core {
-    public enum ListFilter: CaseIterable {
+public struct Core: Sendable {
+    public enum ListFilter: CaseIterable, Sendable {
         case onlyGM
         case onlyReleases
     }
 
-    public struct VersionOptions {
+    public struct VersionOptions: Sendable {
         public init(version: XcodeVersion) {
             self.version = version
         }
@@ -64,7 +64,7 @@ public class Core {
         public var version: XcodeVersion
     }
 
-    public struct DownloadOptions {
+    public struct DownloadOptions: Sendable {
         public init(destination: URL, disableSleep: Bool) {
             self.destination = destination
             self.disableSleep = disableSleep
@@ -74,7 +74,7 @@ public class Core {
         public var disableSleep: Bool
     }
 
-    public struct ExtractionOptions {
+    public struct ExtractionOptions: Sendable {
         public init(destination: URL, useLegacyUnxip: Bool = false) {
             self.destination = destination
             self.useLegacyUnxip = useLegacyUnxip
@@ -84,7 +84,7 @@ public class Core {
         public var useLegacyUnxip: Bool
     }
 
-    public struct InstallationOptions {
+    public struct InstallationOptions: Sendable {
         public init(
             version: XcodeVersion,
             xipFile: URL?,
@@ -112,43 +112,50 @@ public class Core {
         public var shouldPreserveXIP = true
     }
 
-    private let environment: Environment
+    @Dependency(\.logger) private var logger
+    @Dependency(\.xcodeReleases) private var xcodeReleases
+    @Dependency(\.credentials) private var credentials
+    @Dependency(\.authentication) private var authentication
+    @Dependency(\.downloads) private var downloads
+    @Dependency(\.extraction) private var extraction
+    @Dependency(\.processes) private var processes
+    @Dependency(\.prompt) private var prompt
+    @Dependency(\.fileSystem) private var fileSystem
+    @Dependency(\.workspace) private var workspace
 
-    public init(environment: Environment) {
-        self.environment = environment
-    }
+    public init() {}
 
-    public func info(version: XcodeVersion, shouldUpdate _: Bool) async throws {
-        let xcode = try await identifyVersion(version, updateVersionList: true)
+    public func info(version: XcodeVersion, shouldUpdate: Bool) async throws {
+        let xcode = try await identifyVersion(version, updateVersionList: shouldUpdate)
 
-        environment.logger.beginSection("Version info")
-        environment.logger.log(xcode.description)
+        logger.beginSection("Version info")
+        logger.log(xcode.description)
 
         let locale = Locale(identifier: "en_US_POSIX")
 
         var releaseDateString = "Release date: \(xcode.releaseDate.formatted(Date.FormatStyle().year().month(.wide).day().locale(locale)))"
         releaseDateString += " (\(xcode.releaseDate.formatted(.relative(presentation: .named, unitsStyle: .wide).locale(locale))))"
 
-        environment.logger.log(releaseDateString)
-        environment.logger.log("Requires macOS \(xcode.requires)")
+        logger.log(releaseDateString)
+        logger.log("Requires macOS \(xcode.requires)")
 
         if let sdks = xcode.sdks?.keyed() {
-            environment.logger.beginParagraph("SDKs")
+            logger.beginParagraph("SDKs")
             let longestSDKName = sdks.map { "\($0.key) SDK:" }.max(by: { $1.count > $0.count })!.count
             for (name, versions) in sdks {
                 let sdkName = "\(name) SDK:"
                 let version = versions[0]
-                environment.logger.log("\(sdkName.paddedWithSpaces(to: longestSDKName)) \(version.build ?? "")")
+                logger.log("\(sdkName.paddedWithSpaces(to: longestSDKName)) \(version.build ?? "")")
             }
         }
         if let compilers = xcode.compilers?.keyed() {
-            environment.logger.beginParagraph("Compilers")
+            logger.beginParagraph("Compilers")
             let longestName = compilers.map { "\($0.key) \($0.value[0].number ?? ""):" }
                 .max(by: { $1.count > $0.count })!.count
             for (name, versions) in compilers {
                 let version = versions[0]
                 let compilerName = "\(name) \(version.number ?? ""):"
-                environment.logger.log("\(compilerName.paddedWithSpaces(to: longestName)) \(version.build ?? "")")
+                logger.log("\(compilerName.paddedWithSpaces(to: longestName)) \(version.build ?? "")")
             }
         }
 
@@ -156,37 +163,34 @@ public class Core {
         let notesLink = xcode.links?.notes?.url.absoluteString
         guard ![downloadLink, notesLink].compactMap({ $0 }).isEmpty else { return }
 
-        environment.logger.beginParagraph("Links")
+        logger.beginParagraph("Links")
         downloadLink.map {
-            environment.logger.log("Download:      " + $0)
+            logger.log("Download:      " + $0)
         }
         notesLink.map {
-            environment.logger.log("Release Notes: " + $0)
+            logger.log("Release Notes: " + $0)
         }
     }
 
     public func installedXcodes(shouldUpdate: Bool) async throws {
         let knownXcodes: [Xcode] = try await list(shouldUpdate: shouldUpdate)
-        let task = Task {
-            installedXcodes(knownVersions: knownXcodes)
+        let xcodes = try await installedXcodes(knownVersions: knownXcodes)
+        guard let longestXcodeNameLength = xcodes.map(\.xcode.description.count).max() else {
+            return
         }
-
-        let xcodes = await task.value
-
-        let longestXcodeNameLength = xcodes.map { $0.xcode.description }.max(by: { $1.count > $0.count })!.count
         xcodes.forEach {
             let displayVersion = $0.xcode.displayVersion
             let attributedDisplayName = "\(displayVersion) (\($0.xcode.version.build ?? ""))"
 
             let attributedName = attributedDisplayName.cyan
             let width = longestXcodeNameLength + attributedName.count - attributedName.raw.count
-            environment.logger.log("\(attributedName.paddedWithSpaces(to: width)) – \($0.url.path.cyan)")
+            logger.log("\(attributedName.paddedWithSpaces(to: width)) – \($0.url.path.cyan)")
         }
     }
 
     public func list(shouldUpdate: Bool, showAllVersions: Bool, filter: ListFilter?) async throws {
         let xcodes: [Xcode] = try await list(shouldUpdate: shouldUpdate)
-        printXcodeList(xcodes, showAllVersions, filter)
+        try await printXcodeList(xcodes, showAllVersions, filter)
     }
 
     @discardableResult
@@ -201,22 +205,22 @@ public class Core {
             throw CoreError.invalidDownloadURL
         }
 
-        environment.logger.beginSection("Sign in to Apple Developer")
-        let credentials = try environment.credentialProviding.getCredentials()
+        logger.beginSection("Sign in to Apple Developer")
+        let appleID = try credentials.credentials()
         do {
-            try await environment.authenticationProviding.authenticate(credentials)
+            try await authentication.authenticate(appleID)
         } catch {
             throw CoreError.authenticationFailed
         }
 
-        environment.logger.beginSection("Downloading")
+        logger.beginSection("Downloading")
         do {
-            let downloadURL = try await environment.downloadProviding.download(
+            let downloadURL = try await downloads.download(
                 url,
                 options.destination,
                 options.disableSleep
             )
-            environment.logger.log("Download to \(options.destination.path) complete.")
+            logger.log("Download to \(options.destination.path) complete.")
             return (xcode, downloadURL)
         } catch let error as XCAPIError {
             throw CoreError.downloadFailed(error.description)
@@ -245,7 +249,7 @@ public class Core {
             xcode: downloadResult.xcode
         )
 
-        if !options.shouldPreserveXIP {
+        if !options.shouldPreserveXIP, options.xipFile == nil {
             try deleteDownload(at: downloadResult.url)
         }
 
@@ -262,7 +266,7 @@ public class Core {
             throw CoreError.uninstallationFailed("No Xcode releases found.")
         }
 
-        let xcodes: [XcodeApplication] = findInstalledXcodes(for: version, knownVersions: knownVersions).sorted(by: >)
+        let xcodes: [XcodeApplication] = try await findInstalledXcodes(for: version, knownVersions: knownVersions).sorted(by: >)
 
         if xcodes.isEmpty {
             throw CoreError.uninstallationFailed("No matching Xcode version found.")
@@ -271,7 +275,7 @@ public class Core {
             if xcodes.count > 1 {
                 let listFormatter = ListFormatter()
                 listFormatter.locale = Locale(identifier: "en_US")
-                environment.logger.verbose("Found: \(listFormatter.string(from: xcodes.map { $0.xcode.description })!)")
+                logger.verbose("Found: \(listFormatter.string(from: xcodes.map { $0.xcode.description })!)")
 
                 let longestXcodeNameLength = xcodes.map { $0.xcode.attributedDisplayName }
                     .max(by: { $1.count > $0.count })!.count
@@ -280,23 +284,23 @@ public class Core {
                     let width = longestXcodeNameLength + attributedName.count - attributedName.raw.count
                     return "\(attributedName.paddedWithSpaces(to: width)) – \(xcodeApp.url.path.cyan)"
                 }
-                selected = xcodes[environment.prompt.choose("Please choose the version you want to uninstall: ", choices)]
+                selected = xcodes[prompt.choose("Please choose the version you want to uninstall: ", choices)]
             } else {
                 selected = xcodes[0]
             }
 
             let displayName = selected.xcode.attributedDisplayName
-            if environment.prompt.agree("Are you sure you want to uninstall Xcode \(displayName)?") {
+            if prompt.agree("Are you sure you want to uninstall Xcode \(displayName)?") {
                 do {
-                    environment.logger
+                    logger
                         .verbose("Uninstalling Xcode \(selected.xcode.description) from \(selected.url.path) ...")
                     try FileManager.default.removeItem(at: selected.url)
-                    environment.logger.success("\(selected.xcode.description) uninstalled!")
+                    logger.success("\(selected.xcode.description) uninstalled!")
                 } catch {
                     throw CoreError.uninstallationFailed("Uninstallation failed. Error: \(error.localizedDescription)")
                 }
             } else {
-                environment.logger.log("kthxbye")
+                logger.log("kthxbye")
             }
         }
     }
@@ -307,7 +311,7 @@ public class Core {
         options: ExtractionOptions,
         xcode: Xcode? = nil
     ) async throws -> XcodeApplication? {
-        environment.logger.beginSection("Extracting")
+        logger.beginSection("Extracting")
 
         guard source.pathExtension.lowercased() == "xip" else {
             throw CoreError.unsupportedFile(source.pathExtension)
@@ -316,21 +320,20 @@ public class Core {
         let start = Date()
         defer {
             let end = Date()
-            environment.logger
+            logger
                 .verbose(
                     "Extraction time: \(Int((end.timeIntervalSinceReferenceDate - start.timeIntervalSinceReferenceDate).rounded(.up))) seconds."
                 )
         }
 
         do {
-            let destinationURL = try await environment.extractionProviding.extract(
+            let destinationURL = try await extraction.extract(
                 source,
                 options.destination,
-                xcode?.filename(in: environment.applicationsDirectory),
-                options.useLegacyUnxip,
-                environment.logger
+                xcode?.filename(in: fileSystem.applicationsDirectory()),
+                options.useLegacyUnxip
             )
-            environment.logger.log("XIP successfully extracted to \(destinationURL.path)")
+            logger.log("XIP successfully extracted to \(destinationURL.path)")
             guard let xcode = xcode else { return nil }
             return .init(url: destinationURL, xcode: xcode)
         } catch {
@@ -339,19 +342,19 @@ public class Core {
     }
 
     public func cleanup() {
-        environment.logger.beginSection("Cleanup")
-        environment.logger.log("")
-        environment.credentialProviding.cleanup()
-        environment.downloadProviding.cleanup()
-        environment.api.removeCookies()
+        logger.beginSection("Cleanup")
+        logger.log("")
+        credentials.removeAll()
+        authentication.cleanup()
+        xcodeReleases.removeCookies()
 
-        environment.logger.log("Removed stored cookies.")
+        logger.log("Removed stored cookies.")
     }
 }
 
 extension Core {
     private func identifyVersion(_ version: XcodeVersion, updateVersionList: Bool) async throws -> Xcode {
-        environment.logger.beginSection("Identifying")
+        logger.beginSection("Identifying")
         let availableXcodes = try await findXcodes(for: version, shouldUpdate: updateVersionList)
 
         guard
@@ -367,116 +370,116 @@ extension Core {
     }
 
     private func installXcode(_ xcode: XcodeApplication, options: InstallationOptions) async throws {
-        environment.logger.beginSection("Installing")
+        logger.beginSection("Installing")
 
-        try verify(xcode)
+        try await verify(xcode)
 
-        let password = try getPassword()
+        let password = try await getPassword()
 
-        try enableDeveloperMode(password: password)
-        try approveLicense(password: password, url: xcode.url)
-        try installComponents(password: password, url: xcode.url)
+        try await enableDeveloperMode(password: password)
+        try await approveLicense(password: password, url: xcode.url)
+        try await installComponents(password: password, url: xcode.url)
 
         if !options.skipSymlinkCreation {
             try await createSymbolicLink(to: xcode.url)
         }
 
         if !options.skipXcodeSelection {
-            try selectXcode(at: xcode.url, password: password)
+            try await selectXcode(at: xcode.url, password: password)
         }
 
-        environment.logger.log("Installed Xcode to \(xcode.url.path)")
-        environment.revealInFinder(xcode.url)
+        logger.log("Installed Xcode to \(xcode.url.path)")
+        await workspace.revealInFinder(xcode.url)
     }
 
-    private func enableDeveloperMode(password: String) throws {
-        environment.logger.log("Enabling Developer Mode...")
+    private func enableDeveloperMode(password: String) async throws {
+        logger.log("Enabling Developer Mode...")
 
-        let result1 = environment.shell.executePrivileged("/usr/sbin/DevToolsSecurity", password, ["-enable"]).exitStatus
+        let result1 = try await processes.runPrivileged("/usr/sbin/DevToolsSecurity", password, ["-enable"]).exitStatus
 
         guard result1 == EXIT_SUCCESS else {
-            environment.logger.log("Enabling Developer Mode \("✗".red)", onSameLine: true)
+            logger.log("Enabling Developer Mode \("✗".red)", onSameLine: true)
             throw CoreError.installationFailed
         }
 
-        let result2 = environment.shell.executePrivileged("/usr/sbin/dseditgroup", password, "-o edit -t group -a staff _developer".components(separatedBy: " ")).exitStatus
+        let result2 = try await processes.runPrivileged("/usr/sbin/dseditgroup", password, "-o edit -t group -a staff _developer".components(separatedBy: " ")).exitStatus
 
         guard result2 == EXIT_SUCCESS else {
-            environment.logger.log("Enabling Developer Mode \("✗".red)", onSameLine: true)
+            logger.log("Enabling Developer Mode \("✗".red)", onSameLine: true)
             throw CoreError.installationFailed
         }
 
-        environment.logger.log("Enabling Developer Mode \("✓".cyan)", onSameLine: true)
+        logger.log("Enabling Developer Mode \("✓".cyan)", onSameLine: true)
     }
 
-    private func approveLicense(password: String, url: URL) throws {
-        environment.logger.log("Approving License...")
-        let result = environment.shell.executePrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-license", "accept"]).exitStatus
+    private func approveLicense(password: String, url: URL) async throws {
+        logger.log("Approving License...")
+        let result = try await processes.runPrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-license", "accept"]).exitStatus
 
         guard result == EXIT_SUCCESS else {
-            environment.logger.log("Approving License \("✗".red)", onSameLine: true)
+            logger.log("Approving License \("✗".red)", onSameLine: true)
             throw CoreError.installationFailed
         }
 
-        environment.logger.log("Approving License \("✓".cyan)", onSameLine: true)
+        logger.log("Approving License \("✓".cyan)", onSameLine: true)
     }
 
-    private func installComponents(password: String, url: URL) throws {
-        environment.logger.log("Install additional components...")
-        let result = environment.shell.executePrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-runFirstLaunch"]).exitStatus
+    private func installComponents(password: String, url: URL) async throws {
+        logger.log("Install additional components...")
+        let result = try await processes.runPrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-runFirstLaunch"]).exitStatus
 
         guard result == EXIT_SUCCESS else {
-            environment.logger.log("Install additional components \("✗".red)", onSameLine: true)
+            logger.log("Install additional components \("✗".red)", onSameLine: true)
             throw CoreError.installationFailed
         }
 
-        environment.logger.log("Install additional components \("✓".cyan)", onSameLine: true)
+        logger.log("Install additional components \("✓".cyan)", onSameLine: true)
     }
 
     private func createSymbolicLink(to destination: URL) async throws {
-        let symlinkURL = environment.applicationsDirectory.appendingPathComponent("Xcode.app")
+        let symlinkURL = fileSystem.applicationsDirectory().appendingPathComponent("Xcode.app")
         let fileManager = FileManager.default
 
         if fileManager.isSymbolicLink(atPath: symlinkURL.path) {
-            environment.logger.verbose("Symbolic link at \(symlinkURL.path) found. Removing it...")
+            logger.verbose("Symbolic link at \(symlinkURL.path) found. Removing it...")
             try? fileManager.removeItem(at: symlinkURL)
         } else if fileManager.fileExists(atPath: symlinkURL.path) {
-            environment.logger.verbose("\(symlinkURL.path) already exists. Renaming it...")
+            logger.verbose("\(symlinkURL.path) already exists. Renaming it...")
 
             let knownXcodes = try await list(shouldUpdate: false)
-            let installed = installedXcodes(knownVersions: knownXcodes)
+            let installed = try await installedXcodes(knownVersions: knownXcodes)
 
             if let xcodeApp = installed.first(where: { $0.url == symlinkURL }) {
-                let filename = xcodeApp.xcode.filename(in: environment.applicationsDirectory)
-                environment.logger.verbose(
-                    "\(symlinkURL.path) already exists. Moving it to \(environment.applicationsDirectory.path)/\(filename).",
+                let filename = xcodeApp.xcode.filename(in: fileSystem.applicationsDirectory())
+                logger.verbose(
+                    "\(symlinkURL.path) already exists. Moving it to \(fileSystem.applicationsDirectory().path)/\(filename).",
                     onSameLine: true
                 )
-                let destination = environment.applicationsDirectory.appendingPathComponent(filename)
+                let destination = fileSystem.applicationsDirectory().appendingPathComponent(filename)
                 try? fileManager.moveItem(at: symlinkURL, to: destination)
             }
         }
 
-        environment.logger.log("Creating symbolic link at \(symlinkURL.path).")
+        logger.log("Creating symbolic link at \(symlinkURL.path).")
         try fileManager.createSymbolicLink(at: symlinkURL, withDestinationURL: destination)
-        environment.logger.log("Creating symbolic link at \(symlinkURL.path). \("✓".cyan)", onSameLine: true)
+        logger.log("Creating symbolic link at \(symlinkURL.path). \("✓".cyan)", onSameLine: true)
     }
 
-    func selectXcode(at url: URL, password: String) throws {
-        environment.logger.log("Selecting Xcode...")
-        let result = environment.shell.executePrivileged("xcode-select", password, ["-s", url.path])
+    func selectXcode(at url: URL, password: String) async throws {
+        logger.log("Selecting Xcode...")
+        let result = try await processes.runPrivileged("xcode-select", password, ["-s", url.path])
             .exitStatus
 
         guard result == EXIT_SUCCESS else {
-            environment.logger.log("Selecting Xcode \("✗".red)", onSameLine: true)
+            logger.log("Selecting Xcode \("✗".red)", onSameLine: true)
             throw CoreError.installationFailed
         }
 
-        environment.logger.log("Selecting Xcode \("✓".cyan)", onSameLine: true)
+        logger.log("Selecting Xcode \("✓".cyan)", onSameLine: true)
     }
 
-    private func getPassword() throws -> String {
-        environment.logger.log("XCInfo needs super user privileges in order to proceed.")
+    private func getPassword() async throws -> String {
+        logger.log("XCInfo needs super user privileges in order to proceed.")
 
         var passwordAttempts = 0
         let maxPasswordAttempts = 3
@@ -491,42 +494,42 @@ extension Core {
                 }
             }()
 
-            func getPwd(prompt: String) -> String? {
-                let password = environment.prompt.readSecret(prompt)
-                let sudoExitStatus = environment.shell.executePrivileged("ls", password, []).exitStatus
+            func getPwd(prompt: String) async throws -> String? {
+                let password = self.prompt.readSecret(prompt)
+                let sudoExitStatus = try await processes.runPrivileged("ls", password, []).exitStatus
                 return sudoExitStatus == EXIT_SUCCESS ? password : nil
             }
-            possiblePassword = getPwd(prompt: prompt)
+            possiblePassword = try await getPwd(prompt: prompt)
         } while
             possiblePassword == nil && passwordAttempts < maxPasswordAttempts
 
         guard let password = possiblePassword else {
-            environment.logger.verbose("3rd incorrect password attempt. Terminating...")
+            logger.verbose("3rd incorrect password attempt. Terminating...")
             throw CoreError.incorrectSuperUserPassword
         }
         return password
     }
 
-    private func verify(_ app: XcodeApplication) throws {
-        environment.logger.log("Verifying Xcode...")
-        var exitStatus = environment.shell.execute(
+    private func verify(_ app: XcodeApplication) async throws {
+        logger.log("Verifying Xcode...")
+        var exitStatus = try await processes.run(
             "/usr/sbin/spctl",
             ["--assess", "--verbose", "--type", "execute", app.url.path]).exitStatus
         guard exitStatus == EXIT_SUCCESS else {
             throw CoreError.gatekeeperVerificationFailed(app.url)
         }
 
-        exitStatus = environment.shell.execute("/usr/bin/codesign", ["--verify", "--verbose", app.url.path]).exitStatus
+        exitStatus = try await processes.run("/usr/bin/codesign", ["--verify", "--verbose", app.url.path]).exitStatus
 
         guard exitStatus == EXIT_SUCCESS else {
             throw CoreError.codesignVerificationFailed(app.url)
         }
 
-        environment.logger.log("Verifying Xcode \("✓".cyan)", onSameLine: true)
+        logger.log("Verifying Xcode \("✓".cyan)", onSameLine: true)
     }
 
     private func deleteDownload(at url: URL) throws {
-        environment.logger.log("Deleting downloaded Xcode archive...")
+        logger.log("Deleting downloaded Xcode archive...")
         try FileManager.default.removeItem(at: url)
     }
 
@@ -552,8 +555,8 @@ extension Core {
         }
     }
 
-    private func findInstalledXcodes(for version: String?, knownVersions: [Xcode]) -> [XcodeApplication] {
-        var xcodesApplications = installedXcodes(knownVersions: knownVersions)
+    private func findInstalledXcodes(for version: String?, knownVersions: [Xcode]) async throws -> [XcodeApplication] {
+        var xcodesApplications = try await installedXcodes(knownVersions: knownVersions)
         if let version = version {
             let (fullVersion, betaVersion) = extractVersionParts(from: version)
             xcodesApplications = xcodesApplications.filter {
@@ -584,13 +587,13 @@ extension Core {
         case 0:
             return nil
         case 1:
-            environment.logger.log("Found matching Xcode \(xcodes[0].attributedDisplayName).")
+            logger.log("Found matching Xcode \(xcodes[0].attributedDisplayName).")
             return xcodes.first
         default:
-            environment.logger
+            logger
                 .log("Found multiple possibilities for the requested version '\(version.description.cyan)'.")
 
-            let index = environment.prompt.choose(prompt, xcodes.map(\.attributedDisplayName))
+            let index = self.prompt.choose(prompt, xcodes.map(\.attributedDisplayName))
             return xcodes[index]
         }
     }
@@ -599,7 +602,7 @@ extension Core {
         let xcodes: [Xcode]
 
         if shouldUpdate {
-            xcodes = try await environment.api.listXcodes()
+            xcodes = try await xcodeReleases.listXcodes()
             try await cache(xcodes)
         } else {
             xcodes = try await cachedXcodes()
@@ -607,11 +610,11 @@ extension Core {
         return xcodes
     }
 
-    private func installedXcodes(knownVersions: [Xcode]) -> [XcodeApplication] {
+    private func installedXcodes(knownVersions: [Xcode]) async throws -> [XcodeApplication] {
         guard !knownVersions.isEmpty else {
             return []
         }
-        let result = environment.shell.execute("mdfind", ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"])
+        let result = try await processes.run("mdfind", ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"])
         let paths = result.stdout.split(separator: "\n")
 
         return paths.compactMap { path -> XcodeApplication? in
@@ -628,11 +631,7 @@ extension Core {
         }.sorted(by: >)
     }
 
-    private func printXcodeList(_ xcodes: [Xcode], _ showAllVersions: Bool, _ filter: ListFilter?) {
-        guard !xcodes.isEmpty else {
-            environment.logger.log("Empty result list".red)
-            return
-        }
+    private func printXcodeList(_ xcodes: [Xcode], _ showAllVersions: Bool, _ filter: ListFilter?) async throws {
 
         let versions: [Xcode] = {
             switch filter {
@@ -645,7 +644,11 @@ extension Core {
             }
         }()
 
-        let columnWidth = versions.map { $0.description }.max(by: { $1.count > $0.count })!.count + 12
+        guard let longestDescription = versions.map(\.description.count).max() else {
+            logger.log("Empty result list".red)
+            return
+        }
+        let columnWidth = longestDescription + 12
         let installableVersions = versions.filter {
             guard let installableOsVersion = OperatingSystemVersion(string: $0.requires) else { return false }
             return $0.links?.download?.url != nil &&
@@ -667,10 +670,10 @@ extension Core {
 
         printXcodeVersionList(xcodeVersions: listedVersions.map { $0.attributedDisplayName }, columnWidth: columnWidth)
 
-        let installedVersions = installedXcodes(knownVersions: versions).map { $0.xcode }
+        let installedVersions = try await installedXcodes(knownVersions: versions).map { $0.xcode }
 
         if !installedVersions.isEmpty {
-            environment.logger.log("\nAlready installed:")
+            logger.log("\nAlready installed:")
 
             printXcodeVersionList(
                 xcodeVersions: installedVersions.sorted(by: >).map { $0.attributedDisplayName },
@@ -680,7 +683,7 @@ extension Core {
 
         let notInstallableVersions = allVersions.subtracting(installableVersions)
         if !notInstallableVersions.isEmpty {
-            environment.logger.log("\nNot installable:")
+            logger.log("\nNot installable:")
 
             printXcodeVersionList(
                 xcodeVersions: notInstallableVersions.sorted(by: >).map { $0.description },
@@ -706,33 +709,25 @@ extension Core {
                     strings.append(xcversion.paddedWithSpaces(to: width))
                 }
 
-                environment.logger.log(strings.joined())
+                logger.log(strings.joined())
             }
         } else {
-            environment.logger.log(xcodeVersions.joined(separator: "\n"))
+            logger.log(xcodeVersions.joined(separator: "\n"))
         }
     }
 }
 
 extension Core {
-    private var cacheFile: URL { environment.cachesDirectory.appendingPathComponent(.xcodesCacheFile) }
+    private var cacheFile: URL { fileSystem.cachesDirectory().appendingPathComponent(.xcodesCacheFile) }
 
     private func cache(_ xcodes: [Xcode]) async throws {
-        let task = Task {
-            let data = try JSONEncoder().encode(xcodes)
-            try data.write(to: cacheFile, options: .atomic)
-        }
-
-        try await task.value
+        let data = try JSONEncoder().encode(xcodes)
+        try data.write(to: cacheFile, options: .atomic)
     }
 
     private func cachedXcodes() async throws -> [Xcode] {
-        let task = Task<[Xcode], Error> {
-            let data = try Data(contentsOf: cacheFile)
-            return try JSONDecoder().decode([Xcode].self, from: data)
-        }
-        let xcodes = try await task.value
-        return xcodes
+        let data = try Data(contentsOf: cacheFile)
+        return try JSONDecoder().decode([Xcode].self, from: data)
     }
 }
 
@@ -803,11 +798,10 @@ extension Xcode {
 
             if let pPatch = p.patch, let vPatch = versionParts.patch {
                 if pPatch != vPatch { return false }
-
-                if let pType = p.type, let vType = versionParts.type {
-                    if pType != vType { return false }
-                }
             }
+        }
+        if let vType = versionParts.type {
+            guard let pType = p.type, pType.matches(vType) else { return false }
         }
         return true
     }

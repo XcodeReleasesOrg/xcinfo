@@ -3,13 +3,11 @@
 //  MIT license - see LICENSE.md
 //
 
-import Combine
 import Foundation
-import Rainbow
 import XCIFoundation
 import XCUnxip
 
-class Extractor {
+struct Extractor: Sendable {
     struct ExtractionError: LocalizedError {
         var errorDescription: String?
 
@@ -18,59 +16,65 @@ class Extractor {
         }
     }
 
-    enum State {
-        case pending
-        case extracting
-        case finished
-        case failed
-    }
-
     let source: URL
     let destination: URL
     let appFilename: String?
-    let objectDidChange = PassthroughSubject<Void, Never>()
 
-    private var state: State = .pending { didSet { objectDidChange.send() } }
-    private var progress: Double = 0 { didSet { objectDidChange.send() } }
-
+    private let temporaryDirectory: URL
     private let logger: Logger
-    private var container: PKSignedContainer!
 
-    init(forReadingFromContainerAt url: URL, destination: URL, appFilename: String?, logger: Logger) {
+    init(
+        forReadingFromContainerAt url: URL,
+        destination: URL,
+        appFilename: String?,
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        logger: Logger
+    ) {
         source = url
         self.destination = destination
         self.appFilename = appFilename
+        self.temporaryDirectory = temporaryDirectory
         self.logger = logger
     }
 
-    func extract() async throws -> URL {
-        try await start().singleOutput()
-    }
-
     func extractExperimental() async throws -> URL {
-        let target = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let target = temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.ensureFolderExists(target)
+        defer { try? FileManager.default.removeItem(at: target) }
 
-        var previouslyDisplayedNonANSIProgress = -1
-        var progressDisplay = ProgressDisplay(ratio: 0, width: 20)
         logger.log("")
         logger.verbose("Extracting xip to \(target.path)", onSameLine: true)
 
-        try await Unxip(input: source, output: target, logger: logger)
-            .extract { [input = source.lastPathComponent, logger] progress in
-                progressDisplay.ratio = progress
-                if Rainbow.enabled && !logger.isVerbose {
-                    logger.log("\(progressDisplay.representation)", onSameLine: true)
-                } else {
-                    let percent = Int(progress * 100)
-                    if percent.isMultiple(of: 5), previouslyDisplayedNonANSIProgress != Int(progress) {
-                        if progress < 1 {
-                            logger.log("Expanding items from \(input): \(percent) %")
-                        }
-                        previouslyDisplayedNonANSIProgress = percent
+        let (progressUpdates, continuation) = AsyncStream.makeStream(
+            of: Double.self,
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        async let extraction: Void = {
+            defer { continuation.finish() }
+            try await Unxip(input: source, output: target, logger: logger)
+                .extract { progress in
+                    continuation.yield(progress)
+                }
+        }()
+
+        let input = source.lastPathComponent
+        var previouslyDisplayedNonANSIProgress = -1
+        var progressDisplay = ProgressDisplay(ratio: 0, width: 20)
+        for await progress in progressUpdates {
+            progressDisplay.ratio = progress
+            if Logger.isANSIEnabled && !logger.isVerbose {
+                logger.log("\(progressDisplay.representation)", onSameLine: true)
+            } else {
+                let percent = Int(progress * 100)
+                if percent.isMultiple(of: 5), previouslyDisplayedNonANSIProgress != Int(progress) {
+                    if progress < 1 {
+                        logger.log("Expanding items from \(input): \(percent) %")
                     }
+                    previouslyDisplayedNonANSIProgress = percent
                 }
             }
+        }
+        try await extraction
 
         logger.success("Done extracting: \(target.path)")
 
@@ -81,60 +85,67 @@ class Extractor {
         }
     }
 
-    func start() -> Future<URL, Error> {
+    private enum UnarchivingEvent: Sendable {
+        case progress(Double, String)
+        case finished
+    }
+
+    func extract() async throws -> URL {
+        let container: PKSignedContainer
+        do {
+            container = try PKSignedContainer(forReadingFromContainerAt: source)
+        } catch {
+            throw ExtractionError(error.localizedDescription)
+        }
+
+        let target = temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: target) }
+        logger.verbose("Extracting xip to \(target.path)")
+
+        let (events, continuation) = AsyncStream.makeStream(of: UnarchivingEvent.self)
+        container.startUnarchiving(atPath: target.path, notifyOn: .main, progress: { progress, statusMessage in
+            continuation.yield(.progress(progress, statusMessage))
+        }, finish: { _ in
+            continuation.yield(.finished)
+            continuation.finish()
+        })
+
         var previouslyDisplayedNonANSIProgress = -1
-
-        return Future { [weak self] promise in
-            guard let self else { return }
-            do {
-                self.container = try PKSignedContainer(forReadingFromContainerAt: self.source)
-            } catch {
-                promise(.failure(ExtractionError(error.localizedDescription)))
-            }
-
-            self.state = .extracting
-            let target = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            self.logger.verbose("Extracting xip to \(target.path)")
-
-            var progressDisplay = ProgressDisplay(ratio: 0, width: 20)
-            self.container.startUnarchiving(atPath: target.path, notifyOn: .main, progress: { progress, statusMessage in
-                let ratio = progress / 100
-                switch ratio {
-                case _ where ratio < 0:
-                    self.logger.log(statusMessage)
-                case _ where ratio > 1:
-                    self.logger.log("Probably done: \(statusMessage)")
-                default:
-                    progressDisplay.ratio = ratio
-                    if Rainbow.enabled {
-                        self.logger.log("\(progressDisplay.representation)", onSameLine: true)
-                    } else {
-                        if Int(progress).isMultiple(of: 5), previouslyDisplayedNonANSIProgress != Int(progress) {
-                            self.logger.log("\(statusMessage.isEmpty ? "Done" : statusMessage): \(Int(progress)) %")
-                            previouslyDisplayedNonANSIProgress = Int(progress)
-                        }
+        var progressDisplay = ProgressDisplay(ratio: 0, width: 20)
+        for await event in events {
+            guard case let .progress(progress, statusMessage) = event else { break }
+            let ratio = progress / 100
+            switch ratio {
+            case _ where ratio < 0:
+                logger.log(statusMessage)
+            case _ where ratio > 1:
+                logger.log("Probably done: \(statusMessage)")
+            default:
+                progressDisplay.ratio = ratio
+                if Logger.isANSIEnabled {
+                    logger.log("\(progressDisplay.representation)", onSameLine: true)
+                } else {
+                    if Int(progress).isMultiple(of: 5), previouslyDisplayedNonANSIProgress != Int(progress) {
+                        logger.log("\(statusMessage.isEmpty ? "Done" : statusMessage): \(Int(progress)) %")
+                        previouslyDisplayedNonANSIProgress = Int(progress)
                     }
                 }
-                self.progress = ratio
-            }) { _ in
-                guard FileManager.default.fileExists(atPath: target.path) else {
-                    self.state = .failed
-                    let result = Shell.execute("/usr/bin/xip", args: "--expand", "\(self.source.path)")
-                    let prefix = "xip: error: "
-                    promise(.failure(ExtractionError(String(result.stderr.suffix(from: prefix.endIndex)))))
-                    return
-                }
-
-                self.logger.success("Done extracting: \(target.path)")
-                if let applicationURL = self.moveToDestinationFolder(tempFolder: target) {
-                    self.state = .finished
-                    promise(.success(applicationURL))
-                } else {
-                    self.logger.error("Extraction failed", onSameLine: true)
-                    self.state = .failed
-                    promise(.failure(ExtractionError("Application could not be moved to \(self.destination.path).")))
-                }
             }
+        }
+        withExtendedLifetime(container) {}
+
+        guard FileManager.default.fileExists(atPath: target.path) else {
+            let result = try await ProcessRunner.run("/usr/bin/xip", arguments: ["--expand", source.path])
+            let prefix = "xip: error: "
+            throw ExtractionError(String(result.stderr.suffix(from: prefix.endIndex)))
+        }
+
+        logger.success("Done extracting: \(target.path)")
+        if let applicationURL = moveToDestinationFolder(tempFolder: target) {
+            return applicationURL
+        } else {
+            logger.error("Extraction failed", onSameLine: true)
+            throw ExtractionError("Application could not be moved to \(destination.path).")
         }
     }
 

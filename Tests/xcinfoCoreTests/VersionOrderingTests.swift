@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-import XCModel
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
 
 struct VersionOrderingTests {
@@ -54,13 +54,22 @@ struct VersionOrderingTests {
         #expect(!(Version("2", "15.0", higher) < Version("1", "15.0", lower)))
     }
 
-    @Test
-    func `different release kinds with the same number are unordered`() {
-        let beta = Version("15A5160n", "15.0", .beta(1))
-        let release = Version("15A240d", "15.0", .release)
+    @Test(arguments: [
+        (Release.dp(9), Release.beta(1)),
+        (.beta(9), .rc(1)),
+        (.rc(9), .gmSeed(1)),
+        (.gmSeed(9), .gm),
+        (.beta(1), .release),
+    ])
+    func `prereleases sort below later release kinds with the same number`(lower: Release, higher: Release) {
+        #expect(Version("15A5160n", "15.0", lower) < Version("15A240d", "15.0", higher))
+        #expect(!(Version("15A240d", "15.0", higher) < Version("15A5160n", "15.0", lower)))
+    }
 
-        #expect(!(beta < release))
-        #expect(!(release < beta))
+    @Test
+    func `releases with the same number compare by build`() {
+        #expect(Version("15A240d", "15.0", .release) < Version("15A240e", "15.0", .release))
+        #expect(Version("15A240d", "15.0", .gm) < Version("15A240e", "15.0", .release))
     }
 
     @Test
@@ -95,11 +104,9 @@ struct VersionOrderingTests {
         let beta4 = Version("11M374r", "11.0", .beta(4))
         let beta6 = Version("11M392q", "11.0", .beta(6))
 
-        withKnownIssue("Version equality only compares the marketing number") {
-            #expect(beta4 != beta6)
-            #expect(Set([beta4, beta6]).count == 2)
-            #expect(Set([Xcode.fixture("11.0", build: "11M374r", release: .beta(4)), .fixture("11.0", build: "11M392q", release: .beta(6))]).count == 2)
-        }
+        #expect(beta4 != beta6)
+        #expect(Set([beta4, beta6]).count == 2)
+        #expect(Set([Xcode.fixture("11.0", build: "11M374r", release: .beta(4)), .fixture("11.0", build: "11M392q", release: .beta(6))]).count == 2)
     }
 }
 
@@ -132,9 +139,10 @@ struct XcodeMatchingTests {
         let rc = Xcode.fixture("14.3", build: "1", release: .rc(2))
         let betaQuery = try #require(VersionParts(rawValue: "14.3 beta 1"))
 
-        withKnownIssue("matching ignores the release type when no patch number is given") {
-            #expect(!rc.matching(betaQuery))
-        }
+        #expect(!rc.matching(betaQuery))
+        #expect(rc.matching(try #require(VersionParts(rawValue: "14.3 RC 2"))))
+        #expect(rc.matching(try #require(VersionParts(rawValue: "14.3 rc"))))
+        #expect(!Xcode.fixture("14.3", build: "1").matching(try #require(VersionParts(rawValue: "14.3 rc"))))
     }
 
     @Test

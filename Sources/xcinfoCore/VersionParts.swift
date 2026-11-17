@@ -6,8 +6,8 @@
 import Foundation
 import RegexBuilder
 
-struct VersionParts: Equatable {
-    enum VersionType: Equatable {
+struct VersionParts: Equatable, Sendable {
+    enum VersionType: Equatable, Sendable {
         case rc(String)
         case dp(String)
         case beta(String)
@@ -20,6 +20,15 @@ struct VersionParts: Equatable {
 }
 
 extension VersionParts.VersionType {
+    func matches(_ query: Self) -> Bool {
+        switch (self, query) {
+        case let (.rc(lhs), .rc(rhs)), let (.dp(lhs), .dp(rhs)), let (.beta(lhs), .beta(rhs)), let (.gm(lhs), .gm(rhs)):
+            rhs.isEmpty || lhs == rhs
+        default:
+            false
+        }
+    }
+
     init?(type: String?, content: String?) {
         guard let type, let content else {
             return nil

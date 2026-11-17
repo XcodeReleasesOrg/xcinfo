@@ -3,13 +3,11 @@
 //  MIT license - see LICENSE.md
 //
 
-import Combine
 import Foundation
-import Prompt
 import Rainbow
 import XCIFoundation
 
-public enum OlympUsError: Error {
+public enum OlympUsError: Error, Sendable {
     case missingSessionKey
     case signInRequestFailed
     case requestAuthentication
@@ -20,7 +18,7 @@ public enum OlympUsError: Error {
     case sessionInvalid
 }
 
-public enum OlympUsState: CaseIterable, CustomStringConvertible {
+public enum OlympUsState: CaseIterable, CustomStringConvertible, Sendable {
     case validatingExistingSession
     case requestingServiceKey
     case signingIn
@@ -52,7 +50,7 @@ public enum OlympUsState: CaseIterable, CustomStringConvertible {
     }
 }
 
-public enum ValidationType {
+public enum ValidationType: Sendable {
     case securityCode(String)
     case verificationCode(Int, String)
 }
@@ -100,87 +98,17 @@ extension ValidationType {
     }
 }
 
-public class URLSessionDelegateProxy: NSObject, URLSessionDownloadDelegate {
-    public private(set) var proxies: [URLSessionDownloadDelegate] = []
-
-    public func add(proxy: URLSessionDownloadDelegate) {
-        proxies.append(proxy)
-    }
-
-    public func remove(proxy: URLSessionDownloadDelegate) {
-        proxies.removeAll { delegate in
-            delegate.isEqual(proxy)
-        }
-    }
-
-    public func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didFinishDownloadingTo location: URL
-    ) {
-        proxies.forEach { proxy in
-            proxy.urlSession(session, downloadTask: downloadTask, didFinishDownloadingTo: location)
-        }
-    }
-
-    public func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didWriteData bytesWritten: Int64,
-        totalBytesWritten: Int64,
-        totalBytesExpectedToWrite: Int64
-    ) {
-        proxies.forEach { proxy in
-            proxy.urlSession?(
-                session,
-                downloadTask: downloadTask,
-                didWriteData: bytesWritten,
-                totalBytesWritten: totalBytesWritten,
-                totalBytesExpectedToWrite: totalBytesExpectedToWrite
-            )
-        }
-    }
-
-    public func urlSession(
-        _ session: URLSession,
-        downloadTask: URLSessionDownloadTask,
-        didResumeAtOffset fileOffset: Int64,
-        expectedTotalBytes: Int64
-    ) {
-        proxies.forEach { proxy in
-            proxy.urlSession?(
-                session,
-                downloadTask: downloadTask,
-                didResumeAtOffset: fileOffset,
-                expectedTotalBytes: expectedTotalBytes
-            )
-        }
-    }
-
-    public func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
-        proxies.forEach { proxy in
-            proxy.urlSession?(session, didBecomeInvalidWithError: error)
-        }
-    }
-
-    public func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        proxies.forEach { proxy in
-            proxy.urlSession?(session, task: task, didCompleteWithError: error)
-        }
-    }
-}
-
 extension OlympUs.AuthenticationAssets: Codable {}
 
-public struct AuthenticationSessionStore {
-    public var load: (_ account: String) throws -> Data
-    public var save: (_ data: Data, _ account: String) throws -> Void
-    public var removeAll: () throws -> Int
+public struct AuthenticationSessionStore: Sendable {
+    public var load: @Sendable (_ account: String) throws -> Data
+    public var save: @Sendable (_ data: Data, _ account: String) throws -> Void
+    public var removeAll: @Sendable () throws -> Int
 
     public init(
-        load: @escaping (String) throws -> Data,
-        save: @escaping (Data, String) throws -> Void,
-        removeAll: @escaping () throws -> Int
+        load: @escaping @Sendable (String) throws -> Data,
+        save: @escaping @Sendable (Data, String) throws -> Void,
+        removeAll: @escaping @Sendable () throws -> Int
     ) {
         self.load = load
         self.save = save
@@ -206,8 +134,7 @@ public extension AuthenticationSessionStore {
     )
 }
 
-public class OlympUs {
-    private var disposeBag = Set<AnyCancellable>()
+public actor OlympUs {
     private let logger: Logger
 
     public private(set) var state: OlympUsState? {
@@ -216,10 +143,10 @@ public class OlympUs {
         }
     }
 
-    public let session: URLSession
-    private let userDefaults: UserDefaults
-    private let sessionStore: AuthenticationSessionStore
-    private let prompt: PromptClient
+    public nonisolated let session: URLSession
+    private nonisolated(unsafe) let userDefaults: UserDefaults // UserDefaults is documented as thread-safe but not annotated Sendable.
+    private nonisolated let sessionStore: AuthenticationSessionStore
+    private nonisolated let prompt: PromptClient
 
     public init(
         logger: Logger,
@@ -237,7 +164,7 @@ public class OlympUs {
     }
 
     private func displayState() {
-        guard let state = state, let index = OlympUsState.allCases.firstIndex(of: state) else { return }
+        guard let state, let index = OlympUsState.allCases.firstIndex(of: state) else { return }
         let message = "[\(index)/\(OlympUsState.allCases.count - 1)] \(state.description)"
         logger.log(message, onSameLine: state != OlympUsState.allCases.first!)
     }
@@ -248,7 +175,7 @@ public class OlympUs {
         var authServiceKey: String
     }
 
-    public func storedAuthenticationAssets(for account: String) -> AuthenticationAssets? {
+    public nonisolated func storedAuthenticationAssets(for account: String) -> AuthenticationAssets? {
         do {
             let codedAssets = try sessionStore.load(account)
             return try JSONDecoder().decode(AuthenticationAssets.self, from: codedAssets)
@@ -268,49 +195,33 @@ public class OlympUs {
         }
     }
 
-    public func validateSession(for account: String) -> Future<Void, OlympUsError> {
-        Future { promise in
-            self.state = .validatingExistingSession
-            guard let assets = self.storedAuthenticationAssets(for: account) else {
-                promise(.failure(.sessionInvalid))
-                return
-            }
-            self.getOlympusSession(assets: assets, for: account)
-                .sink(receiveCompletion: { completion in
-                    if case .failure = completion {
-                        self.logger.verbose("Session invalid. Starting authentication.")
-                        promise(.failure(.sessionInvalid))
-                    }
-                }, receiveValue: { _ in
-                    self.logger.verbose("Reusing valid session.")
-                    promise(.success(()))
-                })
-                .store(in: &self.disposeBag)
+    public func validateSession(for account: String) async throws {
+        state = .validatingExistingSession
+        guard let assets = storedAuthenticationAssets(for: account) else {
+            throw OlympUsError.sessionInvalid
         }
+        do {
+            try await getOlympusSession(assets: assets, for: account)
+        } catch {
+            logger.verbose("Session invalid. Starting authentication.")
+            throw OlympUsError.sessionInvalid
+        }
+        logger.verbose("Reusing valid session.")
     }
 
-    private var sessionKeyURL = URL(string: "https://appstoreconnect.apple.com/olympus/v1/app/config")!
-    public func getServiceKey(for account: String) -> Future<String, OlympUsError> {
-        Future { promise in
-            self.state = .requestingServiceKey
-            if let serviceKey = self.storedAuthenticationAssets(for: account)?.serviceKey {
-                promise(.success(serviceKey))
-            } else {
-                var components = URLComponents(url: self.sessionKeyURL, resolvingAgainstBaseURL: false)!
-                components.queryItems = [URLQueryItem(name: "hostname", value: "itunesconnect.apple.com")]
-                self.session
-                    .dataTaskPublisher(for: components.url!)
-                    .map { $0.data }
-                    .decode(type: ServiceKeyResponse.self, decoder: JSONDecoder())
-                    .sink(receiveCompletion: { completion in
-                        if case .failure = completion {
-                            promise(.failure(.missingSessionKey))
-                        }
-                    }, receiveValue: { response in
-                        promise(.success(response.authServiceKey))
-                    })
-                    .store(in: &self.disposeBag)
-            }
+    private let sessionKeyURL = URL(string: "https://appstoreconnect.apple.com/olympus/v1/app/config")!
+    public func getServiceKey(for account: String) async throws -> String {
+        state = .requestingServiceKey
+        if let serviceKey = storedAuthenticationAssets(for: account)?.serviceKey {
+            return serviceKey
+        }
+        var components = URLComponents(url: sessionKeyURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "hostname", value: "itunesconnect.apple.com")]
+        do {
+            let (data, _) = try await session.data(from: components.url!)
+            return try JSONDecoder().decode(ServiceKeyResponse.self, from: data).authServiceKey
+        } catch {
+            throw OlympUsError.missingSessionKey
         }
     }
 
@@ -328,7 +239,7 @@ public class OlympUs {
 
     private let signInURL = URL(string: "https://idmsa.apple.com/appleauth/auth/signin")!
 
-    public struct AuthenticationAssets {
+    public struct AuthenticationAssets: Sendable {
         var serviceKey: String?
         var scnt: String?
         var asid: String?
@@ -339,46 +250,36 @@ public class OlympUs {
         accountName: String,
         password: String,
         serviceKey: String
-    ) -> Future<AuthenticationAssets, OlympUsError> {
-        Future { promise in
-            self.state = .signingIn
-            self.session.configuration.httpCookieStorage?.removeCookies(since: Date(timeIntervalSinceReferenceDate: 0))
+    ) async throws -> AuthenticationAssets {
+        state = .signingIn
+        session.configuration.httpCookieStorage?.removeCookies(since: Date(timeIntervalSinceReferenceDate: 0))
 
-            var request = URLRequest(url: self.signInURL)
-            request.httpMethod = "POST"
-            request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.addValue("X-Requested-With", forHTTPHeaderField: "X-Requested-With")
-            request.addValue("application/json, text/javascript", forHTTPHeaderField: "Accept")
-            request.addValue(serviceKey, forHTTPHeaderField: "X-Apple-Widget-Key")
+        var request = URLRequest(url: signInURL)
+        request.httpMethod = "POST"
+        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.addValue("X-Requested-With", forHTTPHeaderField: "X-Requested-With")
+        request.addValue("application/json, text/javascript", forHTTPHeaderField: "Accept")
+        request.addValue(serviceKey, forHTTPHeaderField: "X-Apple-Widget-Key")
 
-            let body = SignInRequest(accountName: accountName, password: password)
-            let data = try? JSONEncoder().encode(body)
+        let body = SignInRequest(accountName: accountName, password: password)
+        request.httpBody = try? JSONEncoder().encode(body)
 
-            var authenticationAssets = AuthenticationAssets(serviceKey: serviceKey)
-            request.httpBody = data
-            self.session
-                .dataTaskPublisher(for: request)
-                .map {
-                    if
-                        let httpResponse = $0.response as? HTTPURLResponse,
-                        let scnt = httpResponse.allHeaderFields["scnt"] as? String,
-                        let asid = httpResponse.allHeaderFields["X-Apple-ID-Session-Id"] as? String
-                    {
-                        authenticationAssets.asid = asid
-                        authenticationAssets.scnt = scnt
-                    }
-                    return $0.data
-                }
-                .decode(type: SignInResponse.self, decoder: JSONDecoder())
-                .sink(receiveCompletion: { completion in
-                    if case .failure = completion {
-                        promise(.failure(.signInRequestFailed))
-                    }
-                }, receiveValue: { response in
-                    authenticationAssets.authenticationType = response.authType
-                    promise(.success(authenticationAssets))
-                })
-                .store(in: &self.disposeBag)
+        var authenticationAssets = AuthenticationAssets(serviceKey: serviceKey)
+        do {
+            let (data, response) = try await session.data(for: request)
+            if
+                let httpResponse = response as? HTTPURLResponse,
+                let scnt = httpResponse.allHeaderFields["scnt"] as? String,
+                let asid = httpResponse.allHeaderFields["X-Apple-ID-Session-Id"] as? String
+            {
+                authenticationAssets.asid = asid
+                authenticationAssets.scnt = scnt
+            }
+            let signInResponse = try JSONDecoder().decode(SignInResponse.self, from: data)
+            authenticationAssets.authenticationType = signInResponse.authType
+            return authenticationAssets
+        } catch {
+            throw OlympUsError.signInRequestFailed
         }
     }
 
@@ -386,14 +287,14 @@ public class OlympUs {
 
     private let authURL = URL(string: "https://idmsa.apple.com/appleauth/auth")!
     private let verifyPhoneURL = URL(string: "https://idmsa.apple.com/appleauth/auth/verify/phone")!
-    public struct TrustedNumber: Codable {
+    public struct TrustedNumber: Codable, Sendable {
         let numberWithDialCode: String
         let pushMode: String
         let obfuscatedNumber: String
         let id: Int
     }
 
-    public struct CodeDescription: Codable {
+    public struct CodeDescription: Codable, Sendable {
         let length: Int
         let tooManyCodesSent: Bool
         let tooManyCodesValidated: Bool
@@ -411,150 +312,118 @@ public class OlympUs {
         case put = "PUT"
     }
 
-    public func requestAuthentication(assets: AuthenticationAssets) -> Future<ValidationType, OlympUsError> {
-        Future { promise in
-            self.state = .requestingAuth
-            self.session
-                .dataTaskPublisher(for: self.request(forURL: self.authURL, assets: assets, method: .post))
-                .map { $0.data }
-                .decode(type: RequestAuthResponse.self, decoder: JSONDecoder())
-                .sink(receiveCompletion: { completion in
-                    if case .failure = completion {
-                        promise(.failure(.requestAuthentication))
-                    }
-                }, receiveValue: { response in
-                    let requiredCodeLength = response.securityCode.length
-                    self.logger.log("\nTwo-factor authentication is enabled for your account.")
-                    self.logger
-                        .log(
-                            "Please enter a \(requiredCodeLength) digit verification code generated on one of your trusted devices."
-                        )
-                    self.logger.log("Type '\("sms".magenta)' to receive a verification code on a trusted phone number.")
-                    let input = self.prompt.ask("Apple ID Verification Code: ", "Invalide code length") { value in
-                        value != "sms" && requiredCodeLength != value.count
-                    }
-                    switch input {
-                    case "sms":
-                        let phoneIndex = self.prompt.choose(
-                            "Please choose your trusted device: ",
-                            response.trustedPhoneNumbers.map(\.numberWithDialCode)
-                        )
-                        let phoneId = response.trustedPhoneNumbers[phoneIndex].id
-                        var request = self.request(forURL: self.verifyPhoneURL, assets: assets, method: .put)
-                        let body = VerifyPhoneRequest(phoneNumber: VerifyPhoneRequest.TrustedNumber(id: phoneId))
-                        let data = try? JSONEncoder().encode(body)
-                        request.httpBody = data
+    public func requestAuthentication(assets: AuthenticationAssets) async throws -> ValidationType {
+        state = .requestingAuth
+        let response: RequestAuthResponse
+        do {
+            let (data, _) = try await session.data(for: request(forURL: authURL, assets: assets, method: .post))
+            response = try JSONDecoder().decode(RequestAuthResponse.self, from: data)
+        } catch {
+            throw OlympUsError.requestAuthentication
+        }
 
-                        self.session
-                            .dataTaskPublisher(for: request)
-                            .sink(receiveCompletion: { completion in
-                                if case .failure = completion {
-                                    promise(.failure(.requestSmsFailed))
-                                }
-                            }, receiveValue: { _ in
-                                let smsCode = self.prompt.ask(
-                                    "Please enter the received verification code:",
-                                    "Invalid code length"
-                                ) { value in
-                                    requiredCodeLength != value.count
-                                }
-                                self.logger.log("\n")
-                                promise(.success(.verificationCode(phoneId, smsCode)))
-                            })
-                            .store(in: &self.disposeBag)
-                    default:
-                        self.logger.log("\n")
-                        promise(.success(.securityCode(input)))
-                    }
-                })
-                .store(in: &self.disposeBag)
+        let requiredCodeLength = response.securityCode.length
+        logger.log("\nTwo-factor authentication is enabled for your account.")
+        logger
+            .log(
+                "Please enter a \(requiredCodeLength) digit verification code generated on one of your trusted devices."
+            )
+        logger.log("Type '\("sms".magenta)' to receive a verification code on a trusted phone number.")
+        let input = prompt.ask("Apple ID Verification Code: ", "Invalide code length") { value in
+            value != "sms" && requiredCodeLength != value.count
+        }
+        switch input {
+        case "sms":
+            let phoneIndex = prompt.choose(
+                "Please choose your trusted device: ",
+                response.trustedPhoneNumbers.map(\.numberWithDialCode)
+            )
+            let phoneId = response.trustedPhoneNumbers[phoneIndex].id
+            var request = request(forURL: verifyPhoneURL, assets: assets, method: .put)
+            let body = VerifyPhoneRequest(phoneNumber: VerifyPhoneRequest.TrustedNumber(id: phoneId))
+            request.httpBody = try? JSONEncoder().encode(body)
+
+            do {
+                _ = try await session.data(for: request)
+            } catch {
+                throw OlympUsError.requestSmsFailed
+            }
+            let smsCode = prompt.ask(
+                "Please enter the received verification code:",
+                "Invalid code length"
+            ) { value in
+                requiredCodeLength != value.count
+            }
+            logger.log("\n")
+            return .verificationCode(phoneId, smsCode)
+        default:
+            logger.log("\n")
+            return .securityCode(input)
         }
     }
 
 //    MARK: - send security code -
 
+    @discardableResult
     public func sendSecurityCode(
         validationType: ValidationType,
         assets: AuthenticationAssets
-    ) -> Future<Int, OlympUsError> {
-        Future { promise in
-            self.state = .sendingSecurityCode
-            var request = self.request(forURL: validationType.verificationURL, assets: assets, method: .post)
-            request.addValue("application/json", forHTTPHeaderField: "Accept")
-            request.httpBody = validationType.body
-            self.session
-                .dataTaskPublisher(for: request)
-                .map {
-                    $0.response
-                }
-                .sink(receiveCompletion: { completion in
-                    if case .failure = completion {
-                        promise(.failure(.deviceTrustFailed))
-                    }
-                }, receiveValue: { response in
-                    if let httpResponse = response as? HTTPURLResponse {
-                        promise(.success(httpResponse.statusCode))
-                    } else {
-                        promise(.failure(.deviceTrustFailed))
-                    }
-                })
-                .store(in: &self.disposeBag)
+    ) async throws -> Int {
+        state = .sendingSecurityCode
+        var request = request(forURL: validationType.verificationURL, assets: assets, method: .post)
+        request.addValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = validationType.body
+        let response: URLResponse
+        do {
+            (_, response) = try await session.data(for: request)
+        } catch {
+            throw OlympUsError.deviceTrustFailed
         }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OlympUsError.deviceTrustFailed
+        }
+        return httpResponse.statusCode
     }
 
 //    MARK: - requesting trust -
 
     private let trustURL = URL(string: "https://idmsa.apple.com/appleauth/auth/2sv/trust")!
-    public func requestTrust(assets: AuthenticationAssets) -> Future<[HTTPCookie], OlympUsError> {
-        Future { promise in
-            self.state = .requestingTrust
-            let request = self.request(forURL: self.trustURL, assets: assets, method: .get)
-            self.session
-                .dataTaskPublisher(for: request)
-                .map { $0.response }
-                .sink(receiveCompletion: { completion in
-                    if case .failure = completion {
-                        promise(.failure(.deviceTrustFailed))
-                    }
-                }, receiveValue: { response in
-                    if let httpResponse = response as? HTTPURLResponse {
-                        let responseCookies = HTTPCookie.cookies(
-                            withResponseHeaderFields: httpResponse.allHeaderFields as! [String: String],
-                            for: self.trustURL
-                        )
-                        promise(.success(responseCookies))
-                    } else {
-                        promise(.failure(.deviceTrustFailed))
-                    }
-                })
-                .store(in: &self.disposeBag)
+
+    @discardableResult
+    public func requestTrust(assets: AuthenticationAssets) async throws -> [HTTPCookie] {
+        state = .requestingTrust
+        let request = request(forURL: trustURL, assets: assets, method: .get)
+        let response: URLResponse
+        do {
+            (_, response) = try await session.data(for: request)
+        } catch {
+            throw OlympUsError.deviceTrustFailed
         }
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw OlympUsError.deviceTrustFailed
+        }
+        return HTTPCookie.cookies(
+            withResponseHeaderFields: httpResponse.allHeaderFields as! [String: String],
+            for: trustURL
+        )
     }
 
 //    MARK: - get session from Olympus -
 
     private let olympusSessionURL = URL(string: "https://appstoreconnect.apple.com/olympus/v1/session")!
-    public func getOlympusSession(assets: AuthenticationAssets, for account: String) -> Future<Void, OlympUsError> {
-        Future { promise in
-            self.state = .gettingSession
-            let request = self.request(forURL: self.olympusSessionURL, assets: assets, method: .get)
-            self.session
-                .dataTaskPublisher(for: request)
-                .map { $0.response }
-                .sink(receiveCompletion: { completion in
-                    if case .failure = completion {
-                        promise(.failure(.olympusSessionFailed))
-                    }
-                }, receiveValue: { response in
-                    if self.handle(response: response) {
-                        self.storeAuthenticationAssets(assets: assets, for: account)
-                        promise(.success(()))
-                    } else {
-                        promise(.failure(.olympusSessionFailed))
-                    }
-                })
-                .store(in: &self.disposeBag)
+    public func getOlympusSession(assets: AuthenticationAssets, for account: String) async throws {
+        state = .gettingSession
+        let request = request(forURL: olympusSessionURL, assets: assets, method: .get)
+        let response: URLResponse
+        do {
+            (_, response) = try await session.data(for: request)
+        } catch {
+            throw OlympUsError.olympusSessionFailed
         }
+        guard handle(response: response) else {
+            throw OlympUsError.olympusSessionFailed
+        }
+        storeAuthenticationAssets(assets: assets, for: account)
     }
 
     private func handle(response: URLResponse) -> Bool {
@@ -597,7 +466,7 @@ public class OlympUs {
             }
 
         cookies.forEach {
-            self.session.configuration.httpCookieStorage?.setCookie($0)
+            session.configuration.httpCookieStorage?.setCookie($0)
         }
 
         storeCookies()
@@ -606,36 +475,30 @@ public class OlympUs {
 
     private let downloadAuthURL =
         URL(string: "https://developer.apple.com/services-account/QH65B2/downloadws/listDownloads.action")!
-    public func getDownloadAuth(assets: AuthenticationAssets) -> Future<Void, OlympUsError> {
-        Future { promise in
-            self.state = .gettingDownloadAuth
-            let request = self.request(forURL: self.downloadAuthURL, assets: assets, method: .post)
-            self.session
-                .dataTaskPublisher(for: request)
-                .sink(receiveCompletion: { completion in
-                    if case .failure = completion {
-                        promise(.failure(.downloadAuthFailed))
-                    }
-                }, receiveValue: { output in
-                    if self.handle(response: output.response),
-                       self.session.configuration.httpCookieStorage?.cookies?
-                       .contains(where: { $0.name == "ADCDownloadAuth" }) == true
-                    {
-                        promise(.success(()))
-                    } else {
-                        promise(.failure(.downloadAuthFailed))
-                    }
-                })
-                .store(in: &self.disposeBag)
+    public func getDownloadAuth(assets: AuthenticationAssets) async throws {
+        state = .gettingDownloadAuth
+        let request = request(forURL: downloadAuthURL, assets: assets, method: .post)
+        let response: URLResponse
+        do {
+            (_, response) = try await session.data(for: request)
+        } catch {
+            throw OlympUsError.downloadAuthFailed
+        }
+        guard
+            handle(response: response),
+            session.configuration.httpCookieStorage?.cookies?
+            .contains(where: { $0.name == "ADCDownloadAuth" }) == true
+        else {
+            throw OlympUsError.downloadAuthFailed
         }
     }
 
-    public func cleanup() {
+    public nonisolated func cleanup() {
         removeDownloadSessionInfo()
         removeCookies()
     }
 
-    private func removeDownloadSessionInfo() {
+    private nonisolated func removeDownloadSessionInfo() {
         do {
             if try sessionStore.removeAll() > 0 {
                 logger.success("Deleted Apple developer portal session info from keychain.")
@@ -672,14 +535,14 @@ extension OlympUs {
     private func storeCookies() {
         guard let cookies = session.configuration.httpCookieStorage?.cookies else { return }
 
-                let cookiesArray = cookies.compactMap { $0.properties }
+        let cookiesArray = cookies.compactMap { $0.properties }
         userDefaults.set(cookiesArray, forKey: "cookies")
     }
 
-    private func restoreCookies() {
+    private nonisolated func restoreCookies() {
         guard let cookieStorage = session.configuration.httpCookieStorage else { return }
 
-        
+
         if let cookies = userDefaults.array(forKey: "cookies") as? [[HTTPCookiePropertyKey: Any]] {
             for cookieProperties in cookies {
                 if let cookie = HTTPCookie(properties: cookieProperties) {
@@ -689,7 +552,7 @@ extension OlympUs {
         }
     }
 
-    private func removeCookies() {
+    private nonisolated func removeCookies() {
         userDefaults.removeObject(forKey: "cookies")
     }
 }

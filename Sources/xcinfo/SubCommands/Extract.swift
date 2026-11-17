@@ -5,12 +5,12 @@
 
 import ArgumentParser
 import Foundation
-import Rainbow
+import XCIFoundation
 import xcinfoCore
 
 extension XCInfo {
     struct Extract: AsyncParsableCommand {
-        static var configuration = CommandConfiguration(
+        static let configuration = CommandConfiguration(
             abstract: "Extract an Xcode XIB"
         )
 
@@ -24,13 +24,12 @@ extension XCInfo {
         var globals: DefaultOptions
 
         func run() async throws {
-            Rainbow.enabled = globals.useANSI
-            let environment = Environment.live(isVerboseLoggingEnabled: globals.isVerbose)
-            let core = Core(environment: environment)
             do {
-                try await core.extractXIP(source: source, options: extractionOptions.options)
+                try await globals.run { core in
+                    try await core.extractXIP(source: source, options: extractionOptions.options)
+                }
             } catch let error as CoreError {
-                environment.logger.error(error.localizedDescription)
+                globals.logger.error(error.localizedDescription)
                 throw ExitCode.failure
             }
         }

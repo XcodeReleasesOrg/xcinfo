@@ -4,12 +4,14 @@
 //
 
 import ArgumentParser
+import Dependencies
 import Foundation
+import XCIFoundation
 import xcinfoCore
 
 @main
 struct XCInfo: AsyncParsableCommand {
-    static var configuration = CommandConfiguration(
+    static let configuration = CommandConfiguration(
         commandName: "xcinfo",
         version: version,
         subcommands: [
@@ -34,6 +36,20 @@ struct DefaultOptions: ParsableArguments {
 
     @Flag(name: .customLong("ansi"), inversion: .prefixedNo, help: "Show output with colors.")
     var useANSI: Bool = true
+
+    var logger: Logger {
+        Logger(isVerbose: isVerbose)
+    }
+
+    @discardableResult
+    func run<Result>(_ operation: (Core) async throws -> Result) async throws -> Result {
+        Logger.isANSIEnabled = useANSI
+        return try await withDependencies {
+            $0.logger = logger
+        } operation: {
+            try await operation(Core())
+        }
+    }
 }
 
 struct ListOptions: ParsableArguments {
@@ -118,7 +134,7 @@ struct InstallationOptions: ParsableArguments {
     var skipXcodeSelection: Bool = false
 }
 
-extension URL: ExpressibleByArgument {
+extension URL: @retroactive ExpressibleByArgument {
     public init?(argument: String) {
         self.init(fileURLWithPath: argument)
     }
