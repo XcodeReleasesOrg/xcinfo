@@ -62,4 +62,22 @@ struct InterruptSignalsTests {
             #expect(result == value)
         }
     }
+
+    @Test
+    func `a nested watch finishes and leaves signals to the outer one`() async throws {
+        let interrupts = Recorder<Int32>()
+        let nested = Recorder<Int>()
+
+        await #expect(throws: Interrupted(signal: SIGUSR1)) {
+            try await signals.run { interrupts.append($0) } operation: {
+                let value = try await signals.run { _ in Issue.record("The nested watch must not see the signal") } operation: { 7 }
+                nested.append(value)
+                raise(SIGUSR1)
+                try await Task.sleep(for: .seconds(30))
+            }
+        }
+
+        #expect(nested.values == [7])
+        #expect(interrupts.values == [SIGUSR1])
+    }
 }
