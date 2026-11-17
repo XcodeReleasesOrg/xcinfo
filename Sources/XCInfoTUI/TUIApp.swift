@@ -10,13 +10,16 @@ import xcinfoCore
 public struct TUIActions: Sendable {
     public var load: @Sendable () async throws -> (XcodeList, [XcodeApplication])
     public var perform: @Sendable (TUICommand, TUISession) async -> TUIOutcome
+    public var prepare: @Sendable () async -> Void
 
     public init(
         load: @escaping @Sendable () async throws -> (XcodeList, [XcodeApplication]),
-        perform: @escaping @Sendable (TUICommand, TUISession) async -> TUIOutcome
+        perform: @escaping @Sendable (TUICommand, TUISession) async -> TUIOutcome,
+        prepare: @escaping @Sendable () async -> Void = {}
     ) {
         self.load = load
         self.perform = perform
+        self.prepare = prepare
     }
 }
 
@@ -42,6 +45,7 @@ public struct TUIApp: Sendable {
     }
 
     private func runInTerminal() async {
+        await actions.prepare()
         let terminal = TerminalSession()
         terminal.enter()
         defer { terminal.leave() }

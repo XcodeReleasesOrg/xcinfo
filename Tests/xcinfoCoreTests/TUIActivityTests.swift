@@ -121,4 +121,38 @@ struct TUIActivityTests {
         #expect(lines.contains { $0.contains("✗ Download") })
         #expect(lines.last?.hasPrefix(" Return to go back to the list") == true)
     }
+
+    @Test
+    func `warnings and errors wrap inside the panel while detail lines are shortened`() {
+        let warning = "The Keychain item 'xcinfo' could not be read: macOS refused access to the Keychain item: the password in the Keychain dialog was not accepted, or access was denied."
+        var activity = TUIActivity(title: "Installing Xcode 16.0", steps: ["Identify"], showsVerbose: true)
+        activity.apply(.message(warning, .warning))
+        activity.apply(.verbose("Source: https://download.developer.apple.com/Developer_Tools/Xcode_16_with_a_really_long_name/Xcode_16.xip"))
+        var model = TUIModel(sections: [])
+        model.activity = activity
+
+        let lines = TUIRenderer(usesColors: false).render(model, width: 80, height: 24)
+
+        #expect(lines.allSatisfy { $0.count == 80 })
+        let panelText = lines.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "│ ")) }.joined(separator: " ")
+        let words = panelText.split(separator: " ").joined(separator: " ")
+        #expect(words.contains("or access was denied."))
+        #expect(!lines.contains { $0.contains("denied…") })
+        #expect(lines.contains { $0.contains("Source: https://download.developer.apple.com/") && $0.contains("…") })
+    }
+
+    @Test
+    func `a failed action still shows how to go back`() {
+        var activity = TUIActivity(title: "Installing Xcode 16.0", steps: ["Identify", "Sign in"])
+        activity.apply(.section("Sign in to Apple Developer"))
+        activity.finish(succeeded: false, message: "Apple's sign-in configuration could not be loaded (configuration endpoint: HTTP 404).")
+        var model = TUIModel(sections: [])
+        model.activity = activity
+
+        for (width, height) in [(80, 24), (60, 16)] {
+            let lines = TUIRenderer(usesColors: false).render(model, width: width, height: height)
+            #expect(lines.last?.hasPrefix(" Return to go back to the list") == true)
+            #expect(lines.contains { $0.contains("✗ Sign in") })
+        }
+    }
 }
