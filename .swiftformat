@@ -1,5 +1,5 @@
 --indent 4
---header "//\n//  Copyright © {year} xcodereleases.com\n//  MIT license - see LICENSE.md\n//"
+--header "//\n//  Copyright © {year} xcodereleases.com\n//  LGPL-3.0 license - see LICENSE.md\n//"
 --exclude "**/Package.swift"
 --enable isEmpty
 --maxwidth 120
