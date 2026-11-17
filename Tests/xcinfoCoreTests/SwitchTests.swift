@@ -120,4 +120,106 @@ struct SwitchTests {
         #expect(model.handle(.character("s")) == nil)
         #expect(model.status == "Only installed versions can be switched to.")
     }
+
+    @Test
+    func `xcode-select runs before the link changes`() async throws {
+        let order = Recorder<String>()
+        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+        let shell = FakeShell { call in
+            if call.command == "mdfind" { return (0, fixture.applications.url.appendingPathComponent("Xcode-16.app").path + "\n", "") }
+            if call.command == "xcode-select" {
+                order.append(FileManager.default.isSymbolicLink(atPath: fixture.symlink.path) ? "link first" : "select first")
+            }
+            return (0, "", "")
+        }
+        let core = Core.test(logs: fixture.logs, cachesDirectory: fixture.caches.url, listXcodes: { [xcodes] in xcodes }, shell: shell, prompt: fixture.prompt, applicationsDirectory: fixture.applications.url)
+
+        try await core.switchXcode(to: "16", options: .init(), updateVersionList: true)
+
+        #expect(order.values == ["select first"])
+        #expect(FileManager.default.isSymbolicLink(atPath: fixture.symlink.path))
+    }
+
+    @Test
+    func `a cancelled password question changes nothing`() async throws {
+        let fixture = try Fixture(xcodes: xcodes, apps: { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }, prompt: FakePrompt(cancelsOnSecret: true))
+
+        await #expect(throws: CancellationError.self) {
+            try await fixture.core.switchXcode(to: "16", options: .init(), updateVersionList: true)
+        }
+        #expect(!FileManager.default.fileExists(atPath: fixture.symlink.path))
+        #expect(fixture.shell.privilegedCalls.isEmpty)
+        #expect(fixture.logs.messages.contains("Nothing was changed."))
+    }
+
+    @Test
+    func `a rejected password changes nothing`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let app = try applications.fakeXcode(named: "Xcode-16.app", build: "16A1")
+        let logs = LogRecorder()
+        let shell = FakeShell { call in
+            call.command == "mdfind" ? (0, app.path + "\n", "") : call.command == "ls" ? (1, "", "") : (0, "", "")
+        }
+        let core = Core.test(logs: logs, cachesDirectory: caches.url, listXcodes: { [xcodes] in xcodes }, shell: shell, prompt: FakePrompt(passwords: ["a", "b", "c"]), applicationsDirectory: applications.url)
+
+        await #expect(throws: CoreError.self) {
+            try await core.switchXcode(to: "16", options: .init(), updateVersionList: true)
+        }
+        #expect(!FileManager.default.fileExists(atPath: applications.url.appendingPathComponent("Xcode.app").path))
+        #expect(!shell.privilegedCalls.contains { $0.command == "xcode-select" })
+        #expect(logs.messages.contains("Nothing was changed."))
+    }
+
+    @Test
+    func `a failing xcode-select changes nothing`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let app = try applications.fakeXcode(named: "Xcode-16.app", build: "16A1")
+        let logs = LogRecorder()
+        let shell = FakeShell { call in
+            call.command == "mdfind" ? (0, app.path + "\n", "") : call.command == "xcode-select" ? (1, "", "") : (0, "", "")
+        }
+        let core = Core.test(logs: logs, cachesDirectory: caches.url, listXcodes: { [xcodes] in xcodes }, shell: shell, prompt: FakePrompt(passwords: ["sudo-password"]), applicationsDirectory: applications.url)
+
+        await #expect(throws: CoreError.self) {
+            try await core.switchXcode(to: "16", options: .init(), updateVersionList: true)
+        }
+        #expect(!FileManager.default.fileExists(atPath: applications.url.appendingPathComponent("Xcode.app").path))
+        #expect(logs.messages.contains("Nothing was changed."))
+    }
+
+    @Test
+    func `without xcode-select only the link changes`() async throws {
+        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+
+        try await fixture.core.switchXcode(to: "16", options: .init(skipXcodeSelection: true), updateVersionList: true)
+
+        #expect(FileManager.default.isSymbolicLink(atPath: fixture.symlink.path))
+        #expect(fixture.shell.privilegedCalls.isEmpty)
+        #expect(fixture.prompt.secrets.values.isEmpty)
+    }
+
+    @Test
+    func `without the link only xcode-select changes`() async throws {
+        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+
+        try await fixture.core.switchXcode(to: "16", options: .init(skipSymlinkCreation: true), updateVersionList: true)
+
+        #expect(!FileManager.default.fileExists(atPath: fixture.symlink.path))
+        #expect(fixture.shell.privilegedCalls.map(\.command) == ["ls", "xcode-select"])
+    }
+
+    @Test
+    func `a link that cannot be changed after xcode-select says what changed`() async throws {
+        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+        try FileManager.default.createDirectory(at: fixture.symlink, withIntermediateDirectories: true)
+
+        await #expect(throws: CoreError.self) {
+            try await fixture.core.switchXcode(to: "16", options: .init(), updateVersionList: true)
+        }
+        let app = fixture.applications.url.appendingPathComponent("Xcode-16.app")
+        #expect(fixture.shell.privilegedCalls.last?.args == ["-s", app.path])
+        #expect(fixture.logs.messages.contains("xcode-select now uses \(app.path), but \(fixture.symlink.path) was not changed."))
+    }
 }
