@@ -230,7 +230,7 @@ public actor OlympUs {
         do {
             data = try await sessionStore.load(account)
         } catch {
-            logger.warn("Could not read the stored Apple session from the Keychain (\(error)). Allow xcinfo to access the Keychain to avoid signing in again.")
+            logger.verbose("No stored Apple session is used, because the Keychain could not be read (\(error)).")
             return nil
         }
 

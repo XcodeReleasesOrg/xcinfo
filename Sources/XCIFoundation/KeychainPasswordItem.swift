@@ -24,10 +24,24 @@ public struct KeychainPasswordItem {
             case .unexpectedItemData:
                 return "unexpectedItemData"
             case let .unhandledError(status):
-                return "unhandledError OSStatus \(status)"
+                return KeychainPasswordItem.explanation(for: status)
             case .passwordAlreadySet:
                 return "Password already exists."
             }
+        }
+    }
+
+    public static func explanation(for status: OSStatus) -> String {
+        switch status {
+        case errSecAuthFailed:
+            return "macOS refused access to the Keychain item: the password in the Keychain dialog was not accepted, or access was denied"
+        case errSecUserCanceled:
+            return "access to the Keychain was denied in the macOS dialog"
+        case errSecInteractionNotAllowed:
+            return "macOS could not show the Keychain dialog"
+        default:
+            let message = SecCopyErrorMessageString(status, nil) as String? ?? "unknown Keychain error"
+            return "\(message) (OSStatus \(status))"
         }
     }
 

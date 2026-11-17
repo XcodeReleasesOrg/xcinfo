@@ -64,6 +64,7 @@ public struct FileSystemClient: Sendable {
 @DependencyClient
 public struct KeychainClient: Sendable {
     public var load: @Sendable () async throws -> VaultContents
+    public var reload: @Sendable () async throws -> VaultContents
     public var stage: @Sendable (_ change: @escaping @Sendable (inout VaultContents) -> Void) async throws -> Void
     public var commit: @Sendable (_ change: @escaping @Sendable (inout VaultContents) -> Void) async throws -> Void
 }
@@ -203,6 +204,7 @@ extension FileSystemClient: DependencyKey {
 extension KeychainClient: DependencyKey {
     public static let liveValue = KeychainClient(
         load: { try await KeychainVault.shared.load() },
+        reload: { try await KeychainVault.shared.reload() },
         stage: { change in try await KeychainVault.shared.stage(change) },
         commit: { change in try await KeychainVault.shared.commit(change) }
     )

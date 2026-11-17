@@ -52,12 +52,8 @@ struct CredentialService {
         if let accountName = environment[Self.accountNameVariable], !accountName.isEmpty {
             return accountName
         }
-        do {
-            if let accountName = try await keychain.load().accountName {
-                return accountName
-            }
-        } catch {
-            logger.warn("\(error)")
+        if let accountName = try await storedAccountName() {
+            return accountName
         }
         guard isInteractive else {
             throw CredentialsError.accountNameUnavailable
@@ -69,6 +65,33 @@ struct CredentialService {
         }
         try? await keychain.stage { $0.accountName = accountName }
         return accountName
+    }
+
+    private func storedAccountName() async throws -> String? {
+        var attempt: () async throws -> VaultContents = { try await keychain.load() }
+        for _ in 0 ..< 3 {
+            do {
+                return try await attempt().accountName
+            } catch let error as KeychainAccessError where error.canBeRetried && isInteractive {
+                logger.warn(error.description)
+                let choice = await prompt.choose(
+                    "xcinfo could not read its Keychain item. What should it do?",
+                    ["Try the Keychain again", "Sign in anew", "Cancel"]
+                )
+                switch choice {
+                case 0:
+                    attempt = { try await keychain.reload() }
+                case 1:
+                    return nil
+                default:
+                    throw CancellationError()
+                }
+            } catch {
+                logger.warn("\(error)")
+                return nil
+            }
+        }
+        return nil
     }
 
     func password(for accountName: String) async throws -> String {

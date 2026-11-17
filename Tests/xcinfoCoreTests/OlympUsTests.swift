@@ -724,7 +724,8 @@ struct OlympUsSessionTests {
         )
 
         #expect(await olymp.storedAuthenticationAssets(for: "user") == nil)
-        #expect(logs.events.contains(.message("Could not read the stored Apple session from the Keychain (\(KeychainAccessError(underlying: "denied"))). Allow xcinfo to access the Keychain to avoid signing in again.", .warning)))
+        #expect(logs.events.contains(.verbose("No stored Apple session is used, because the Keychain could not be read (\(KeychainAccessError(underlying: "denied"))).")))
+        #expect(!logs.events.contains { if case .message(_, .warning) = $0 { true } else { false } })
     }
 
     @Test

@@ -60,6 +60,7 @@ extension KeychainClient {
     static func vault(_ vault: KeychainVault) -> KeychainClient {
         KeychainClient(
             load: { try await vault.load() },
+            reload: { try await vault.reload() },
             stage: { change in try await vault.stage(change) },
             commit: { change in try await vault.commit(change) }
         )
@@ -236,13 +237,38 @@ struct CredentialsTests {
     }
 
     @Test
-    func `an unreadable keychain is reported and the account name is asked for`() async throws {
+    func `a refused keychain offers a retry, a new sign-in or cancelling`() async throws {
         let logs = LogRecorder()
-        let prompt = FakePrompt(answers: ["user"])
-        let (service, _) = service(storage: FakeVaultStorage(failsReading: true), prompt: prompt, logs: logs)
+        let prompt = FakePrompt(answers: ["user"], choices: [1])
+        let storage = FakeVaultStorage(failsReading: true)
+        let (service, _) = service(storage: storage, prompt: prompt, logs: logs)
 
         #expect(try await service.accountName() == "user")
-        #expect(logs.events.contains { if case let .message(text, .warning) = $0 { text.contains("The Keychain could not be read") } else { false } })
+        #expect(prompt.chosen.values == [["Try the Keychain again", "Sign in anew", "Cancel"]])
+        #expect(storage.reads.values.count == 1)
+        #expect(logs.events.contains(.message("The Keychain item 'xcinfo' could not be read: access to the Keychain was denied in the macOS dialog.", .warning)))
+        #expect(!logs.messages.contains { $0.contains("unhandledError") })
+    }
+
+    @Test
+    func `trying the keychain again reads it once more and cancelling stops`() async throws {
+        let retry = FakePrompt(answers: ["user"], choices: [0, 1])
+        let storage = FakeVaultStorage(failsReading: true)
+        let (retrying, _) = service(storage: storage, prompt: retry)
+        _ = try await retrying.accountName()
+        #expect(storage.reads.values.count == 2)
+
+        let (cancelling, _) = service(storage: FakeVaultStorage(failsReading: true), prompt: FakePrompt(choices: [2]))
+        await #expect(throws: CancellationError.self) { try await cancelling.accountName() }
+    }
+
+    @Test(arguments: [
+        (errSecAuthFailed, "macOS refused access to the Keychain item: the password in the Keychain dialog was not accepted, or access was denied"),
+        (errSecUserCanceled, "access to the Keychain was denied in the macOS dialog"),
+        (errSecInteractionNotAllowed, "macOS could not show the Keychain dialog"),
+    ])
+    func `keychain errors are explained in plain words`(status: OSStatus, text: String) {
+        #expect(KeychainPasswordItem.KeychainError.unhandledError(status: status).description == text)
     }
 
     @Test
