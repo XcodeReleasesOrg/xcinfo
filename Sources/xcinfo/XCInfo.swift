@@ -7,12 +7,14 @@ import ArgumentParser
 import Dependencies
 import Foundation
 import XCIFoundation
+import XCInfoTUI
 import xcinfoCore
 
 @main
 struct XCInfo: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "xcinfo",
+        abstract: "Lists, installs and removes Xcode versions using xcodereleases.com.",
         discussion: """
         Exit codes: 0 success, 1 unexpected error, 3 version not found, 4 sign-in failed, \
         5 download failed, 6 extraction failed, 7 installation failed, 8 uninstallation failed, \
@@ -28,9 +30,17 @@ struct XCInfo: AsyncParsableCommand {
             Install.self,
             Installed.self,
             List.self,
+            Tui.self,
             Uninstall.self
         ]
     )
+
+    func run() async throws {
+        guard TUIApp.isAvailable else {
+            throw CleanExit.helpRequest(self)
+        }
+        try await Tui.parse([]).run()
+    }
 }
 
 struct DefaultOptions: ParsableArguments {

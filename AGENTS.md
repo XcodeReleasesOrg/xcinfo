@@ -43,6 +43,12 @@
 - One Keychain item, service and account `xcinfo`, holding a versioned `VaultContents` (account name, sessions per account). It is read at most once per run through `KeychainVault` and written at most once per run, after the download authorization succeeded. The old items `xcinfo.appleid`, `xcinfo.session`, `xcinfo.cookies` and the `cookies` user defaults key are migrated once and deleted
 - The Apple ID password is never stored, logged or sent: it comes from `XCINFO_APPLE_PASSWORD` or a prompt, only when a new sign-in is needed, and goes only into the SRP computation
 
+## Terminal UI
+
+- `XCInfoTUI` is a small in-house full-screen UI (no third-party TUI library). `TUIModel` holds the groups and the selection and turns keys into `TUICommand`s; `TUIRenderer` draws a model into exactly `height` lines of `width` characters, so rendering is tested as plain strings; `TerminalSession` owns raw mode, the alternate screen and key polling
+- Resizes are picked up by checking the size on every tick, not with a signal handler. Every exit path, Ctrl-C included, restores the terminal
+- Actions that need typed input (sign-in, two-factor codes, the administrator password) leave the full-screen view and run the normal CLI flow, then return
+
 ## Apple sign-in
 
 - `OlympUs` signs in with SRP-6a (`signin/init`, `signin/complete`, RFC 5054 2048-bit group, SHA-256, PBKDF2 for `s2k` / `s2k_fo`) and sends a hashcash stamp in `X-Apple-HC`. The password never leaves the machine

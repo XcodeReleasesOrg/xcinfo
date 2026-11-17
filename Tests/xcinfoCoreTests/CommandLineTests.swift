@@ -14,7 +14,7 @@ struct CommandLineTests {
     func `subcommands are registered`() {
         let names = XCInfo.configuration.subcommands.map { $0._commandName }
 
-        #expect(names == ["cleanup", "download", "extract", "info", "install", "installed", "list", "uninstall"])
+        #expect(names == ["cleanup", "download", "extract", "info", "install", "installed", "list", "tui", "uninstall"])
         #expect(XCInfo.configuration.commandName == "xcinfo")
     }
 
