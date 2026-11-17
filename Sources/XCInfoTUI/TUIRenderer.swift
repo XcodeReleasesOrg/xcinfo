@@ -111,7 +111,11 @@ public struct TUIRenderer: Sendable {
         content += progressContent
         let fixed = content.count + 1
         let logHeight = max(0, height - 2 - fixed)
-        let log = activity.lines.suffix(logHeight).map { line in (prefix(for: line.kind) + line.text, style(for: line.kind)) }
+        let log = Array(activity.lines.flatMap { line -> [(String, Style)] in
+            let text = prefix(for: line.kind) + line.text
+            guard line.kind != .detail else { return [(text, style(for: line.kind))] }
+            return text.wrapped(to: inner, indent: prefix(for: line.kind).count).map { ($0, style(for: line.kind)) }
+        }.suffix(logHeight))
         if !log.isEmpty {
             content.append(("", .plain))
             content += log
@@ -143,7 +147,7 @@ public struct TUIRenderer: Sendable {
     private func prefix(for kind: TUIActivity.Line.Kind) -> String {
         switch kind {
         case .section: ""
-        case .plain: "  "
+        case .plain, .detail: "  "
         case .success: "  "
         case .warning: "  ⚠ "
         case .error: "  ✗ "
@@ -157,6 +161,7 @@ public struct TUIRenderer: Sendable {
         switch kind {
         case .section: .heading
         case .plain, .check(.running), .check(.passed): .plain
+        case .detail: .dim
         case .success: .success
         case .warning: .warning
         case .error, .check(.failed): .error
@@ -298,6 +303,32 @@ public struct TUIRenderer: Sendable {
 }
 
 extension String {
+    func wrapped(to width: Int, indent: Int) -> [String] {
+        guard count > width, width > indent + 4 else { return [self] }
+        var lines: [String] = []
+        var current = ""
+        for word in split(separator: " ", omittingEmptySubsequences: false) {
+            let candidate = current.isEmpty ? String(word) : current + " " + word
+            if candidate.count <= width {
+                current = candidate
+                continue
+            }
+            if !current.isEmpty {
+                lines.append(current)
+            }
+            var rest = String(repeating: " ", count: indent) + word
+            while rest.count > width {
+                lines.append(String(rest.prefix(width)))
+                rest = String(repeating: " ", count: indent) + rest.dropFirst(width)
+            }
+            current = rest
+        }
+        if !current.isEmpty {
+            lines.append(current)
+        }
+        return lines
+    }
+
     var unstyledWidth: Int {
         unstyled.count
     }

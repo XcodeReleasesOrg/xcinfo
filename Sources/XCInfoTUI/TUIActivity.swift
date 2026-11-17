@@ -17,6 +17,7 @@ public struct TUIActivity: Sendable, Equatable {
         public enum Kind: Sendable, Equatable {
             case section
             case plain
+            case detail
             case success
             case warning
             case error
@@ -99,7 +100,7 @@ public struct TUIActivity: Sendable, Equatable {
             }
         case let .verbose(text):
             if showsVerbose {
-                append(Line(text: text, kind: .plain))
+                append(Line(text: text, kind: .detail))
             }
         case let .check(title, state):
             if state != .running, let index = lines.lastIndex(where: { $0.text == title && $0.kind == .check(.running) }) {

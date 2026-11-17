@@ -50,6 +50,10 @@ extension XCInfo {
                         } catch {
                             return TUIOutcome(succeeded: false, message: Task.isCancelled ? "Stopped." : error.message)
                         }
+                    },
+                    prepare: {
+                        @Dependency(\.keychain) var keychain
+                        _ = try? await keychain.load()
                     }
                 ),
                 usesColors: globals.renderer.options.usesColors,
