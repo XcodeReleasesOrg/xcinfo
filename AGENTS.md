@@ -45,7 +45,8 @@
 ## Apple sign-in
 
 - `OlympUs` signs in with SRP-6a (`signin/init`, `signin/complete`, RFC 5054 2048-bit group, SHA-256, PBKDF2 for `s2k` / `s2k_fo`) and sends a hashcash stamp in `X-Apple-HC`. The password never leaves the machine
-- The SRP and big-integer code is checked against the RFC 5054 test vectors and a fake server in the tests. It has not been verified against Apple's live service; treat every change here as unverified until someone signs in by hand
+- The SRP and big-integer code is checked against the RFC 5054 test vectors and a fake server in the tests. Verified against Apple's live service on 2026-11-17: SRP with `s2k`, two-factor authentication with a trusted-device code, trust, session, download authorization and the start of a download. Not yet verified live: `s2k_fo`, SMS codes, accounts without two-factor authentication, and resuming a download. Treat every change to the protocol as unverified until someone signs in by hand
+- `xcinfo download <version> -v` logs each sign-in request with its HTTP status and Apple's error codes, without secrets; use it when a sign-in fails
 - Never sign in to Apple from tests or automation, and never read a developer's stored credentials: repeated attempts can lock the account
 
 ## Swift syntax
