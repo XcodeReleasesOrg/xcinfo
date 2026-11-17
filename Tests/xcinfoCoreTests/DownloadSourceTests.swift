@@ -19,12 +19,47 @@ struct DownloadSourceTests {
     ])
     func `xip is preferred, aea is used when it is the only file, and the derived aea is a last resort`(
         listed: URL, offered: [URL]?, expected: URL, hasNote: Bool, fallback: URL?
-    ) {
-        let source = DownloadSource(listed: listed, offered: offered)
+    ) throws {
+        let source = try DownloadSource(listed: listed, offered: offered)
 
         #expect(source.url == expected)
         #expect((source.note != nil) == hasNote)
         #expect(source.derivedFallback == fallback)
+    }
+}
+
+struct ArchiveFormatChoiceTests {
+    @Test(arguments: [
+        (ArchiveFormat.xip, [xip, aea] as [URL]?, xip),
+        (.xip, nil, xip),
+        (.aea, [xip, aea], aea),
+        (.aea, nil, aea),
+        (.aea, [], aea),
+    ])
+    func `a requested format is downloaded when it is offered or can be derived`(format: ArchiveFormat, offered: [URL]?, expected: URL) throws {
+        let source = try DownloadSource(listed: xip, offered: offered, format: format)
+
+        #expect(source.url == expected)
+        #expect(source.derivedFallback == nil)
+        #expect(source.note != nil)
+    }
+
+    @Test(arguments: [(ArchiveFormat.xip, [aea]), (.aea, [xip])])
+    func `a requested format that apple does not offer is an error`(format: ArchiveFormat, offered: [URL]) {
+        #expect {
+            try DownloadSource(listed: xip, offered: offered, format: format)
+        } throws: { error in
+            guard case let CoreError.archiveFormatNotOffered(requested, names) = error else { return false }
+            return requested == format && names == offered.map(\.lastPathComponent) && error.localizedDescription.contains("--archive-format")
+        }
+    }
+
+    @Test
+    func `resume data is kept per format`() throws {
+        let caches = try TemporaryDirectory()
+        let downloader = Downloader(logger: LogRecorder().logger(), session: .shared, cachesDirectory: caches.url)
+
+        #expect(downloader.cacheURL(for: xip) != downloader.cacheURL(for: aea))
     }
 }
 
