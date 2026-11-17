@@ -424,18 +424,31 @@ public struct Core: Sendable {
     public func switchXcode(to application: XcodeApplication, options: SwitchOptions) async throws {
         logger.beginSection("Switching to Xcode \(application.xcode.displayName)")
         let symlinkURL = fileSystem.applicationsDirectory().appendingPathComponent("Xcode.app")
+        if options.skipXcodeSelection {
+            logger.verbose("Leaving the xcode-select selection unchanged.")
+        } else {
+            do {
+                let password = try await getPassword(reason: "Selecting Xcode needs administrator rights (sudo) to run xcode-select.")
+                try await selectXcode(at: application.url, password: password)
+            } catch {
+                logger.log("Nothing was changed.")
+                throw error
+            }
+        }
         if options.skipSymlinkCreation {
             logger.verbose("Leaving \(symlinkURL.path) unchanged.")
         } else if application.url.standardizedFileURL == symlinkURL.standardizedFileURL {
             logger.log("\(symlinkURL.path) is this Xcode itself, so there is no link to change.")
         } else {
-            try await createSymbolicLink(to: application.url)
-        }
-        if options.skipXcodeSelection {
-            logger.verbose("Leaving the xcode-select selection unchanged.")
-        } else {
-            let password = try await getPassword(reason: "Selecting Xcode needs administrator rights (sudo) to run xcode-select.")
-            try await selectXcode(at: application.url, password: password)
+            do {
+                try await createSymbolicLink(to: application.url)
+            } catch {
+                logger.verbose("The link could not be created: \(error.localizedDescription)")
+                if !options.skipXcodeSelection {
+                    logger.warn("xcode-select now uses \(application.url.path), but \(symlinkURL.path) was not changed.")
+                }
+                throw error as? CoreError ?? CoreError.installationFailed
+            }
         }
         logger.success("Switched to Xcode \(application.xcode.displayName) at \(application.url.path).")
     }
