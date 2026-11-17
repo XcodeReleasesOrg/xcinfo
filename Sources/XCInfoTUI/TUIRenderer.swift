@@ -26,8 +26,24 @@ public struct TUIRenderer: Sendable {
 
         let bodyHeight = height - 3
         if let activity = model.activity {
-            var lines = [style(" xcinfo — \(activity.title)".truncated(to: width).padded(to: width), .title)]
-            lines += activityBody(activity, width: width, height: bodyHeight)
+            var lines = [style(" xcinfo — Xcode versions".padded(to: width), .title)]
+            let listWidth = width >= 90 ? max(28, width / 3) : 0
+            let panelWidth = listWidth > 0 ? width - listWidth - 1 : width
+            let panel = activityPanel(activity, width: panelWidth, height: bodyHeight)
+            if listWidth > 0 {
+                let rows = listRows(model)
+                let selectedRow = rows.firstIndex { $0.entryIndex == model.selection } ?? 0
+                let offset = min(max(0, selectedRow - bodyHeight / 2), max(0, rows.count - bodyHeight))
+                let visibleRows = Array(rows.dropFirst(offset).prefix(bodyHeight))
+                for index in 0 ..< bodyHeight {
+                    let row = visibleRows.indices.contains(index) ? visibleRows[index] : nil
+                    let marker = row?.entryIndex == model.selection && row?.entryIndex != nil ? "› " : "  "
+                    let text = row.map { $0.entryIndex == nil ? $0.text : marker + $0.text } ?? ""
+                    lines.append(style(text.truncated(to: listWidth).padded(to: listWidth), .dim) + " " + panel[index])
+                }
+            } else {
+                lines += panel
+            }
             lines.append((model.status ?? "").truncated(to: width).padded(to: width))
             lines.append(style(activityHelp(activity).truncated(to: width).padded(to: width), .dim))
             if let dialog = model.dialog {
@@ -65,22 +81,51 @@ public struct TUIRenderer: Sendable {
         return lines
     }
 
-    func activityBody(_ activity: TUIActivity, width: Int, height: Int) -> [String] {
-        var footer: [String] = []
+    func activityPanel(_ activity: TUIActivity, width: Int, height: Int) -> [String] {
+        let inner = max(10, width - 4)
+        var progressContent: [(String, Style)] = []
         if let progress = activity.progress {
-            let barWidth = max(10, min(40, width - 30))
+            let barWidth = max(6, min(40, inner - 22))
             let display = ProgressDisplay(ratio: progress.fraction, width: barWidth)
-            let bar = usesColors ? display.representation : display.representation.unstyled
-            footer = ["", " \(progress.title): \(bar) \(progress.detail ?? "")"]
+            progressContent = [("", .plain), ("\(progress.title) \(display.representation.unstyled)", .plain)]
+            if let detail = progress.detail {
+                progressContent.append((detail, .dim))
+            }
         }
-        let available = max(0, height - footer.count)
-        let shown = activity.lines.suffix(available).map { line -> String in
-            let text = " " + prefix(for: line.kind) + line.text
-            return style(text.truncated(to: width).padded(to: width), style(for: line.kind))
+        var content: [(String, Style)]
+        if activity.steps.count + progressContent.count <= max(0, height - 2) {
+            content = activity.steps.map { step in
+                let (symbol, style): (String, Style) = switch step.state {
+                case .pending: ("·", .dim)
+                case .running: ("▸", .plain)
+                case .done: ("✓", .success)
+                case .failed: ("✗", .error)
+                }
+                return ("\(symbol) \(step.name)", style)
+            }
+        } else if let current = activity.steps.firstIndex(where: { $0.state == .running || $0.state == .failed }) {
+            content = [("▸ \(activity.steps[current].name) (\(current + 1) of \(activity.steps.count))", .plain)]
+        } else {
+            content = []
         }
-        let filler = Array(repeating: String(repeating: " ", count: width), count: max(0, available - shown.count))
-        return shown + filler + footer.map { line in
-            line.unstyledWidth > width ? line.truncated(to: width) : line + String(repeating: " ", count: width - line.unstyledWidth)
+        content += progressContent
+        let fixed = content.count + 1
+        let logHeight = max(0, height - 2 - fixed)
+        let log = activity.lines.suffix(logHeight).map { line in (prefix(for: line.kind) + line.text, style(for: line.kind)) }
+        if !log.isEmpty {
+            content.append(("", .plain))
+            content += log
+        }
+        let title = " \(activity.title) "
+        let top = "┌" + title.truncated(to: inner + 2) + String(repeating: "─", count: max(0, inner + 2 - title.truncated(to: inner + 2).count)) + "┐"
+        var lines = [top]
+        for index in 0 ..< max(0, height - 2) {
+            let (text, textStyle) = content.indices.contains(index) ? content[index] : ("", .plain)
+            lines.append("│ " + style(text.truncated(to: inner).padded(to: inner), textStyle) + " │")
+        }
+        lines.append("└" + String(repeating: "─", count: inner + 2) + "┘")
+        return lines.map { line in
+            line.unstyledWidth < width ? line + String(repeating: " ", count: width - line.unstyledWidth) : line
         }
     }
 
