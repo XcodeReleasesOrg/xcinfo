@@ -37,6 +37,8 @@ extension Error {
             9
         case let error as Interrupted:
             128 + error.signal
+        case is PromptUnavailable:
+            10
         default:
             1
         }

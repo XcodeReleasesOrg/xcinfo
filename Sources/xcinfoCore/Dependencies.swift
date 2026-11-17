@@ -45,6 +45,7 @@ public struct ExtractionClient: Sendable {
 public struct ProcessClient: Sendable {
     public var run: @Sendable (_ command: String, _ arguments: [String]) async throws -> ProcessResult
     public var runPrivileged: @Sendable (_ command: String, _ password: String, _ arguments: [String]) async throws -> ProcessResult
+    public var isRunningAsRoot: @Sendable () -> Bool = { false }
 }
 
 @DependencyClient
@@ -173,8 +174,12 @@ extension ProcessClient: DependencyKey {
             try await ProcessRunner.run(command, arguments: arguments)
         },
         runPrivileged: { command, password, arguments in
-            try await ProcessRunner.runPrivileged(command, password: password, arguments: arguments)
-        }
+            if geteuid() == 0 {
+                return try await ProcessRunner.run(command, arguments: arguments)
+            }
+            return try await ProcessRunner.runPrivileged(command, password: password, arguments: arguments)
+        },
+        isRunningAsRoot: { geteuid() == 0 }
     )
 
     public static let testValue = ProcessClient()
