@@ -55,7 +55,7 @@ To run without installing, use `swift run -c release xcinfo …`. Plain `swift r
 Lists the Xcode versions from xcodereleases.com: by default the versions released in the last year that can be installed on this Mac, then the installed ones and the ones this Mac cannot run.
 
 - `-a`, `--all` lists every version ever released
-- `--only-releases` lists only final releases; `--only-gm` only versions marked GM, which xcodereleases.com no longer uses for new releases
+- `--only-releases` lists only versions marked as final releases; `--only-gm` only versions marked GM, which xcodereleases.com no longer uses for new releases, so it finds only older versions
 - `--no-update-list` uses the cached list (`~/Library/Caches/xcinfo/xcinfo.json`) instead of loading it again from xcodereleases.com (`--update-list`, the default); every command that looks up versions accepts it
 
 ### info
@@ -166,13 +166,13 @@ Stopping a download with Ctrl-C saves its progress in `~/Library/Caches/xcinfo/<
 
 - Set `XCINFO_APPLE_ID` and `XCINFO_APPLE_PASSWORD` for the sign-in. The password is only used when Apple needs a new sign-in.
 - `--non-interactive` never asks. Where xcinfo would ask a question, it fails with exit code 10 and prints the question and its choices, so you can give the answer up front: an exact version or build number, `--apple-silicon` or `--universal`, `--overwrite`, `--no-verify`.
-- Without a terminal on standard input, a question that cannot be read also fails with exit code 10; a missing Apple ID or password fails with exit code 4.
+- Without a terminal on standard input, a choice between versions and a missing Apple ID or password fail with exit code 10; yes/no questions read their answer from standard input and fail with exit code 10 when it ends. With `--json`, choices fail the same way, so the output stays valid JSON.
 - Running as root, the administrator steps of `install` and `switch` run directly, without `sudo` and without asking for a password.
 - `--prevent-sleep` keeps the Mac awake during a download. `--no-sleep` still works but is deprecated, and `--sleep` lets the Mac sleep.
 
 ## Output
 
-- Progress and status go to standard output, warnings and errors to standard error.
+- Progress and status go to standard output; questions, warnings and errors to standard error.
 - Colors are used only when the output is a terminal. They are off when `NO_COLOR` is set, when `TERM` is `dumb`, or with `--no-ansi` (`--ansi` is the default).
 - Progress updates a single line on a terminal. When the output is piped, it prints a plain line every 10 %.
 - `-q`, `--quiet` shows only results, warnings and errors. `-v`, `--verbose` shows more details.
@@ -204,13 +204,13 @@ Versions with two downloads have an extra `"architecture"` field (`"appleSilicon
 | 0 | Success |
 | 1 | Unexpected error |
 | 3 | Version not found |
-| 4 | Sign-in failed, or no Apple ID or password without a terminal |
+| 4 | Sign-in failed |
 | 5 | Download failed, or the archive's checksum does not match |
 | 6 | Extraction failed |
 | 7 | Installation failed |
 | 8 | Uninstallation failed |
 | 9 | xcodereleases.com or the cached list is unavailable |
-| 10 | An answer was needed with `--non-interactive` or after the input ended |
+| 10 | An answer was needed but could not be asked: with `--non-interactive`, without a terminal, after the input ended, or a choice with `--json` |
 | 64 | Invalid arguments |
 | 130 | Stopped with Ctrl-C (143 for `SIGTERM`); a paused download resumes on the next run |
 
