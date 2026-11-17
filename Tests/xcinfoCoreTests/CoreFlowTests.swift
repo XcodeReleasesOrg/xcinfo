@@ -530,7 +530,8 @@ struct CoreInstallTests {
         } throws: { error in
             isCoreError(error) { if case .incorrectSuperUserPassword = $0 { true } else { false } }
         }
-        #expect(prompt.secrets.values == ["Please enter your password:", "Sorry, try again:", "Sorry, try again:"])
+        let passwordPrompt = "Mac administrator password for \(NSUserName()) (sudo):"
+        #expect(prompt.secrets.values == [passwordPrompt, "Sorry, try again. \(passwordPrompt)", "Sorry, try again. \(passwordPrompt)"])
         #expect(shell.privilegedCalls.map(\.password) == ["one", "two", "three"])
     }
 

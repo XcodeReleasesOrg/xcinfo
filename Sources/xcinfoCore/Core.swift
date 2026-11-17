@@ -460,10 +460,11 @@ extension Core {
     }
 
     private func getPassword() async throws -> String {
-        logger.log("xcinfo needs administrator privileges to install Xcode.")
+        logger.log("Installing Xcode needs administrator rights (sudo) to accept the license, enable developer mode and select the new Xcode.")
+        let passwordPrompt = "Mac administrator password for \(NSUserName()) (sudo):"
 
         for attempt in 1 ... 3 {
-            let password = prompt.readSecret(attempt == 1 ? "Please enter your password:" : "Sorry, try again:")
+            let password = prompt.readSecret(attempt == 1 ? passwordPrompt : "Sorry, try again. \(passwordPrompt)")
             if try await processes.runPrivileged("ls", password, []).exitStatus == EXIT_SUCCESS {
                 return password
             }
