@@ -48,7 +48,8 @@
 
 - `XCInfoTUI` is a small in-house full-screen UI (no third-party TUI library). `TUIModel` holds the groups and the selection and turns keys into `TUICommand`s; `TUIRenderer` draws a model into exactly `height` lines of `width` characters, so rendering is tested as plain strings; `TerminalSession` owns raw mode, the alternate screen and key polling
 - Resizes are picked up by checking the size on every tick, not with a signal handler. Every exit path, Ctrl-C included, restores the terminal
-- Actions that need typed input (sign-in, two-factor codes, the administrator password) leave the full-screen view and run the normal CLI flow, then return
+- Actions run inside the full-screen view as a child task: Core's output events and questions arrive through `TUISession` (logger and an async `PromptClient`) in the same input stream as the keys. Questions open `TUIDialog`s; secrets are shown as dots and not kept after Return. Esc or Ctrl-C cancels the action task; a cancelled question answers every later one with "cancelled", and sudo is never run with an empty password
+- `SIGTERM` and `SIGHUP` end the UI through `InterruptSignals` and restore the terminal
 
 ## Apple sign-in
 
