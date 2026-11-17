@@ -50,7 +50,14 @@ public struct ProcessClient: Sendable {
 public struct FileSystemClient: Sendable {
     public var cachesDirectory: @Sendable () -> URL = { URL(fileURLWithPath: NSTemporaryDirectory()) }
     public var applicationsDirectory: @Sendable () -> URL = { URL(fileURLWithPath: NSTemporaryDirectory()) }
-    public var temporaryDirectory: @Sendable () -> URL = { URL(fileURLWithPath: NSTemporaryDirectory()) }
+    public var temporaryDirectory: @Sendable (_ onVolumeOf: URL) -> URL = { _ in URL(fileURLWithPath: NSTemporaryDirectory()) }
+    public var trashItem: @Sendable (_ url: URL) throws -> URL? = { url in
+        reportIssue("Unimplemented: fileSystem.trashItem(\(url.path))")
+        return nil
+    }
+    public var removeItem: @Sendable (_ url: URL) throws -> Void = { url in
+        reportIssue("Unimplemented: fileSystem.removeItem(\(url.path))")
+    }
 }
 
 @DependencyClient
@@ -139,7 +146,7 @@ extension ExtractionClient: DependencyKey {
                 forReadingFromContainerAt: source,
                 destination: destination,
                 appFilename: appFilename,
-                temporaryDirectory: fileSystem.temporaryDirectory(),
+                temporaryDirectory: fileSystem.temporaryDirectory(destination),
                 logger: logger
             )
             if useLegacyUnxip {
@@ -170,7 +177,18 @@ extension FileSystemClient: DependencyKey {
     public static let liveValue = FileSystemClient(
         cachesDirectory: { FileManager.default.cachesDirectory },
         applicationsDirectory: { URL(fileURLWithPath: "/Applications") },
-        temporaryDirectory: { FileManager.default.temporaryDirectory }
+        temporaryDirectory: { destination in
+            (try? FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: destination, create: true))
+                ?? FileManager.default.temporaryDirectory
+        },
+        trashItem: { url in
+            var trashedURL: NSURL?
+            try FileManager.default.trashItem(at: url, resultingItemURL: &trashedURL)
+            return trashedURL as URL?
+        },
+        removeItem: { url in
+            try FileManager.default.removeItem(at: url)
+        }
     )
 
     public static let testValue = FileSystemClient()

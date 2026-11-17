@@ -236,7 +236,7 @@ public struct Core: Sendable {
     }
 
     @discardableResult
-    public func uninstall(_ version: String?, updateVersionList: Bool) async throws -> XcodeApplication? {
+    public func uninstall(_ version: String?, updateVersionList: Bool, deletePermanently: Bool = false) async throws -> XcodeApplication? {
         let knownVersions: [Xcode] = try await list(shouldUpdate: updateVersionList)
         guard !knownVersions.isEmpty else {
             throw CoreError.uninstallationFailed("No Xcode releases found.")
@@ -263,18 +263,33 @@ public struct Core: Sendable {
             selected = xcodes[0]
         }
 
-        guard prompt.agree("Are you sure you want to uninstall Xcode \(selected.xcode.displayName)?") else {
+        let question = deletePermanently
+            ? "Permanently delete Xcode \(selected.xcode.displayName) at \(selected.url.path)? This cannot be undone."
+            : "Move Xcode \(selected.xcode.displayName) at \(selected.url.path) to the Trash?"
+        guard prompt.agree(question) else {
             logger.log("Nothing was uninstalled.")
             return nil
         }
-        do {
-            logger.verbose("Uninstalling Xcode \(selected.xcode.description) from \(selected.url.path) ...")
-            try FileManager.default.removeItem(at: selected.url)
-            logger.success("\(selected.xcode.description) uninstalled.")
+        if deletePermanently {
+            do {
+                try fileSystem.removeItem(selected.url)
+            } catch {
+                throw CoreError.uninstallationFailed("Could not delete \(selected.url.path): \(error.localizedDescription)")
+            }
+            logger.success("Deleted Xcode \(selected.xcode.description) at \(selected.url.path).")
             return selected
-        } catch {
-            throw CoreError.uninstallationFailed("Uninstallation failed. Error: \(error.localizedDescription)")
         }
+        let trashedURL: URL?
+        do {
+            trashedURL = try fileSystem.trashItem(selected.url)
+        } catch {
+            throw CoreError.uninstallationFailed("""
+            Could not move \(selected.url.path) to the Trash: \(error.localizedDescription)
+            Nothing was deleted. Run the command again with --delete-permanently to delete it without the Trash.
+            """)
+        }
+        logger.success("Moved Xcode \(selected.xcode.description) to the Trash\(trashedURL.map { ": \($0.path)" } ?? ".")")
+        return selected
     }
 
     @discardableResult
@@ -298,7 +313,7 @@ public struct Core: Sendable {
             let destinationURL = try await extraction.extract(
                 source,
                 options.destination,
-                xcode?.filename(in: fileSystem.applicationsDirectory()),
+                xcode?.filename(in: options.destination),
                 options.useLegacyUnxip
             )
             logger.success("Extracted to \(destinationURL.path)")
