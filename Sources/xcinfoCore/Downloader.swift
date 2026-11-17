@@ -53,7 +53,9 @@ struct Downloader: Sendable {
             disableSleep: disableSleep
         )
 
-        logger.verbose(resumeData == nil ? "Starting download" : "Resuming download")
+        if resumeData == nil {
+            logger.verbose("Starting download")
+        }
         logger.log("Source: \(url)")
 
         do {
@@ -84,7 +86,7 @@ struct Downloader: Sendable {
                 )
                 let now = ContinuousClock.now
                 let milestone = Int(progress.progress * 10)
-                let isMilestone = milestone > lastMilestone
+                let isMilestone = milestone > lastMilestone && milestone < 10
                 if let lastDisplay, lastDisplay.duration(to: now) < .seconds(1), !isMilestone {
                     continue
                 }
@@ -108,7 +110,8 @@ struct Downloader: Sendable {
                 logger.progress(OutputProgress(
                     title: "Downloading",
                     fraction: 1,
-                    detail: "done in \(downloadTime.formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated)))"
+                    detail: "done in \(downloadTime.englishDescription)",
+                    isFinished: true
                 ))
 
                 guard let downloadedURL else {
@@ -198,6 +201,7 @@ struct Downloader: Sendable {
                 throw XCAPIError.downloadInterrupted
             } catch let XCAPIError.recoverableDownloadError(_, recoveredResumeData) where retries < Self.maximumRetries {
                 retries += 1
+                logger.verbose("The download failed. Retrying where it stopped (\(retries) of \(Self.maximumRetries)).")
                 resumeData = recoveredResumeData
                 isResumingCachedDownload = false
                 try await clock.sleep(for: .seconds(3))
@@ -235,8 +239,15 @@ struct ResumeData: Sendable, Equatable {
             return nil
         }
         if plist["$archiver"] as? String == "NSKeyedArchiver", plist["$top"] != nil {
+            let archived = try? NSKeyedUnarchiver.unarchivedObject(
+                ofClasses: [NSDictionary.self, NSArray.self, NSString.self, NSNumber.self, NSData.self, NSDate.self, NSURL.self, NSURLRequest.self],
+                from: data
+            ) as? [String: Any]
+            if let downloadURL = archived?["NSURLSessionDownloadURL"] as? String, downloadURL != url.absoluteString {
+                return nil
+            }
             self.data = data
-            bytesReceived = nil
+            bytesReceived = (archived?["NSURLSessionResumeBytesReceived"] as? NSNumber)?.int64Value
             return
         }
         guard plist["NSURLSessionResumeInfoVersion"] != nil else { return nil }
@@ -245,5 +256,11 @@ struct ResumeData: Sendable, Equatable {
         }
         self.data = data
         bytesReceived = (plist["NSURLSessionResumeBytesReceived"] as? NSNumber)?.int64Value
+    }
+}
+
+extension Duration {
+    var englishDescription: String {
+        formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated).locale(Locale(identifier: "en_US")))
     }
 }

@@ -140,6 +140,8 @@ struct DownloaderTests {
         ("other url", false, nil),
         ("missing version", false, nil),
         ("archive", true, nil),
+        ("archived resume data", true, 5678),
+        ("archived resume data for another url", false, nil),
         ("garbage", false, nil),
     ] as [(String, Bool, Int64?)])
     func `resume data is checked before it is used`(kind: String, isUsable: Bool, bytesReceived: Int64?) throws {
@@ -155,7 +157,17 @@ struct DownloaderTests {
         default:
             nil
         }
-        let data = try plist.map { try PropertyListSerialization.data(fromPropertyList: $0, format: .xml, options: 0) } ?? Data("resume".utf8)
+        let archived: [String: Any]? = switch kind {
+        case "archived resume data":
+            ["NSURLSessionResumeInfoVersion": 2, "NSURLSessionDownloadURL": downloadURL.absoluteString, "NSURLSessionResumeBytesReceived": 5678]
+        case "archived resume data for another url":
+            ["NSURLSessionResumeInfoVersion": 2, "NSURLSessionDownloadURL": "https://example.invalid/other.xip"]
+        default:
+            nil
+        }
+        let data = try archived.map { try NSKeyedArchiver.archivedData(withRootObject: $0 as NSDictionary, requiringSecureCoding: true) }
+            ?? plist.map { try PropertyListSerialization.data(fromPropertyList: $0, format: .xml, options: 0) }
+            ?? Data("resume".utf8)
 
         let resumeData = ResumeData(data, for: downloadURL)
 
@@ -214,5 +226,13 @@ struct DownloaderTests {
         #expect(configuration.timeoutIntervalForResource == 60 * 60 * 24)
         #expect(configuration.httpCookieStorage === HTTPCookieStorage.shared)
         #expect(URLSession.xcinfo.configuration.httpCookieStorage === HTTPCookieStorage.shared)
+    }
+}
+
+struct DurationFormattingTests {
+    @Test
+    func `durations are formatted in English whatever the system language`() {
+        #expect(Duration.seconds(10).englishDescription == "10 sec")
+        #expect(Duration.seconds(75).englishDescription == "1 min, 15 sec")
     }
 }

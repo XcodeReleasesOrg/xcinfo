@@ -65,7 +65,7 @@ struct Extractor: Sendable {
             ))
         }
         try await extraction
-        logger.progress(OutputProgress(title: "Extracting", fraction: 1))
+        logger.progress(OutputProgress(title: "Extracting", fraction: 1, isFinished: true))
         logger.verbose("Done extracting: \(target.path)")
 
         if let applicationURL = moveToDestinationFolder(tempFolder: target) {
@@ -127,7 +127,7 @@ struct Extractor: Sendable {
             throw ExtractionError(message.hasPrefix(prefix) ? String(message.dropFirst(prefix.count)) : message)
         }
 
-        logger.progress(OutputProgress(title: "Extracting", fraction: 1))
+        logger.progress(OutputProgress(title: "Extracting", fraction: 1, isFinished: true))
         logger.verbose("Done extracting: \(target.path)")
         if let applicationURL = moveToDestinationFolder(tempFolder: target) {
             return applicationURL
