@@ -202,6 +202,7 @@ public actor OlympUs {
     private var loadedAccount: String?
     private var loadedAssets: AuthenticationAssets?
     private var savedSession: SavedSessionKey?
+    private var cookiesToClean: [String] = []
     private var hasWarnedAboutSaving = false
     private var hasLegacyCookies = false
 
@@ -223,6 +224,7 @@ public actor OlympUs {
         loadedAccount = account
         loadedAssets = nil
         savedSession = nil
+        cookiesToClean = []
 
         let data: Data?
         do {
@@ -239,9 +241,9 @@ public actor OlympUs {
         }
         if let stored = try? JSONDecoder().decode(StoredSession.self, from: data) {
             logger.verbose("Stored session found.")
-            let droppedCookies = restoreCookies(from: stored.cookies)
+            cookiesToClean = restoreCookies(from: stored.cookies)
             loadedAssets = stored.assets
-            savedSession = droppedCookies ? nil : SavedSessionKey(assets: stored.assets, cookies: cookieKeys)
+            savedSession = SavedSessionKey(assets: stored.assets, cookies: cookieKeys)
         } else if let legacyAssets = try? JSONDecoder().decode(AuthenticationAssets.self, from: data) {
             logger.verbose("Stored session found in the old format. It is saved in the new format after the next sign-in step.")
             restoreCookies(from: await sessionStore.loadLegacyCookies())
@@ -258,11 +260,15 @@ public actor OlympUs {
         guard let account = loadedAccount else { return false }
         loadedAssets = assets
         let key = SavedSessionKey(assets: assets, cookies: cookieKeys)
-        guard key != savedSession else {
+        guard key != savedSession || !cookiesToClean.isEmpty else {
             logger.verbose("The session is unchanged and is not saved again.")
             return true
         }
-        logger.verbose(savedSession.map { "Saving the session because \(key.changes(from: $0))." } ?? "Saving the new session.")
+        let reasons = [
+            savedSession.flatMap { key == $0 ? nil : key.changes(from: $0) },
+            cookiesToClean.isEmpty ? nil : "the stored session still had cookies it no longer needs: \(cookiesToClean.sorted().joined(separator: ", "))",
+        ].compactMap { $0 }
+        logger.verbose(savedSession == nil ? "Saving the new session." : "Saving the session because \(reasons.joined(separator: " and ")).")
         guard let data = try? JSONEncoder().encode(StoredSession(assets: assets, cookies: cookieData())) else { return true }
         if hasLegacyCookies {
             await sessionStore.removeLegacyCookies()
@@ -271,6 +277,7 @@ public actor OlympUs {
         do {
             try await sessionStore.save(data, account)
             savedSession = key
+            cookiesToClean = []
             logger.verbose("Saved the session with \(sessionCookies.count) cookies.")
             return true
         } catch {
@@ -786,12 +793,12 @@ extension OlympUs {
     }
 
     @discardableResult
-    private func restoreCookies(from data: Data?) -> Bool {
+    private func restoreCookies(from data: Data?) -> [String] {
         guard
             let cookieStorage = session.configuration.httpCookieStorage,
             let data,
             let cookies = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [[String: Any]]
-        else { return false }
+        else { return [] }
 
         let date = now()
         var restored: [HTTPCookie] = []
@@ -810,7 +817,7 @@ extension OlympUs {
         if !dropped.isEmpty {
             logger.verbose("Dropped \(dropped.count) stored cookies: \(dropped.droppedList(at: date))")
         }
-        return !dropped.isEmpty
+        return dropped.filter { !$0.hasExpired(at: date) }.map(\.name)
     }
 }
 
@@ -818,6 +825,10 @@ extension HTTPCookie {
     static let sessionCookieNames: Set<String> = [
         "DSESSIONID", "aasp", "acn01", "dqsid", "itcdq", "itctx", "myacinfo",
     ]
+
+    func hasExpired(at date: Date) -> Bool {
+        expiresDate.map { $0 <= date } ?? false
+    }
 
     func isNeededForSession(at date: Date) -> Bool {
         dropReason(at: date) == nil
