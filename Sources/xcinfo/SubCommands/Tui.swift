@@ -43,6 +43,7 @@ extension XCInfo {
                             try await withDependencies {
                                 $0.logger = session.logger
                                 $0.prompt = session.prompt
+                                $0.keychain = $0.keychain.handingOverTerminal(to: session, logsState: globals.isVerbose || ProcessInfo.processInfo.environment["XCINFO_DEBUG_KEYCHAIN"] == "1")
                             } operation: {
                                 try await perform(command, core: Core())
                             }
@@ -50,10 +51,6 @@ extension XCInfo {
                         } catch {
                             return TUIOutcome(succeeded: false, message: Task.isCancelled ? "Stopped." : error.message)
                         }
-                    },
-                    prepare: {
-                        @Dependency(\.keychain) var keychain
-                        _ = try? await keychain.load()
                     }
                 ),
                 usesColors: globals.renderer.options.usesColors,
@@ -91,5 +88,48 @@ private func perform(_ command: TUICommand, core: Core) async throws {
         try await core.uninstall(application.xcode.version.build?.lowercased() ?? application.xcode.displayVersion, updateVersionList: false)
     case .quit, .refresh:
         break
+    }
+}
+
+private let firstKeychainRead = FirstUse()
+
+actor FirstUse {
+    private var isUsed = false
+
+    func claim() -> Bool {
+        defer { isUsed = true }
+        return !isUsed
+    }
+}
+
+extension KeychainClient {
+    func handingOverTerminal(to session: TUISession, logsState: Bool, firstUse: FirstUse = firstKeychainRead) -> KeychainClient {
+        var client = self
+        let load = self.load
+        let reload = self.reload
+        client.load = {
+            guard await firstUse.claim() else { return try await load() }
+            return try await session.withTerminalReleased(
+                leavingFullScreen: false,
+                message: "Waiting for macOS to unlock the xcinfo Keychain item…"
+            ) { state in
+                if logsState {
+                    session.logger.log("Reading the Keychain with \(state).")
+                }
+                return try await load()
+            }
+        }
+        client.reload = {
+            try await session.withTerminalReleased(
+                leavingFullScreen: true,
+                message: "Leaving the full-screen view so macOS can show the Keychain dialog…"
+            ) { state in
+                if logsState {
+                    session.logger.log("Reading the Keychain again with \(state).")
+                }
+                return try await reload()
+            }
+        }
+        return client
     }
 }

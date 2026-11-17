@@ -12,6 +12,26 @@ public enum TUIInput: Sendable {
     case output(OutputEvent)
     case question(TUIQuestion)
     case finished(TUIOutcome)
+    case releaseTerminal(TerminalRelease)
+    case reacquireTerminal(TerminalRelease)
+}
+
+public struct TerminalRelease: Sendable {
+    public let leavesFullScreen: Bool
+    public let message: String
+    let done: CheckedContinuation<String, Never>
+}
+
+actor KeyReaderGate {
+    private(set) var isPaused = false
+
+    func pause() {
+        isPaused = true
+    }
+
+    func resume() {
+        isPaused = false
+    }
 }
 
 public struct TUIOutcome: Sendable, Equatable {
@@ -53,8 +73,26 @@ actor TUIQuestionBox {
 public struct TUISession: Sendable {
     public let logger: Logger
     public let prompt: PromptClient
+    private let input: AsyncStream<TUIInput>.Continuation
+
+    public func withTerminalReleased<Result: Sendable>(
+        leavingFullScreen: Bool,
+        message: String,
+        _ operation: (_ terminalState: String) async throws -> Result
+    ) async throws -> Result {
+        let input = input
+        let state = await withCheckedContinuation { done in
+            input.yield(.releaseTerminal(TerminalRelease(leavesFullScreen: leavingFullScreen, message: message, done: done)))
+        }
+        let result = await Swift.Result { try await operation(state) }
+        _ = await withCheckedContinuation { done in
+            input.yield(.reacquireTerminal(TerminalRelease(leavesFullScreen: leavingFullScreen, message: message, done: done)))
+        }
+        return try result.get()
+    }
 
     init(input: AsyncStream<TUIInput>.Continuation, questions: TUIQuestionBox) {
+        self.input = input
         logger = Logger { input.yield(.output($0)) }
         prompt = PromptClient(
             ask: { message, invalidMessage, isInvalid in
