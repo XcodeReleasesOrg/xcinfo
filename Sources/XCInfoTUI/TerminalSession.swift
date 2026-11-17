@@ -25,6 +25,13 @@ final class TerminalSession: TerminalControl {
     private var isActive = false
     private var isRaw = false
 
+    var isPasteBracketed = false {
+        didSet {
+            guard isPasteBracketed != oldValue else { return }
+            write(isPasteBracketed ? "\u{1B}[?2004h" : "\u{1B}[?2004l")
+        }
+    }
+
     static var isInteractive: Bool {
         isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0
     }
@@ -39,6 +46,7 @@ final class TerminalSession: TerminalControl {
 
     func leave() {
         guard isActive else { return }
+        isPasteBracketed = false
         write("\u{1B}[0m\u{1B}[?25h\u{1B}[?1049l")
         leaveRawMode()
         isActive = false
@@ -100,16 +108,13 @@ final class TerminalSession: TerminalControl {
 struct TerminalInput: Sendable {
     func readKeys(timeout: Duration) -> [Key] {
         guard waitForInput(timeout: timeout) else { return [] }
-        var buffer = [UInt8](repeating: 0, count: 64)
-        let count = read(STDIN_FILENO, &buffer, buffer.count)
-        guard count > 0 else { return [] }
-        var bytes = Array(buffer[0 ..< count])
-        if bytes == [0x1B], waitForInput(timeout: .milliseconds(30)) {
-            let more = read(STDIN_FILENO, &buffer, buffer.count)
-            if more > 0 {
-                bytes += buffer[0 ..< more]
-            }
-        }
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        var bytes: [UInt8] = []
+        repeat {
+            let count = read(STDIN_FILENO, &buffer, buffer.count)
+            guard count > 0 else { break }
+            bytes += buffer[0 ..< count]
+        } while Key.isIncomplete(bytes) && waitForInput(timeout: .milliseconds(30))
         return Key.parse(bytes)
     }
 
