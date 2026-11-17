@@ -6,7 +6,9 @@
 import Foundation
 import XCIFoundation
 import xcinfoCore
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable
+
+// annotations.
 
 public struct TUIRenderer: Sendable {
     public var usesColors: Bool
@@ -21,7 +23,10 @@ public struct TUIRenderer: Sendable {
     public func render(_ model: TUIModel, width: Int, height: Int) -> [String] {
         guard width >= Self.minimumWidth, height >= Self.minimumHeight else {
             let message = String("Terminal too small. Enlarge the window or press q to quit.".prefix(max(0, width)))
-            return [message.padded(to: width)] + Array(repeating: String(repeating: " ", count: max(0, width)), count: max(0, height - 1))
+            return [message.padded(to: width)] + Array(
+                repeating: String(repeating: " ", count: max(0, width)),
+                count: max(0, height - 1)
+            )
         }
 
         let bodyHeight = height - 3
@@ -64,7 +69,10 @@ public struct TUIRenderer: Sendable {
         var lines = [style(" xcinfo — Xcode versions".padded(to: width), .title)]
         for index in 0 ..< bodyHeight {
             let row = visibleRows.indices.contains(index) ? visibleRows[index] : nil
-            var line = row.map { render($0, selected: $0.entryIndex == model.selection, width: listWidth) } ?? String(repeating: " ", count: listWidth)
+            var line = row.map { render($0, selected: $0.entryIndex == model.selection, width: listWidth) } ?? String(
+                repeating: " ",
+                count: listWidth
+            )
             if detailWidth > 0 {
                 let detail = details.indices.contains(index) ? details[index] : ""
                 line += " │ " + detail.truncated(to: detailWidth).padded(to: detailWidth)
@@ -76,7 +84,11 @@ public struct TUIRenderer: Sendable {
         if let dialog = model.dialog {
             overlay(box(dialog, width: width), on: &lines, height: height)
         } else if let setup = model.installSetup {
-            overlay(box(setup.lines(fieldWidth: max(10, min(56, width - 18))), width: width), on: &lines, height: height)
+            overlay(
+                box(setup.lines(fieldWidth: max(10, min(56, width - 18))), width: width),
+                on: &lines,
+                height: height
+            )
         }
         return lines
     }
@@ -121,7 +133,10 @@ public struct TUIRenderer: Sendable {
             content += log
         }
         let title = " \(activity.title) "
-        let top = "┌" + title.truncated(to: inner + 2) + String(repeating: "─", count: max(0, inner + 2 - title.truncated(to: inner + 2).count)) + "┐"
+        let top = "┌" + title.truncated(to: inner + 2) + String(
+            repeating: "─",
+            count: max(0, inner + 2 - title.truncated(to: inner + 2).count)
+        ) + "┐"
         var lines = [top]
         for index in 0 ..< max(0, height - 2) {
             let (text, textStyle) = content.indices.contains(index) ? content[index] : ("", .plain)
@@ -185,8 +200,8 @@ public struct TUIRenderer: Sendable {
         let top = max(1, (height - box.count) / 2)
         let left = max(0, (width - boxWidth) / 2)
         for (offset, row) in box.enumerated() where lines.indices.contains(top + offset) {
-            let text = String(repeating: " ", count: left) + row
-            lines[top + offset] = style(text.padded(to: width), .dialog)
+            let base = lines[top + offset]
+            lines[top + offset] = base.columns(before: left) + style(row, .dialog) + base.columns(from: left + boxWidth)
         }
     }
 
@@ -223,7 +238,8 @@ public struct TUIRenderer: Sendable {
         guard let entry else { return [] }
         let xcode = entry.xcode
         var lines = [xcode.displayName, ""]
-        let releaseDate = xcode.releaseDate.formatted(Date.FormatStyle().year().month(.wide).day().locale(Locale(identifier: "en_US_POSIX")))
+        let releaseDate = xcode.releaseDate
+            .formatted(Date.FormatStyle().year().month(.wide).day().locale(Locale(identifier: "en_US_POSIX")))
         lines.append("Released:  \(releaseDate)")
         lines.append("Requires:  macOS \(xcode.requires)")
         switch entry.kind {
@@ -240,7 +256,8 @@ public struct TUIRenderer: Sendable {
         }
         if let compilers = xcode.compilers?.keyed(), !compilers.isEmpty {
             lines += ["", "Compilers"]
-            lines += compilers.keys.sorted().map { "  \($0) \(compilers[$0]?.first?.number ?? ""): \(compilers[$0]?.first?.build ?? "")" }
+            lines += compilers.keys.sorted()
+                .map { "  \($0) \(compilers[$0]?.first?.number ?? ""): \(compilers[$0]?.first?.build ?? "")" }
         }
         let links = [("Download", xcode.links?.download?.url), ("Release notes", xcode.links?.notes?.url)]
             .compactMap { label, url in url.map { "  \(label): \($0.absoluteString)" } }
