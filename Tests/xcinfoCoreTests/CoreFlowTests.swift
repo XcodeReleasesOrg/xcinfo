@@ -84,8 +84,8 @@ struct CoreInfoTests {
         let logs = LogRecorder()
         let prompt = FakePrompt(choices: [1])
         let xcodes = [
-            Xcode.fixture("15.0", build: "15A240d"),
-            .fixture("15.0.1", build: "15A507"),
+            Xcode.fixture("15.0", build: "15A240d", release: .beta(1)),
+            .fixture("15.0", build: "15A507", release: .beta(2)),
             .fixture("14.0", build: "14A1"),
         ]
         let core = Core.test(
@@ -96,11 +96,11 @@ struct CoreInfoTests {
             applicationsDirectory: applications.url
         )
 
-        let found = try await core.info(version: .version("15"), shouldUpdate: true)
+        let found = try await core.info(version: .version("15 beta"), shouldUpdate: true)
         #expect(found.version.build == "15A507")
 
-        #expect(prompt.chosen.values == [["15.0 (15A240d)", "15.0.1 (15A507)"]])
-        #expect(logs.messages.contains("Found multiple possibilities for the requested version '15'."))
+        #expect(prompt.chosen.values == [["15.0 Beta 1 (15A240d)", "15.0 Beta 2 (15A507)"]])
+        #expect(logs.messages.contains("Found multiple possibilities for the requested version '15 beta'."))
 
     }
 

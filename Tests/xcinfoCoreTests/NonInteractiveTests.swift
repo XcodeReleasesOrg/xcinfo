@@ -6,7 +6,7 @@ import XCIFoundation
 @testable import xcinfoCore
 
 struct NonInteractiveTests {
-    private let xcodes = [Xcode.fixture("15.0", build: "15A240d"), .fixture("15.0.1", build: "15A507")]
+    private let xcodes = [Xcode.fixture("15.0", build: "15A240d", release: .beta(1)), .fixture("15.0", build: "15A507", release: .beta(2))]
 
     @Test
     func `the flag is parsed for every command`() throws {
@@ -47,8 +47,8 @@ struct NonInteractiveTests {
             applicationsDirectory: caches.url
         )
 
-        await #expect(throws: PromptUnavailable(question: "Please choose the version you want to install: ", choices: ["15.0 (15A240d)", "15.0.1 (15A507)"])) {
-            try await core.info(version: .version("15"), shouldUpdate: true)
+        await #expect(throws: PromptUnavailable(question: "Please choose the version you want to install: ", choices: ["15.0 Beta 1 (15A240d)", "15.0 Beta 2 (15A507)"])) {
+            try await core.info(version: .version("15 beta"), shouldUpdate: true)
         }
     }
 
@@ -71,7 +71,7 @@ struct NonInteractiveTests {
         )
 
         await #expect(throws: PromptUnavailable.self) {
-            try await core.uninstall("15.0", updateVersionList: true)
+            try await core.uninstall("15.0 beta 1", updateVersionList: true)
         }
         #expect(FileManager.default.fileExists(atPath: app.path))
     }
@@ -95,7 +95,7 @@ struct NonInteractiveTests {
             applicationsDirectory: applications.url
         )
 
-        try await core.switchXcode(to: "15a240d", options: .init(skipSymlinkCreation: true), updateVersionList: true)
+        try await core.switchXcode(to: "15.0 beta 1", options: .init(skipSymlinkCreation: true), updateVersionList: true)
 
         #expect(shell.privilegedCalls.map(\.command) == ["xcode-select"])
         #expect(shell.privilegedCalls.allSatisfy { $0.password == "" })

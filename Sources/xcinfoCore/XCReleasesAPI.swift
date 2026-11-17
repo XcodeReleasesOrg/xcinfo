@@ -98,6 +98,19 @@ extension Xcode: @retroactive CustomStringConvertible, @retroactive CustomDebugS
         return nil
     }
 
+    var isFinalRelease: Bool {
+        switch version.release {
+        case .release, .gm: true
+        case .beta, .dp, .rc, .gmSeed: false
+        }
+    }
+
+    func hasVersionNumber(of versionParts: VersionParts) -> Bool {
+        let parts = (version.number ?? "").split(separator: ".").map { Int($0) ?? 0 }
+        let requested = [versionParts.major, versionParts.minor ?? 0, versionParts.patch ?? 0]
+        return (0 ..< 3).allSatisfy { (parts.indices.contains($0) ? parts[$0] : 0) == requested[$0] }
+    }
+
     func isVariant(of other: Xcode) -> Bool {
         displayName == other.displayName && links?.download?.url != other.links?.download?.url
     }
@@ -317,6 +330,16 @@ extension OperatingSystemVersion {
 }
 
 extension Release {
+    var kindDescription: String? {
+        switch self {
+        case .rc: "a release candidate"
+        case .beta: "a beta"
+        case .dp: "a developer preview"
+        case .gmSeed: "the GM seed"
+        case .release, .gm: nil
+        }
+    }
+
     var rank: Int {
         switch self {
         case .dp: 0
