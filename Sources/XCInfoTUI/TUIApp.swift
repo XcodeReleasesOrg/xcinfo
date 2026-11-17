@@ -182,7 +182,7 @@ public struct TUIApp: Sendable {
 extension TUICommand {
     var title: String {
         switch self {
-        case let .install(xcode):
+        case let .install(xcode, _):
             "Installing Xcode \(xcode.displayName)"
         case let .download(xcode):
             "Downloading Xcode \(xcode.displayName)"

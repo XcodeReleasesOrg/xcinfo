@@ -59,6 +59,8 @@ public struct TUIRenderer: Sendable {
         lines.append(style(help(for: model.selectedEntry).truncated(to: width).padded(to: width), .dim))
         if let dialog = model.dialog {
             overlay(box(dialog, width: width), on: &lines, height: height)
+        } else if let setup = model.installSetup {
+            overlay(box(setup.lines, width: width), on: &lines, height: height)
         }
         return lines
     }
@@ -117,7 +119,10 @@ public struct TUIRenderer: Sendable {
     }
 
     func box(_ dialog: TUIDialog, width: Int) -> [String] {
-        let content = [dialog.prompt, ""] + dialog.lines
+        box([dialog.prompt, ""] + dialog.lines, width: width)
+    }
+
+    func box(_ content: [String], width: Int) -> [String] {
         let innerWidth = max(20, min(width - 6, (content.map(\.count).max() ?? 0) + 2))
         let border = String(repeating: "─", count: innerWidth)
         return ["┌" + border + "┐"]

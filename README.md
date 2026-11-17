@@ -78,7 +78,7 @@ $ brew install xcinfo
 | Key | Action |
 |---|---|
 | ↑ ↓, j k, Page Up/Down, Home/End | Move |
-| i | Install the selected version |
+| i | Install the selected version: first asks for the folder (default /Applications) and whether to point /Applications/Xcode.app to it and select it with xcode-select |
 | d | Download the selected version |
 | u | Uninstall the selected version |
 | r | Refresh the list |

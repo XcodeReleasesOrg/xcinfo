@@ -100,7 +100,10 @@ struct TUIModelTests {
 
         _ = model.handle(.down)
         #expect(model.status == nil)
-        #expect(model.handle(.character("i")) == .install(available))
+        #expect(model.handle(.character("i")) == nil)
+        #expect(model.installSetup?.xcode == available)
+        #expect(model.handle(.enter) == .install(available, TUIInstallOptions()))
+        #expect(model.installSetup == nil)
         #expect(model.handle(.character("u")) == nil)
         #expect(model.status == "Only installed versions can be uninstalled.")
 
