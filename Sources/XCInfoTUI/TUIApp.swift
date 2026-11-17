@@ -136,7 +136,7 @@ public struct TUIApp: Sendable {
                         let (cancelSignal, cancel) = AsyncStream.makeStream(of: Void.self)
                         questions = box
                         cancelAction = cancel
-                        model.activity = TUIActivity(title: command.title, showsVerbose: showsVerbose)
+                        model.activity = TUIActivity(title: command.title, steps: command.steps, showsVerbose: showsVerbose)
                         let session = TUISession(input: input, questions: box)
                         group.addTask { [actions] in
                             let outcome = await withTaskGroup(of: TUIOutcome?.self) { action in
@@ -180,6 +180,19 @@ public struct TUIApp: Sendable {
 }
 
 extension TUICommand {
+    var steps: [String] {
+        switch self {
+        case .install:
+            ["Identify", "Sign in", "Download", "Verify", "Extract", "Set up"]
+        case .download:
+            ["Identify", "Sign in", "Download", "Verify"]
+        case .uninstall:
+            ["Uninstall"]
+        case .quit, .refresh:
+            []
+        }
+    }
+
     var title: String {
         switch self {
         case let .install(xcode, _):

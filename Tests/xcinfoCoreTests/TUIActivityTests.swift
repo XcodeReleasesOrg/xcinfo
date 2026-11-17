@@ -48,31 +48,77 @@ struct TUIActivityTests {
         #expect(activity.lines.last?.text == "line 249")
     }
 
-    @Test
-    func `the activity view fills the screen and shows progress, recent lines and the right help`() {
-        var activity = TUIActivity(title: "Downloading Xcode 16.0")
+    private func runningDownload() -> TUIActivity {
+        var activity = TUIActivity(title: "Installing Xcode 16.0", steps: ["Identify", "Sign in", "Download", "Verify", "Extract", "Set up"])
+        activity.apply(.section("Identifying"))
+        activity.apply(.section("Sign in to Apple Developer"))
+        activity.apply(.section("Downloading"))
+        activity.apply(.message("Source: https://download.developer.apple.com/Developer_Tools/Xcode_16_with_a_really_long_name/Xcode_16_with_a_really_long_name.xip", .plain))
         for index in 0 ..< 30 {
             activity.apply(.message("message \(index)", .plain))
         }
         activity.apply(.message("watch out", .warning))
-        activity.apply(.progress(OutputProgress(title: "Downloading", fraction: 0.25, detail: "3 GB remaining")))
-        var model = TUIModel(sections: [])
-        model.activity = activity
-        let renderer = TUIRenderer(usesColors: false)
+        activity.apply(.progress(OutputProgress(title: "Downloading", fraction: 0.25, detail: "1.5 GB of 2 GB remaining, 80 MB/s, about 19 sec left")))
+        return activity
+    }
 
-        let lines = renderer.render(model, width: 80, height: 20)
+    @Test
+    func `steps follow the sections and the verification progress`() {
+        var activity = runningDownload()
+        #expect(activity.steps.map(\.state) == [.done, .done, .running, .pending, .pending, .pending])
 
-        #expect(lines.count == 20)
-        #expect(lines.allSatisfy { $0.count == 80 }, "\(lines.map(\.count))")
-        #expect(lines[0].hasPrefix(" xcinfo — Downloading Xcode 16.0"))
-        #expect(lines.contains { $0.contains("⚠ watch out") })
-        #expect(lines.contains { $0.contains("Downloading: [") && $0.contains("25.0%") && $0.contains("3 GB remaining") })
-        #expect(!lines.contains { $0.contains("message 0 ") })
+        activity.apply(.progress(OutputProgress(title: "Verifying", fraction: 0.1)))
+        #expect(activity.steps.map(\.state) == [.done, .done, .done, .running, .pending, .pending])
+
+        activity.finish(succeeded: false, message: "Stopped.")
+        #expect(activity.steps.map(\.state) == [.done, .done, .done, .failed, .pending, .pending])
+    }
+
+    @Test(arguments: [(80, 24), (120, 40), (40, 12), (200, 60)])
+    func `the panel keeps the layout at every size`(width: Int, height: Int) {
+        var model = TUIModel(sections: [TUISection(title: "Available", entries: [])])
+        model.activity = runningDownload()
+
+        let lines = TUIRenderer(usesColors: false).render(model, width: width, height: height)
+
+        #expect(lines.count == height)
+        #expect(lines.allSatisfy { $0.count == width }, "\(lines.map(\.count))")
+        #expect(lines[0].hasPrefix(" xcinfo — Xcode versions"))
+        #expect(lines.contains { $0.contains("┌ Installing Xcode 16.0") })
+        if height >= 20 {
+            #expect(lines.contains { $0.contains("✓ Identify") })
+            #expect(lines.contains { $0.contains("▸ Download") })
+            #expect(lines.contains { $0.contains("· Set up") })
+        } else {
+            #expect(lines.contains { $0.contains("▸ Download (3 of 6)") })
+        }
+        #expect(lines.contains { $0.contains("Downloading [") && $0.contains("25.0%") })
         #expect(lines.last?.hasPrefix(" Esc or Ctrl-C to stop") == true)
+    }
 
-        model.activity?.finish(succeeded: false, message: "The download failed.")
-        let finished = renderer.render(model, width: 80, height: 20)
-        #expect(finished.contains { $0.contains("✗ The download failed.") })
-        #expect(finished.last?.hasPrefix(" Return to go back to the list") == true)
+    @Test
+    func `wide terminals keep the list next to the panel`() {
+        var model = TUIModel(sections: [TUISection(title: "Available", entries: [TUIEntry(kind: .available, xcode: .fixture("16.0", build: "16A1"))])])
+        model.activity = runningDownload()
+
+        let lines = TUIRenderer(usesColors: false).render(model, width: 120, height: 30)
+
+        #expect(lines.contains { $0.hasPrefix("Available (1)") })
+        #expect(lines.contains { $0.contains("about 19 sec left") })
+        #expect(lines.contains { $0.contains("⚠ watch out") })
+    }
+
+    @Test
+    func `a finished action shows its result and how to go back`() {
+        var model = TUIModel(sections: [])
+        var activity = runningDownload()
+        activity.finish(succeeded: false, message: "The download failed.")
+        model.activity = activity
+
+        let lines = TUIRenderer(usesColors: false).render(model, width: 80, height: 24)
+
+        #expect(lines.contains { $0.contains("✗ The download failed.") })
+        #expect(lines.contains { $0.contains("✗ Download") })
+        #expect(lines.last?.hasPrefix(" Return to go back to the list") == true)
     }
 }

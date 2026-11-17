@@ -98,6 +98,10 @@ struct Downloader: Sendable {
                 ]
                 if progress.downloadSpeed.value > 0 {
                     details.append("\(Self.bytes(progress.downloadSpeed))/s")
+                    let secondsLeft = progress.remainingBytes.value / progress.downloadSpeed.value
+                    if secondsLeft.isFinite, secondsLeft >= 1 {
+                        details.append("about \(Duration.seconds(Int(secondsLeft)).englishDescription) left")
+                    }
                 }
                 logger.progress(OutputProgress(
                     title: "Downloading",
