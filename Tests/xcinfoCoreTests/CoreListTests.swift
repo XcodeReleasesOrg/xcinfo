@@ -200,6 +200,28 @@ struct CoreListTests {
     }
 
     @Test
+    func `installed adds applications only LaunchServices knows, once each, outside the Trash`() async throws {
+        let caches = try TemporaryDirectory()
+        let applications = try TemporaryDirectory()
+        let indexed = try applications.fakeXcode(named: "Xcode-15.app", build: "15A1")
+        let hidden = try applications.fakeXcode(named: ".hidden/Xcode-16.app", build: "16A1")
+        let trashed = try applications.fakeXcode(named: ".Trash/Xcode-16.app", build: "16A1")
+        let xcodes = [recent, lastSummer, futureOS]
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            listXcodes: { xcodes },
+            shell: FakeShell.installedXcodes([indexed]),
+            applicationsDirectory: applications.url,
+            launchServicesXcodes: [hidden, indexed, trashed]
+        )
+
+        let installed = try await core.installedXcodes(shouldUpdate: true)
+
+        #expect(installed.map(\.url.path) == [hidden.path, indexed.path])
+    }
+
+    @Test
     func `installed with nothing installed is empty`() async throws {
         let caches = try TemporaryDirectory()
         let applications = try TemporaryDirectory()
