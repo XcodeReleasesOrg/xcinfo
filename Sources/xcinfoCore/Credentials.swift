@@ -109,6 +109,10 @@ struct CredentialService {
         return password
     }
 
+    func store(_ accountName: String) async throws {
+        try await keychain.commit { $0.accountName = accountName }
+    }
+
     func cleanup() async -> Bool {
         do {
             guard try await keychain.load().accountName != nil else { return false }

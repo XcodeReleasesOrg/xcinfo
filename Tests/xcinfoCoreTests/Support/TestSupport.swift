@@ -231,6 +231,7 @@ extension Core {
         accountName: (@Sendable () async throws -> String)? = nil,
         password: (@Sendable (String) async throws -> String)? = nil,
         cleanupCredentials: (@Sendable () async -> Bool)? = nil,
+        store: (@Sendable (String) async throws -> Void)? = nil,
         authenticate: (@Sendable (String, @escaping @Sendable () async throws -> String) async throws -> Void)? = nil,
         downloadListing: DownloadListing? = nil,
         cleanupAuthentication: (@Sendable () async -> Bool)? = nil,
@@ -264,6 +265,7 @@ extension Core {
             if let accountName { $0.credentials.accountName = accountName }
             if let password { $0.credentials.password = password }
             if let cleanupCredentials { $0.credentials.removeAll = cleanupCredentials }
+            if let store { $0.credentials.store = store }
             if let authenticate {
                 $0.authentication.authenticate = { accountName, password in
                     try await authenticate(accountName, password)

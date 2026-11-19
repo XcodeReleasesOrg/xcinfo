@@ -22,6 +22,7 @@ public struct XcodeReleasesClient: Sendable {
 public struct CredentialsClient: Sendable {
     public var accountName: @Sendable () async throws -> String
     public var password: @Sendable (_ accountName: String) async throws -> String
+    public var store: @Sendable (_ accountName: String) async throws -> Void
     public var removeAll: @Sendable () async -> Bool = { false }
 }
 
@@ -95,6 +96,7 @@ extension CredentialsClient: DependencyKey {
     public static let liveValue = CredentialsClient(
         accountName: { try await CredentialService().accountName() },
         password: { accountName in try await CredentialService().password(for: accountName) },
+        store: { accountName in try await CredentialService().store(accountName) },
         removeAll: { await CredentialService().cleanup() }
     )
 

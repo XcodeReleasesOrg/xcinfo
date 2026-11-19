@@ -284,6 +284,16 @@ struct CredentialsTests {
     }
 
     @Test
+    func `store keeps the account name next to the session`() async throws {
+        let storage = FakeVaultStorage(contents: VaultContents(accountName: "old", sessions: ["new": Data([1])]))
+        let (service, _) = service(storage: storage, logs: LogRecorder())
+
+        try await service.store("new")
+
+        #expect(storage.storedContents == VaultContents(accountName: "new", sessions: ["new": Data([1])]))
+    }
+
+    @Test
     func `errors explain how to provide credentials`() {
         #expect(CredentialsError.passwordUnavailable.localizedDescription.contains("XCINFO_APPLE_PASSWORD"))
         #expect(CredentialsError.accountNameUnavailable.localizedDescription.contains("XCINFO_APPLE_ID"))

@@ -14,7 +14,7 @@ extension XCInfo {
             abstract: "Remove the stored Apple ID and Apple session",
             discussion: """
             Deletes the Keychain item 'xcinfo' (the stored Apple ID and the Apple session) and the Apple cookies \
-            left by older versions. The next download signs in again, with two-factor authentication. Downloaded \
+            left by older versions. The next download or `xcinfo signin` signs in again, with two-factor authentication. Downloaded \
             archives, saved download progress and the cached list of Xcode versions are kept.
             """
         )

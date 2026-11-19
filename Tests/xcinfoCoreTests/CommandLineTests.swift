@@ -14,7 +14,7 @@ struct CommandLineTests {
     func `subcommands are registered`() {
         let names = XCInfo.configuration.subcommands.map { $0._commandName }
 
-        #expect(names == ["cleanup", "download", "extract", "info", "install", "installed", "list", "switch", "tui", "uninstall"])
+        #expect(names == ["cleanup", "download", "extract", "info", "install", "installed", "list", "signin", "switch", "tui", "uninstall"])
         #expect(XCInfo.configuration.commandName == "xcinfo")
     }
 
@@ -254,6 +254,19 @@ struct CommandLineTests {
         let uninstall = try parse(XCInfo.Uninstall.self, arguments)
 
         #expect(uninstall.xcodeVersion == version)
+    }
+
+    @Test
+    func `signin takes an optional apple id and has a login alias`() throws {
+        let plain = try parse(XCInfo.SignIn.self, ["signin"])
+        let withAccount = try parse(XCInfo.SignIn.self, ["login", " user@example.invalid ", "--json"])
+
+        #expect(plain.appleID == nil)
+        #expect(withAccount.appleID == "user@example.invalid")
+        #expect(withAccount.globals.isJSON)
+        #expect(throws: (any Error).self) {
+            try XCInfo.parseAsRoot(["signin", " "])
+        }
     }
 
     @Test

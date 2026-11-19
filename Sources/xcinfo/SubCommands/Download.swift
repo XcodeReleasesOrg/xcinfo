@@ -13,7 +13,8 @@ extension XCInfo {
             abstract: "Downloads an Xcode version",
             discussion: """
             Downloads a specific version of Xcode. Signs in to Apple when the stored session has expired and asks \
-            for the password then. Set XCINFO_APPLE_ID and XCINFO_APPLE_PASSWORD for unattended use.
+            for the password then. Run `xcinfo signin` first to sign in ahead of time, or set XCINFO_APPLE_ID and \
+            XCINFO_APPLE_PASSWORD for unattended use.
             """
         )
 
