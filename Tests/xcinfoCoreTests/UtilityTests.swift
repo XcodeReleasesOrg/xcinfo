@@ -41,15 +41,24 @@ struct SpeedMeasurementsTests {
     }
 
     @Test
-    func `speed is the sum of the bytes over the elapsed time`() async throws {
+    func `speed is the sum of the bytes over the elapsed time`() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
         var measurements = SpeedMeasurements()
-        measurements.append(1_000)
-        try await Task.sleep(nanoseconds: 50_000_000)
-        measurements.append(1_000)
+        measurements.append(1_000, at: start)
+        measurements.append(1_000, at: start.addingTimeInterval(0.5))
 
-        let speed = measurements.averageSpeed()
-        #expect(speed > 0)
-        #expect(speed < 2_000 / 0.05)
+        #expect(measurements.averageSpeed() == 4_000)
+    }
+
+    @Test
+    func `measurements older than ten seconds are dropped`() {
+        let start = Date(timeIntervalSinceReferenceDate: 0)
+        var measurements = SpeedMeasurements()
+        measurements.append(5_000, at: start)
+        measurements.append(1_000, at: start.addingTimeInterval(9))
+        measurements.append(1_000, at: start.addingTimeInterval(11))
+
+        #expect(measurements.averageSpeed() == 1_000)
     }
 }
 
