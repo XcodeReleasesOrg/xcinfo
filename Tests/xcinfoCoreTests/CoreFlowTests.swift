@@ -188,8 +188,8 @@ struct CoreDownloadTests {
             accountName: { "appleid@example.invalid" },
             password: { _ in "secret" },
             authenticate: { accountName, password in try await credentials.append("\(accountName):\(password())") },
-            download: { url, destination, disableSleep in
-                downloadCalls.append("\(url.absoluteString) \(destination.path) \(disableSleep)")
+            download: { url, destination, disableSleep, connections in
+                downloadCalls.append("\(url.absoluteString) \(destination.path) \(disableSleep) \(connections)")
                 return destination.appendingPathComponent("Xcode_15.xip")
             },
             applicationsDirectory: applications.url
@@ -204,7 +204,7 @@ struct CoreDownloadTests {
         #expect(downloaded.version.build == "15A240d")
         #expect(url == downloads.url.appendingPathComponent("Xcode_15.xip"))
         #expect(credentials.values == ["appleid@example.invalid:secret"])
-        #expect(downloadCalls.values == ["https://download.example.invalid/Xcode_15.xip \(downloads.url.path) true"])
+        #expect(downloadCalls.values == ["https://download.example.invalid/Xcode_15.xip \(downloads.url.path) true 8"])
         #expect(logs.messages.contains("\nSign in to Apple Developer"))
         #expect(logs.messages.contains("\nDownloading"))
         #expect(logs.messages.contains("Downloaded to \(downloads.url.appendingPathComponent("Xcode_15.xip").path)"))
@@ -247,7 +247,7 @@ struct CoreDownloadTests {
             listXcodes: { xcodes },
             accountName: { "user" },
             authenticate: { _, _ in throw AuthenticationError() },
-            download: { _, _, _ in
+            download: { _, _, _, _ in
                 Issue.record("Must not download")
                 return URL(fileURLWithPath: "/")
             },
@@ -327,7 +327,7 @@ struct CoreDownloadTests {
             listXcodes: { xcodes },
             accountName: { "user" },
             authenticate: { _, _ in },
-            download: { _, _, _ in throw apiError },
+            download: { _, _, _, _ in throw apiError },
             applicationsDirectory: applications.url
         )
 
@@ -355,7 +355,7 @@ struct CoreDownloadTests {
             listXcodes: { xcodes },
             accountName: { "user" },
             authenticate: { _, _ in },
-            download: { _, _, _ in throw Interrupted(signal: SIGINT) },
+            download: { _, _, _, _ in throw Interrupted(signal: SIGINT) },
             applicationsDirectory: applications.url
         )
 
@@ -376,7 +376,7 @@ struct CoreInstallTests {
         prompt: FakePrompt = FakePrompt(passwords: ["sudo-password"]),
         extractions: Recorder<String> = Recorder(),
         revealed: Recorder<URL> = Recorder(),
-        download: (@Sendable (URL, URL, Bool) async throws -> URL)? = nil
+        download: (@Sendable (URL, URL, Bool, Int) async throws -> URL)? = nil
     ) -> Core {
         let xcodes = [xcode]
         return .test(
@@ -540,7 +540,7 @@ struct CoreInstallTests {
                 logs: LogRecorder(),
                 caches: caches,
                 applications: applications,
-                download: { _, destination, _ in
+                download: { _, destination, _, _ in
                     let url = destination.appendingPathComponent("Xcode_15.xip")
                     try Data.xipMagic.write(to: url)
                     return url

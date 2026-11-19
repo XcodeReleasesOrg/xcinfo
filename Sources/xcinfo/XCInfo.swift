@@ -158,6 +158,12 @@ struct DownloadOptions: ParsableArguments {
     )
     var prefersUniversal: Bool = false
 
+    @Option(
+        name: .customLong("connections"),
+        help: "How many connections a download uses at the same time (1 to 16). 1 downloads over a single connection."
+    )
+    var connections: Int = Core.DownloadOptions.defaultConnections
+
     var architecture: XcodeArchitecture? {
         prefersUniversal ? .universal : prefersAppleSilicon ? .appleSilicon : nil
     }
@@ -165,6 +171,9 @@ struct DownloadOptions: ParsableArguments {
     mutating func validate() throws {
         guard !(prefersAppleSilicon && prefersUniversal) else {
             throw ValidationError("Use either --apple-silicon or --universal, not both.")
+        }
+        guard Core.DownloadOptions.connectionRange.contains(connections) else {
+            throw ValidationError("--connections must be between 1 and 16.")
         }
     }
 

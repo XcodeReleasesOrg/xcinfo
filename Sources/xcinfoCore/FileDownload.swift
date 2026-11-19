@@ -22,7 +22,7 @@ final class FileDownload: NSObject, URLSessionDownloadDelegate, Sendable {
     private let continuation: AsyncStream<Event>.Continuation
     private let task: URLSessionDownloadTask
     private let logger: Logger
-    private let sleepAssertionID: IOPMAssertionID
+    private let sleepAssertion: SleepAssertion?
 
     init(
         task: URLSessionDownloadTask,
@@ -35,18 +35,7 @@ final class FileDownload: NSObject, URLSessionDownloadDelegate, Sendable {
         self.logger = logger
         (events, continuation) = AsyncStream.makeStream(of: Event.self)
 
-        var sleepAssertionID: IOPMAssertionID = 0
-        if disableSleep {
-            let reasonForActivity = "Preventing sleep during large file download"
-            let success = IOPMAssertionCreateWithName(
-                kIOPMAssertionTypeNoDisplaySleep as CFString,
-                IOPMAssertionLevel(kIOPMAssertionLevelOn),
-                reasonForActivity as CFString,
-                &sleepAssertionID
-            )
-            logger.verbose("Sleep temporary disabled: \(success == 0)")
-        }
-        self.sleepAssertionID = sleepAssertionID
+        sleepAssertion = disableSleep ? SleepAssertion(logger: logger) : nil
         super.init()
 
         task.delegate = self
@@ -55,7 +44,7 @@ final class FileDownload: NSObject, URLSessionDownloadDelegate, Sendable {
 
     func urlSession(_: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         if let response = downloadTask.response as? HTTPURLResponse {
-            if response.url?.absoluteString.hasPrefix("https://developer.apple.com/unauthorized") == true {
+            if response.isUnauthorizedDownload {
                 finish(with: .rejected(.unauthorized))
                 return
             }
@@ -82,10 +71,7 @@ final class FileDownload: NSObject, URLSessionDownloadDelegate, Sendable {
         continuation.yield(event)
         continuation.finish()
 
-        if sleepAssertionID != 0 {
-            let success = IOPMAssertionRelease(sleepAssertionID)
-            logger.verbose("Sleep enabled again: \(success == 0)")
-        }
+        sleepAssertion?.release()
     }
 
     func urlSession(
@@ -125,6 +111,97 @@ final class FileDownload: NSObject, URLSessionDownloadDelegate, Sendable {
             logger.error(error.localizedDescription)
         }
         finish(with: .failed(resumeData: error.downloadTaskResumeData, isCancelled: error.code == .cancelled))
+    }
+}
+
+final class SleepAssertion: Sendable {
+    private let id: IOPMAssertionID
+    private let logger: Logger
+
+    init?(logger: Logger) {
+        var id: IOPMAssertionID = 0
+        let result = IOPMAssertionCreateWithName(
+            kIOPMAssertionTypeNoDisplaySleep as CFString,
+            IOPMAssertionLevel(kIOPMAssertionLevelOn),
+            "Preventing sleep during large file download" as CFString,
+            &id
+        )
+        logger.verbose("Sleep temporary disabled: \(result == 0)")
+        guard result == 0 else { return nil }
+        self.id = id
+        self.logger = logger
+    }
+
+    func release() {
+        let result = IOPMAssertionRelease(id)
+        logger.verbose("Sleep enabled again: \(result == 0)")
+    }
+}
+
+struct DownloadProgressReport {
+    private var progress = DownloadProgress()
+    private var lastDisplay: ContinuousClock.Instant?
+    private var lastMilestone = 0
+    private var lastTotal: Int64
+
+    init(alreadyReceived: Int64 = 0) {
+        lastTotal = alreadyReceived
+    }
+
+    static func bytes(_ count: Int64) -> String {
+        bytes(Measurement(value: Double(count), unit: .bytes))
+    }
+
+    static func bytes(_ measurement: Measurement<UnitInformationStorage>) -> String {
+        measurement.formatted(.byteCount(style: .file, spellsOutZero: false).locale(Locale(identifier: "en_US")))
+    }
+
+    static func finished(after duration: Duration) -> OutputProgress {
+        OutputProgress(
+            title: "Downloading",
+            fraction: 1,
+            detail: "done in \(duration.englishDescription)",
+            isFinished: true
+        )
+    }
+
+    mutating func update(
+        bytesWritten: Int64? = nil,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) -> OutputProgress? {
+        guard totalBytesExpectedToWrite > 0 else { return nil }
+        progress.update(
+            bytesWritten: bytesWritten ?? totalBytesWritten - lastTotal,
+            totalBytesWritten: totalBytesWritten,
+            totalBytesExpectedToWrite: totalBytesExpectedToWrite
+        )
+        lastTotal = totalBytesWritten
+        let now = ContinuousClock.now
+        let milestone = Int(progress.progress * 10)
+        let isMilestone = milestone > lastMilestone && milestone < 10
+        if let lastDisplay, lastDisplay.duration(to: now) < .seconds(1), !isMilestone {
+            return nil
+        }
+        lastDisplay = now
+        lastMilestone = max(lastMilestone, milestone)
+
+        var details = [
+            "\(Self.bytes(progress.remainingBytes)) of \(Self.bytes(progress.totalBytes)) remaining"
+        ]
+        if progress.downloadSpeed.value > 0 {
+            details.append("\(Self.bytes(progress.downloadSpeed))/s")
+            let secondsLeft = progress.remainingBytes.value / progress.downloadSpeed.value
+            if secondsLeft.isFinite, secondsLeft >= 1 {
+                details.append("about \(Duration.seconds(Int(secondsLeft)).englishDescription) left")
+            }
+        }
+        return OutputProgress(
+            title: "Downloading",
+            fraction: progress.progress,
+            detail: details.joined(separator: ", "),
+            isMilestone: isMilestone
+        )
     }
 }
 

@@ -35,7 +35,12 @@ public struct AuthenticationClient: Sendable {
 
 @DependencyClient
 public struct DownloadClient: Sendable {
-    public var download: @Sendable (_ url: URL, _ destination: URL, _ disableSleep: Bool) async throws -> URL
+    public var download: @Sendable (
+        _ url: URL,
+        _ destination: URL,
+        _ disableSleep: Bool,
+        _ connections: Int
+    ) async throws -> URL
 }
 
 @DependencyClient
@@ -128,7 +133,7 @@ extension AuthenticationClient: DependencyKey {
 
 extension DownloadClient: DependencyKey {
     public static let liveValue = DownloadClient(
-        download: { url, destination, disableSleep in
+        download: { url, destination, disableSleep, connections in
             @Dependency(\.logger) var logger
             @Dependency(\.fileSystem) var fileSystem
             @Dependency(\.continuousClock) var clock
@@ -136,7 +141,8 @@ extension DownloadClient: DependencyKey {
                 logger: logger,
                 session: .xcinfoDownloads,
                 cachesDirectory: fileSystem.cachesDirectory(),
-                clock: clock
+                clock: clock,
+                connections: connections
             )
             return try await InterruptSignals().run { _ in
                 logger.warn("Stopping the download and saving its progress. Press Ctrl-C again to quit immediately.")

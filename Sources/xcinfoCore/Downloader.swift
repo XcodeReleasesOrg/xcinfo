@@ -14,20 +14,27 @@ enum DownloadError: Error {
 struct Downloader: Sendable {
     static let maximumRetries = 3
 
-    private let logger: Logger
-    private let session: URLSession
-    private let cachesDirectory: URL
-    private let clock: any Clock<Duration>
+    let logger: Logger
+    let session: URLSession
+    let cachesDirectory: URL
+    let clock: any Clock<Duration>
+    let connections: Int
+    let minimumSplit: Int64
 
-    init(logger: Logger, session: URLSession, cachesDirectory: URL, clock: any Clock<Duration> = ContinuousClock()) {
+    init(
+        logger: Logger,
+        session: URLSession,
+        cachesDirectory: URL,
+        clock: any Clock<Duration> = ContinuousClock(),
+        connections: Int = 1,
+        minimumSplit: Int64 = Downloader.defaultMinimumSplit
+    ) {
         self.logger = logger
         self.session = session
         self.cachesDirectory = cachesDirectory
         self.clock = clock
-    }
-
-    private static func bytes(_ measurement: Measurement<UnitInformationStorage>) -> String {
-        measurement.formatted(.byteCount(style: .file, spellsOutZero: false).locale(Locale(identifier: "en_US")))
+        self.connections = max(1, connections)
+        self.minimumSplit = minimumSplit
     }
 
     func start(url: URL, disableSleep: Bool, resumeData: Data? = nil) async throws -> URL {
@@ -72,51 +79,20 @@ struct Downloader: Sendable {
     }
 
     private func follow(_ download: FileDownload, url: URL, start: ContinuousClock.Instant) async throws -> URL {
-        var progress = DownloadProgress()
-        var lastDisplay: ContinuousClock.Instant?
-        var lastMilestone = 0
+        var report = DownloadProgressReport()
 
         for await event in download.events {
             switch event {
             case let .progress(bytesWritten, totalBytesWritten, totalBytesExpectedToWrite):
-                progress.update(
+                if let output = report.update(
                     bytesWritten: bytesWritten,
                     totalBytesWritten: totalBytesWritten,
                     totalBytesExpectedToWrite: totalBytesExpectedToWrite
-                )
-                let now = ContinuousClock.now
-                let milestone = Int(progress.progress * 10)
-                let isMilestone = milestone > lastMilestone && milestone < 10
-                if let lastDisplay, lastDisplay.duration(to: now) < .seconds(1), !isMilestone {
-                    continue
+                ) {
+                    logger.progress(output)
                 }
-                lastDisplay = now
-                lastMilestone = max(lastMilestone, milestone)
-
-                var details = [
-                    "\(Self.bytes(progress.remainingBytes)) of \(Self.bytes(progress.totalBytes)) remaining"
-                ]
-                if progress.downloadSpeed.value > 0 {
-                    details.append("\(Self.bytes(progress.downloadSpeed))/s")
-                    let secondsLeft = progress.remainingBytes.value / progress.downloadSpeed.value
-                    if secondsLeft.isFinite, secondsLeft >= 1 {
-                        details.append("about \(Duration.seconds(Int(secondsLeft)).englishDescription) left")
-                    }
-                }
-                logger.progress(OutputProgress(
-                    title: "Downloading",
-                    fraction: progress.progress,
-                    detail: details.joined(separator: ", "),
-                    isMilestone: isMilestone
-                ))
             case let .finished(downloadedURL):
-                let downloadTime = start.duration(to: .now)
-                logger.progress(OutputProgress(
-                    title: "Downloading",
-                    fraction: 1,
-                    detail: "done in \(downloadTime.englishDescription)",
-                    isFinished: true
-                ))
+                logger.progress(DownloadProgressReport.finished(after: start.duration(to: .now)))
 
                 guard let downloadedURL else {
                     throw XCAPIError.couldNotMoveToTemporaryFile
@@ -189,10 +165,43 @@ struct Downloader: Sendable {
     }
 
     func download(url: URL, destination: URL, disableSleep: Bool) async throws -> URL {
+        let tmpURL: URL
+        if connections > 1, !hasResumeData(for: url), let file = try await probe(url) {
+            do {
+                tmpURL = try await downloadInParallel(url: url, file: file, disableSleep: disableSleep)
+            } catch PieceError.rangeIgnored {
+                logger
+                    .warn(
+                        "The server did not send the requested part of the file. Downloading it again over one connection."
+                    )
+                tmpURL = try await downloadOverOneConnection(url: url, disableSleep: disableSleep)
+            }
+        } else {
+            tmpURL = try await downloadOverOneConnection(url: url, disableSleep: disableSleep)
+        }
+
+        let destFile = destination.appendingPathComponent(tmpURL.lastPathComponent)
+        do {
+            try FileManager.default.ensureFolderExists(destination)
+            if tmpURL != destFile {
+                try FileManager.default.moveItem(at: tmpURL, to: destFile)
+            }
+            return destFile
+        } catch let error as NSError {
+            throw XCAPIError.couldNotMoveToDestinationFolder(tmpURL, destFile, error)
+        }
+    }
+
+    private func hasResumeData(for url: URL) -> Bool {
+        [cacheURL(for: url), legacyCacheURL(for: url)]
+            .contains { $0.map { FileManager.default.fileExists(atPath: $0.path) } ?? false }
+    }
+
+    private func downloadOverOneConnection(url: URL, disableSleep: Bool) async throws -> URL {
         let cached = cachedResumeData(for: url)
         if let cached {
             let received = cached.bytesReceived.map { bytes in
-                ", \(Self.bytes(Measurement(value: Double(bytes), unit: .bytes))) already downloaded"
+                ", \(DownloadProgressReport.bytes(bytes)) already downloaded"
             }
             logger.log("Resuming the earlier download\(received ?? "").")
         }
@@ -224,17 +233,7 @@ struct Downloader: Sendable {
             }
         }
         removeCachedResumeData(for: url)
-
-        let destFile = destination.appendingPathComponent(tmpURL.lastPathComponent)
-        do {
-            try FileManager.default.ensureFolderExists(destination)
-            if tmpURL != destFile {
-                try FileManager.default.moveItem(at: tmpURL, to: destFile)
-            }
-            return destFile
-        } catch let error as NSError {
-            throw XCAPIError.couldNotMoveToDestinationFolder(tmpURL, destFile, error)
-        }
+        return tmpURL
     }
 }
 

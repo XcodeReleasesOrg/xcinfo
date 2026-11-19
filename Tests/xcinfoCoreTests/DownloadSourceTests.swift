@@ -106,7 +106,7 @@ struct DownloadFormatFlowTests {
         logs: LogRecorder,
         caches: TemporaryDirectory,
         listing: DownloadListing?,
-        download: @escaping @Sendable (URL, URL, Bool) async throws -> URL
+        download: @escaping @Sendable (URL, URL, Bool, Int) async throws -> URL
     ) -> Core {
         let xcodes = [Xcode.fixture("27.4", build: "27D1", download: xip.absoluteString)]
         return .test(
@@ -130,7 +130,7 @@ struct DownloadFormatFlowTests {
             name: "Xcode 27.4",
             files: [.init(remotePath: "/Developer_Tools/Xcode_27.4/Xcode_27.4.aea")]
         )])
-        let core = core(logs: logs, caches: caches, listing: listing) { url, destination, _ in
+        let core = core(logs: logs, caches: caches, listing: listing) { url, destination, _, _ in
             requested.append(url)
             return try caches.file(url.lastPathComponent, contents: Data("AEA1".utf8))
         }
@@ -146,7 +146,7 @@ struct DownloadFormatFlowTests {
         let caches = try TemporaryDirectory()
         let requested = Recorder<URL>()
         let logs = LogRecorder()
-        let core = core(logs: logs, caches: caches, listing: nil) { url, _, _ in
+        let core = core(logs: logs, caches: caches, listing: nil) { url, _, _, _ in
             requested.append(url)
             guard url.pathExtension == "aea" else { throw XCAPIError.unexpectedStatusCode(404) }
             return try caches.file(url.lastPathComponent, contents: Data("AEA1".utf8))
@@ -162,7 +162,7 @@ struct DownloadFormatFlowTests {
     func `other download errors do not try the derived aea`() async throws {
         let caches = try TemporaryDirectory()
         let requested = Recorder<URL>()
-        let core = core(logs: LogRecorder(), caches: caches, listing: nil) { url, _, _ in
+        let core = core(logs: LogRecorder(), caches: caches, listing: nil) { url, _, _, _ in
             requested.append(url)
             throw XCAPIError.unexpectedStatusCode(403)
         }

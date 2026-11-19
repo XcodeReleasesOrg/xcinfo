@@ -53,7 +53,8 @@ extension DownloadOptions {
             verifiesChecksum: !skipsVerification,
             archiveFormat: archiveFormat,
             overwritesExistingFile: overwritesExistingFile,
-            architecture: architecture
+            architecture: architecture,
+            connections: connections
         )
     }
 }

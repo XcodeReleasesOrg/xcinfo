@@ -29,7 +29,7 @@ struct ExistingDownloadTests {
                 listXcodes: { xcodes },
                 accountName: { "user" },
                 authenticate: { _, _ in },
-                download: { url, _, _ in
+                download: { url, _, _, _ in
                     requested.append(url)
                     let fresh = downloads.appendingPathComponent(url.lastPathComponent)
                     try Data("xar!fresh".utf8).write(to: fresh)

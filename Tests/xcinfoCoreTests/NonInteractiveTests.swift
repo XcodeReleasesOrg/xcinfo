@@ -130,7 +130,7 @@ struct QuestionWordingTests {
             accountName: { "appleid@example.invalid" },
             password: { _ in "secret" },
             authenticate: { _, _ in },
-            download: { url, destination, _ in destination.appendingPathComponent(url.lastPathComponent) },
+            download: { url, destination, _, _ in destination.appendingPathComponent(url.lastPathComponent) },
             promptClient: PromptClient(
                 ask: { _, _, _ in "" },
                 choose: { question, _ in

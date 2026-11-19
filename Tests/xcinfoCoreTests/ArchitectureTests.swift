@@ -88,7 +88,7 @@ struct ArchitectureTests {
             accountName: { "appleid@example.invalid" },
             password: { _ in "secret" },
             authenticate: { _, _ in },
-            download: { url, destination, _ in
+            download: { url, destination, _, _ in
                 downloaded.append(url.lastPathComponent)
                 return destination.appendingPathComponent(url.lastPathComponent)
             },
@@ -137,7 +137,7 @@ struct ArchitectureTests {
             accountName: { "appleid@example.invalid" },
             password: { _ in "secret" },
             authenticate: { _, _ in },
-            download: { url, destination, _ in
+            download: { url, destination, _, _ in
                 downloaded.append(url.lastPathComponent)
                 return destination.appendingPathComponent(url.lastPathComponent)
             },
@@ -197,7 +197,7 @@ struct ArchitectureTests {
             accountName: { "appleid@example.invalid" },
             password: { _ in "secret" },
             authenticate: { _, _ in },
-            download: { url, destination, _ in
+            download: { url, destination, _, _ in
                 downloaded.append(url.lastPathComponent)
                 return destination.appendingPathComponent(url.lastPathComponent)
             },

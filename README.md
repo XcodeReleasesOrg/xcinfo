@@ -152,7 +152,11 @@ Xcode comes as `.xip` and, from Xcode 27.3, also as Apple Encrypted Archive (`.a
 - If the archive is already in the download folder, xcinfo checks it first (SHA-1 for a `.xip`, Apple signature for an `.aea`) and uses it instead of downloading again. A file it cannot confirm is never replaced silently: on a terminal xcinfo asks, otherwise it stops; `--overwrite` moves the old file to the Trash and downloads anew.
 - `install --archive-path <file>` needs no version: xcinfo reads the build from the extracted app and looks it up on xcodereleases.com. A version given as well is used, with a warning if the archive contains another build.
 
-Stopping a download with Ctrl-C saves its progress in `~/Library/Caches/xcinfo/<file>.resume`. The next `download` or `install` of the same version signs in again and resumes where it stopped; if the saved progress can't be used, it starts over. Press Ctrl-C a second time to quit immediately without saving.
+## Downloads
+
+- `download` and `install` fetch the archive over 8 connections at the same time, each asking Apple for its own part of the file. When a connection finishes early it takes over half of the largest part still running. `--connections <n>` (1 to 16) changes the number; `--connections 1` downloads over a single connection. Servers that don't support partial requests are downloaded over one connection.
+- A connection that fails is retried from where it stopped, up to 3 times in a row, while the others keep going. If it still fails, the download stops and keeps its progress.
+- Stopping a download with Ctrl-C saves its progress in `~/Library/Caches/xcinfo/<file>.part` and `<file>.part.json` (`<file>.resume` for a single connection). The next `download` or `install` of the same version signs in again and resumes where it stopped; if the saved progress can't be used, or the file on Apple's server changed, it starts over. Press Ctrl-C a second time to quit immediately without saving.
 
 ## Signing in to Apple
 
@@ -236,6 +240,7 @@ Versions with two downloads have an extra `"architecture"` field (`"appleSilicon
 
 - Signing in has been checked by hand against Apple's service with SRP (`s2k`), two-factor codes from a trusted device and session reuse. Not yet checked live: the `s2k_fo` password protocol, two-factor codes by text message, and accounts without two-factor authentication.
 - The `archiveutil` fallback for `.aea` archives that are not signed-only, and `install --archive-path` with an `.aea`, have not been checked with real archives yet.
+- Downloads over several connections have been checked against a local test server, not yet against Apple's servers.
 - `installed` and the terminal UI can't tell whether an installed Xcode came from the Apple silicon or the Universal download, so installed versions are not labelled.
 
 ## License
