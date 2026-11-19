@@ -207,23 +207,7 @@ public struct Core: Sendable {
         }
 
         logger.beginSection("Sign in to Apple Developer")
-        let accountName = try await credentials.accountName()
-        let listing: DownloadListing?
-        do {
-            listing = try await authentication.authenticate(accountName) { [credentials] in
-                try await credentials.password(accountName)
-            }
-        } catch let error as CredentialsError {
-            throw error
-        } catch let error as PromptUnavailable {
-            throw error
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch let error as OlympUsError {
-            throw CoreError.signInFailed(error.description)
-        } catch {
-            throw CoreError.authenticationFailed
-        }
+        let listing = try await authenticate(accountName: credentials.accountName())
 
         logger.beginSection("Downloading")
         let source = try DownloadSource(
@@ -253,6 +237,42 @@ public struct Core: Sendable {
             return (xcode, downloadURL)
         } catch let error as XCAPIError {
             throw CoreError.downloadFailed(error.description)
+        }
+    }
+
+    /// Signs in to Apple ahead of a download and stores the Apple ID and the session in the Keychain item,
+    /// so that later `download` and `install` runs reuse the session without asking for the password.
+    @discardableResult
+    public func signIn(appleID: String? = nil) async throws -> String {
+        logger.beginSection("Sign in to Apple Developer")
+        let accountName = if let appleID { appleID } else { try await credentials.accountName() }
+        try await authenticate(accountName: accountName)
+        do {
+            try await credentials.store(accountName)
+        } catch {
+            logger.warn("Signed in, but the Apple ID could not be saved in the Keychain item 'xcinfo' (\(error)).")
+        }
+        logger.success("Signed in as \(accountName).")
+        logger.log("The Apple session is stored in the Keychain item 'xcinfo'. download and install reuse it without asking for the password until Apple ends it.")
+        return accountName
+    }
+
+    @discardableResult
+    private func authenticate(accountName: String) async throws -> DownloadListing? {
+        do {
+            return try await authentication.authenticate(accountName) { [credentials] in
+                try await credentials.password(accountName)
+            }
+        } catch let error as CredentialsError {
+            throw error
+        } catch let error as PromptUnavailable {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as OlympUsError {
+            throw CoreError.signInFailed(error.description)
+        } catch {
+            throw CoreError.authenticationFailed
         }
     }
 

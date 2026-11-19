@@ -926,6 +926,88 @@ struct CoreUninstallTests {
     }
 }
 
+struct CoreSignInTests {
+    @Test
+    func `signin signs in with the stored apple id and stores it`() async throws {
+        let directory = try TemporaryDirectory()
+        let logs = LogRecorder()
+        let calls = Recorder<String>()
+        let core = Core.test(
+            logs: logs,
+            cachesDirectory: directory.url,
+            accountName: { "stored@example.invalid" },
+            password: { _ in "secret" },
+            store: { calls.append("store \($0)") },
+            authenticate: { accountName, password in calls.append("authenticate \(accountName):\(try await password())") },
+            applicationsDirectory: directory.url
+        )
+
+        let accountName = try await core.signIn()
+
+        #expect(accountName == "stored@example.invalid")
+        #expect(calls.values == ["authenticate stored@example.invalid:secret", "store stored@example.invalid"])
+        #expect(logs.messages.first == "\nSign in to Apple Developer")
+        #expect(logs.messages.contains("Signed in as stored@example.invalid."))
+    }
+
+    @Test
+    func `signin with an apple id does not ask for the stored one`() async throws {
+        let directory = try TemporaryDirectory()
+        let calls = Recorder<String>()
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: directory.url,
+            accountName: {
+                Issue.record("Must not read the stored Apple ID")
+                return "stored@example.invalid"
+            },
+            store: { calls.append("store \($0)") },
+            authenticate: { accountName, _ in calls.append("authenticate \(accountName)") },
+            applicationsDirectory: directory.url
+        )
+
+        try await core.signIn(appleID: "other@example.invalid")
+
+        #expect(calls.values == ["authenticate other@example.invalid", "store other@example.invalid"])
+    }
+
+    @Test
+    func `failed signin stores nothing and keeps apple's reason`() async throws {
+        let directory = try TemporaryDirectory()
+        let core = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: directory.url,
+            store: { _ in Issue.record("Must not store the Apple ID") },
+            authenticate: { _, _ in throw OlympUsError.incorrectVerificationCode },
+            applicationsDirectory: directory.url
+        )
+
+        await #expect {
+            try await core.signIn(appleID: "user@example.invalid")
+        } throws: { error in
+            isCoreError(error) { if case let .signInFailed(reason) = $0 { reason == OlympUsError.incorrectVerificationCode.description } else { false } }
+        }
+    }
+
+    @Test
+    func `signin still succeeds when the apple id cannot be stored`() async throws {
+        let directory = try TemporaryDirectory()
+        let logs = LogRecorder()
+        let core = Core.test(
+            logs: logs,
+            cachesDirectory: directory.url,
+            store: { _ in throw KeychainAccessError(underlying: "denied") },
+            authenticate: { _, _ in },
+            applicationsDirectory: directory.url
+        )
+
+        try await core.signIn(appleID: "user@example.invalid")
+
+        #expect(logs.messages.contains { $0.contains("could not be saved") })
+        #expect(logs.messages.contains("Signed in as user@example.invalid."))
+    }
+}
+
 struct CoreCleanupTests {
     @Test(arguments: [
         (true, true, "Deleted the Keychain item 'xcinfo' with the Apple ID and the Apple session."),

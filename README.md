@@ -13,6 +13,7 @@ SUBCOMMANDS:
   install                 Install an Xcode version
   installed               Show installed Xcode versions
   list                    List all available Xcode versions
+  signin                  Sign in to Apple and store the Apple ID and session
   switch                  Switch to another installed Xcode
   tui                     Browse, install and uninstall Xcode versions in a
                           full-screen terminal UI
@@ -97,6 +98,10 @@ If the setup after the extraction does not finish, xcinfo says where the extract
 
 `xcinfo uninstall 26.6` asks with the full path of the Xcode it is about to remove and moves it to the Trash. `--delete-permanently` deletes it right away; if the Trash can't be used, `uninstall` stops and suggests that flag. Without a version it asks which installed Xcode to remove.
 
+### signin
+
+`xcinfo signin` signs in to the Apple Developer Portal, with two-factor authentication when Apple asks for it, and stores the Apple ID and the Apple session in the Keychain item `xcinfo`, like a download does. Later `download` and `install` runs reuse the session and don't ask for the password until Apple ends it. `xcinfo signin <apple-id>` signs in with another Apple ID and stores it; without one, xcinfo takes the stored Apple ID, `XCINFO_APPLE_ID`, or asks. If the stored session is still valid, nothing is asked. `login` is an alias.
+
 ### cleanup
 
 Deletes the Keychain item `xcinfo` (the stored Apple ID and the Apple session) and the Apple cookies left by older versions; the next download signs in again, with two-factor authentication. Downloaded archives, saved download progress and the cached list of Xcode versions are kept.
@@ -165,6 +170,7 @@ Stopping a download with Ctrl-C saves its progress in `~/Library/Caches/xcinfo/<
 
 ## Unattended use
 
+- Run `xcinfo signin` once by hand on the build machine, as the user that runs the builds: it handles two-factor authentication and stores the session in that user's login Keychain, so later unattended runs need no password until Apple ends the session. The login Keychain must be unlocked when they run, and the first unattended read may need "Always Allow" for the xcinfo binary.
 - Set `XCINFO_APPLE_ID` and `XCINFO_APPLE_PASSWORD` for the sign-in. The password is only used when Apple needs a new sign-in.
 - `--non-interactive` never asks. Where xcinfo would ask a question, it fails with exit code 10 and prints the question and its choices, so you can give the answer up front: an exact version or build number, `--apple-silicon` or `--universal`, `--overwrite`, `--no-verify`.
 - Without a terminal on standard input, a choice between versions and a missing Apple ID or password fail with exit code 10; yes/no questions read their answer from standard input and fail with exit code 10 when it ends. With `--json`, choices fail the same way, so the output stays valid JSON.
