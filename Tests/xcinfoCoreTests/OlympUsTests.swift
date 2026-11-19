@@ -46,6 +46,7 @@ final class OlympUsFixture: Sendable {
         legacyCookies: [HTTPCookie] = [],
         prompt: FakePrompt = FakePrompt(),
         promptClient: PromptClient? = nil,
+        srpGroup: SRPGroup = .test256,
         handler: @escaping StubServer.Handler
     ) {
         server = StubServer(handler: handler)
@@ -56,7 +57,8 @@ final class OlympUsFixture: Sendable {
             session: server.session(),
             sessionStore: sessionStore.store,
             prompt: promptClient ?? prompt.client,
-            now: { Date(timeIntervalSince1970: 1_700_000_000) }
+            now: { Date(timeIntervalSince1970: 1_700_000_000) },
+            srpGroup: srpGroup
         )
     }
 
@@ -163,8 +165,13 @@ struct OlympUsSignInTests {
 
     @Test(arguments: [PasswordProtocol.s2k, .s2kFo])
     func `sign in proves the password with srp`(passwordProtocol: PasswordProtocol) async throws {
-        let srp = FakeAppleSRPServer(accountName: "user@example.invalid", password: "correct horse", passwordProtocol: passwordProtocol)
-        let fixture = OlympUsFixture(handler: appleServer(srp: srp))
+        let srp = FakeAppleSRPServer(
+            accountName: "user@example.invalid",
+            password: "correct horse",
+            passwordProtocol: passwordProtocol,
+            group: .rfc5054_2048
+        )
+        let fixture = OlympUsFixture(srpGroup: .rfc5054_2048, handler: appleServer(srp: srp))
 
         let result = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
 

@@ -88,18 +88,18 @@ final class FakeAppleSRPServer: Sendable {
     let serverPublicKey: BigUInt
     private let serverPrivateKey = BigUInt(hex: "E487CB59D31AC550471E81F00F6928E01DDA08E974A004F49E61F5D105284D20")!
     private let clientPublicKey = OSAllocatedUnfairLock<BigUInt?>(initialState: nil)
-    private let group = SRPGroup.rfc5054_2048
+    private let group: SRPGroup
 
-    init(accountName: String, password: String, passwordProtocol: PasswordProtocol = .s2k) {
+    init(accountName: String, password: String, passwordProtocol: PasswordProtocol = .s2k, group: SRPGroup = .test256) {
         self.accountName = accountName
         salt = Array("apple-salt".utf8)
         iterations = 1_000
         self.passwordProtocol = passwordProtocol
         let key = derivedPasswordKey(password: password, salt: salt, iterations: iterations, protocol: passwordProtocol)
-        let client = SRPClient(group: .rfc5054_2048, hash: .sha256, privateKey: .one)
+        self.group = group
+        let client = SRPClient(group: group, hash: .sha256, privateKey: .one)
         let exponent = client.passwordVerifierExponent(identity: "", password: key, salt: salt)
-        verifier = SRPGroup.rfc5054_2048.generator.power(exponent, modulus: SRPGroup.rfc5054_2048.prime)
-        let group = SRPGroup.rfc5054_2048
+        verifier = group.generator.power(exponent, modulus: group.prime)
         let serverPrivateKey = BigUInt(hex: "E487CB59D31AC550471E81F00F6928E01DDA08E974A004F49E61F5D105284D20")!
         serverPublicKey = (client.multiplier * verifier + group.generator.power(serverPrivateKey, modulus: group.prime)) % group.prime
     }
@@ -160,4 +160,11 @@ extension OlympUs.AuthenticationAssets {
         encoder.outputFormatting = .sortedKeys
         return try! encoder.encode(fixture)
     }
+}
+
+extension SRPGroup {
+    static let test256 = SRPGroup(
+        prime: BigUInt(hex: "88DD71A12FE12C4651765015613010A2BF76B8F4EF29BBC049D0076D854552FB")!,
+        generator: BigUInt(2)
+    )
 }
