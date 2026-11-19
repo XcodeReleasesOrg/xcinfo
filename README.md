@@ -47,7 +47,7 @@ To run without installing, use `swift run -c release xcinfo …`. Plain `swift r
 
 ### Homebrew and Mint
 
-`brew install xcinfo` and `mint install xcodereleases/xcinfo` install the 1.x releases. Use the source build for the version described here until 2.0 is released.
+`brew install xcinfo` installs the latest release from Homebrew. `mint install XcodeReleasesOrg/xcinfo` builds the latest release tag with Mint; like the source build, it needs Swift 6.4.
 
 ## Usage
 
