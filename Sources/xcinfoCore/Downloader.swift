@@ -26,7 +26,7 @@ struct Downloader: Sendable {
         session: URLSession,
         cachesDirectory: URL,
         clock: any Clock<Duration> = ContinuousClock(),
-        connections: Int = 1,
+        connections: Int,
         minimumSplit: Int64 = Downloader.defaultMinimumSplit
     ) {
         self.logger = logger

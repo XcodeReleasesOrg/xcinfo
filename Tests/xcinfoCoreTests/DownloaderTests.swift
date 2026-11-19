@@ -21,7 +21,8 @@ struct DownloaderTests {
             logger: logs.logger(),
             session: server.session(),
             cachesDirectory: caches.url,
-            clock: ImmediateClock()
+            clock: ImmediateClock(),
+            connections: 1
         )
         return Fixture(
             caches: caches,

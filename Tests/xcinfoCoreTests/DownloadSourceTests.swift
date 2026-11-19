@@ -62,7 +62,12 @@ struct ArchiveFormatChoiceTests {
     @Test
     func `resume data is kept per format`() throws {
         let caches = try TemporaryDirectory()
-        let downloader = Downloader(logger: LogRecorder().logger(), session: .shared, cachesDirectory: caches.url)
+        let downloader = Downloader(
+            logger: LogRecorder().logger(),
+            session: .shared,
+            cachesDirectory: caches.url,
+            connections: 1
+        )
 
         #expect(downloader.cacheURL(for: xip) != downloader.cacheURL(for: aea))
     }
