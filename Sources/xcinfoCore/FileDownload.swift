@@ -242,12 +242,11 @@ struct SpeedMeasurements {
         buffer = []
     }
 
-    mutating func append(_ value: Double) {
-        let now = Date()
-        while let first = buffer.first, now.timeIntervalSince(first.date) > 10 {
+    mutating func append(_ value: Double, at date: Date = Date()) {
+        while let first = buffer.first, date.timeIntervalSince(first.date) > 10 {
             buffer.remove(at: 0)
         }
-        buffer.append(SpeedMeasurement(value: value, date: now))
+        buffer.append(SpeedMeasurement(value: value, date: date))
     }
 
     func averageSpeed() -> Double {
