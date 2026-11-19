@@ -956,11 +956,18 @@ extension Core {
         guard !knownVersions.isEmpty else {
             return []
         }
-        let result = try await processes.run("mdfind", ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"])
-        let paths = result.stdout.split(separator: "\n")
+        let spotlight = try await processes.run("mdfind", ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"])
+            .stdout
+            .split(separator: "\n")
+            .map { URL(fileURLWithPath: String($0)) }
+        let launchServices = await workspace.applicationURLs("com.apple.dt.Xcode")
 
-        return paths.compactMap { path -> XcodeApplication? in
-            let url = URL(fileURLWithPath: String(path))
+        var seenPaths = Set<String>()
+        let urls = (spotlight + launchServices).filter { url in
+            !url.pathComponents.contains(".Trash") && seenPaths.insert(url.resolvingSymlinksInPath().path).inserted
+        }
+
+        return urls.compactMap { url -> XcodeApplication? in
             let versionURL = url.appendingPathComponent("Contents/version.plist")
             if
                 let plistBuild = NSDictionary(contentsOfFile: versionURL.path)?["ProductBuildVersion"] as? String,

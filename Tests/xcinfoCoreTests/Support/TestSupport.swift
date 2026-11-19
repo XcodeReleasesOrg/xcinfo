@@ -243,6 +243,7 @@ extension Core {
         promptClient: PromptClient? = nil,
         applicationsDirectory: URL,
         revealInFinder: (@Sendable (URL) -> Void)? = nil,
+        launchServicesXcodes: [URL] = [],
         trashItem: (@Sendable (URL) throws -> URL?)? = nil
     ) -> Core {
         withDependencies {
@@ -260,6 +261,7 @@ extension Core {
                 },
                 removeItem: { try FileManager.default.removeItem(at: $0) }
             )
+            $0.workspace.applicationURLs = { _ in launchServicesXcodes }
             if let listXcodes {
                 $0.xcodeReleases.listXcodes = listXcodes
             }

@@ -77,6 +77,7 @@ public struct KeychainClient: Sendable {
 @DependencyClient
 public struct WorkspaceClient: Sendable {
     public var revealInFinder: @Sendable (_ url: URL) async -> Void
+    public var applicationURLs: @Sendable (_ bundleIdentifier: String) async -> [URL] = { _ in [] }
 }
 
 extension XcodeReleasesClient: DependencyKey {
@@ -235,6 +236,11 @@ extension WorkspaceClient: DependencyKey {
                     url.path,
                     inFileViewerRootedAtPath: url.deletingLastPathComponent().path
                 )
+            }
+        },
+        applicationURLs: { bundleIdentifier in
+            await MainActor.run {
+                NSWorkspace.shared.urlsForApplications(withBundleIdentifier: bundleIdentifier)
             }
         }
     )
