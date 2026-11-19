@@ -191,12 +191,23 @@ public actor OlympUs {
         prompt: PromptClient = .live,
         now: @escaping @Sendable () -> Date = Date.init
     ) {
+        self.init(logger: logger, session: session, sessionStore: sessionStore, prompt: prompt, now: now, srpGroup: .rfc5054_2048)
+    }
+
+    init(
+        logger: Logger,
+        session: URLSession,
+        sessionStore: AuthenticationSessionStore,
+        prompt: PromptClient = .live,
+        now: @escaping @Sendable () -> Date = Date.init,
+        srpGroup: SRPGroup
+    ) {
         self.logger = logger
         self.session = session
         self.sessionStore = sessionStore
         self.prompt = prompt
         self.now = now
-        srpGroup = .rfc5054_2048
+        self.srpGroup = srpGroup
     }
 
     private var loadedAccount: String?

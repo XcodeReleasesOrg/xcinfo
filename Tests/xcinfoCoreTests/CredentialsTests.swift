@@ -307,12 +307,12 @@ struct CredentialsTests {
 }
 
 struct PasswordBytesTests {
-    private let passwords = ["  Grüße aus Köln 🎉  ", "plain", "trailing ", String(repeating: "ä", count: 64)]
+    static let passwords = ["  Grüße aus Köln 🎉  ", "plain", "trailing ", String(repeating: "ä", count: 64)]
 
     @Test
     func `the derived key uses the exact utf8 bytes of the password`() {
         let salt = Array("salt".utf8)
-        for password in passwords {
+        for password in Self.passwords {
             let digest = Array(SHA256.hash(data: Data(password.utf8)))
 
             #expect(derivedPasswordKey(password: password, salt: salt, iterations: 10, protocol: .s2k)
@@ -320,42 +320,41 @@ struct PasswordBytesTests {
         }
     }
 
-    @Test
-    func `a typed password reaches the sign-in unchanged`() async throws {
-        for password in passwords {
-            let srp = FakeAppleSRPServer(accountName: "user", password: password)
-            let prompt = FakePrompt(passwords: [password])
-            let vault = KeychainVault(storage: FakeVaultStorage(contents: VaultContents(accountName: "user")).storage)
-            let credentials = withDependencies {
-                $0.keychain = .vault(vault)
-                $0.prompt = prompt.client
-                $0.logger = LogRecorder().logger()
-            } operation: {
-                CredentialService(environment: [:], isInteractive: true)
-            }
-            let server = StubServer { request in
-                switch request.url?.path {
-                case "/appleauth/auth/signin/init":
-                    srp.initResponse(for: request)
-                case "/appleauth/auth/signin/complete":
-                    srp.isValidCompletion(request) ? .json("{}", statusCode: 409) : .json("{}", statusCode: 401)
-                default:
-                    StubResponse()
-                }
-            }
-            let olymp = OlympUs(
-                logger: LogRecorder().logger(),
-                session: server.session(),
-                sessionStore: InMemorySessionStore().store,
-                prompt: prompt.client
-            )
-
-            let typed = try await credentials.password(for: "user")
-            let result = try await olymp.signIn(accountName: "user", password: typed, serviceKey: "key")
-
-            #expect(typed == password)
-            #expect(result.requiresTwoFactorAuthentication)
+    @Test(arguments: PasswordBytesTests.passwords)
+    func `a typed password reaches the sign-in unchanged`(password: String) async throws {
+        let srp = FakeAppleSRPServer(accountName: "user", password: password)
+        let prompt = FakePrompt(passwords: [password])
+        let vault = KeychainVault(storage: FakeVaultStorage(contents: VaultContents(accountName: "user")).storage)
+        let credentials = withDependencies {
+            $0.keychain = .vault(vault)
+            $0.prompt = prompt.client
+            $0.logger = LogRecorder().logger()
+        } operation: {
+            CredentialService(environment: [:], isInteractive: true)
         }
+        let server = StubServer { request in
+            switch request.url?.path {
+            case "/appleauth/auth/signin/init":
+                srp.initResponse(for: request)
+            case "/appleauth/auth/signin/complete":
+                srp.isValidCompletion(request) ? .json("{}", statusCode: 409) : .json("{}", statusCode: 401)
+            default:
+                StubResponse()
+            }
+        }
+        let olymp = OlympUs(
+            logger: LogRecorder().logger(),
+            session: server.session(),
+            sessionStore: InMemorySessionStore().store,
+            prompt: prompt.client,
+            srpGroup: .test256
+        )
+
+        let typed = try await credentials.password(for: "user")
+        let result = try await olymp.signIn(accountName: "user", password: typed, serviceKey: "key")
+
+        #expect(typed == password)
+        #expect(result.requiresTwoFactorAuthentication)
     }
 
     @Test
@@ -408,7 +407,13 @@ struct SignInStorageTests {
         } operation: {
             let credentials = CredentialService(environment: [:], isInteractive: true)
             let accountName = try await credentials.accountName()
-            let olymp = OlympUs(logger: logs.logger(), session: server.session(), sessionStore: .vault(keychain), prompt: prompt.client)
+            let olymp = OlympUs(
+                logger: logs.logger(),
+                session: server.session(),
+                sessionStore: .vault(keychain),
+                prompt: prompt.client,
+                srpGroup: .test256
+            )
             try await AppleAuthenticator(olymp: olymp, logger: logs.logger()).authenticate(username: accountName) {
                 try await credentials.password(for: accountName)
             }
@@ -468,7 +473,8 @@ struct SignInSessionTests {
             logger: logs.logger(),
             session: server.session(),
             sessionStore: InMemorySessionStore().store,
-            prompt: prompt.client
+            prompt: prompt.client,
+            srpGroup: .test256
         )
 
         _ = try await AppleAuthenticator(olymp: olymp, logger: logs.logger()).authenticate(username: "user") { "correct horse" }

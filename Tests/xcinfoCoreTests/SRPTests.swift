@@ -101,12 +101,15 @@ struct BigUIntTests {
         #expect(base.power(.zero, modulus: group.prime) == .one)
     }
 
-    @Test(arguments: [SRPGroup.rfc5054_1024, .rfc5054_2048])
-    func `the srp groups use safe primes`(group: SRPGroup) {
-        let prime = group.prime
-        let half = (prime - BigUInt.one).shiftedRight(by: 1)
+    @Test(arguments: [SRPGroup.test256, .rfc5054_1024, .rfc5054_2048], [UInt64(2), 3])
+    func `the srp group primes pass a miller rabin round`(group: SRPGroup, base: UInt64) {
+        #expect(group.prime.isProbablePrime(rounds: [base]))
+    }
 
-        #expect(prime.isProbablePrime(rounds: [2, 3]))
+    @Test(arguments: [SRPGroup.test256, .rfc5054_1024, .rfc5054_2048])
+    func `the srp groups use safe primes`(group: SRPGroup) {
+        let half = (group.prime - BigUInt.one).shiftedRight(by: 1)
+
         #expect(half.isProbablePrime(rounds: [2]))
     }
 }
