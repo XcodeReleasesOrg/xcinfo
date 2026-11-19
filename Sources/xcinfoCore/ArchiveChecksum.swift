@@ -8,7 +8,7 @@ import Foundation
 import XCIFoundation
 
 struct ArchiveChecksum: Sendable {
-    static let chunkSize = 8 * 1024 * 1024
+    static let chunkSize = 8 * 1_024 * 1_024
 
     let url: URL
 

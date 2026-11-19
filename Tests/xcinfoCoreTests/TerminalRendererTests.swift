@@ -148,7 +148,12 @@ struct TerminalRendererTests {
         (false, [:], true, false),
         (true, [:], false, false),
     ])
-    func `colors follow the terminal, NO_COLOR and the ansi flag`(isTerminal: Bool, environment: [String: String], allowsColors: Bool, expected: Bool) {
+    func `colors follow the terminal, NO_COLOR and the ansi flag`(
+        isTerminal: Bool,
+        environment: [String: String],
+        allowsColors: Bool,
+        expected: Bool
+    ) {
         let options = OutputOptions.detect(
             isVerbose: false,
             isQuiet: false,
@@ -164,7 +169,14 @@ struct TerminalRendererTests {
 
     @Test
     func `json output never uses colors`() {
-        let options = OutputOptions.detect(isVerbose: false, isQuiet: false, isJSON: true, allowsColors: true, environment: [:], isTerminal: true)
+        let options = OutputOptions.detect(
+            isVerbose: false,
+            isQuiet: false,
+            isJSON: true,
+            allowsColors: true,
+            environment: [:],
+            isTerminal: true
+        )
 
         #expect(!options.usesColors)
     }

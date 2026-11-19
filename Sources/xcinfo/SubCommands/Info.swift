@@ -14,13 +14,13 @@ extension XCInfo {
             discussion: "Display information like SDK, release note link, etc of an Xcode version."
         )
 
-        @OptionGroup()
+        @OptionGroup
         var versionOption: VersionOptions
 
         @OptionGroup
         var listOptions: ListOptions
 
-        @OptionGroup()
+        @OptionGroup
         var globals: DefaultOptions
 
         func run() async throws {

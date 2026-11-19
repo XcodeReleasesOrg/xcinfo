@@ -4,7 +4,7 @@ import os
 struct StubResponse: Sendable {
     var statusCode: Int = 200
     var headers: [String: String] = [:]
-    var body: Data = Data()
+    var body: Data = .init()
     var error: URLError?
     var isHanging = false
 
@@ -111,7 +111,7 @@ private extension Data {
         self.init()
         stream.open()
         defer { stream.close() }
-        let bufferSize = 4096
+        let bufferSize = 4_096
         let buffer = UnsafeMutablePointer<UInt8>.allocate(capacity: bufferSize)
         defer { buffer.deallocate() }
         while stream.hasBytesAvailable {

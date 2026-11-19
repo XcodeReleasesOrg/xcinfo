@@ -15,7 +15,7 @@ struct VersionPartsTests {
         ("15 beta", VersionParts(major: 15, type: .beta(""))),
         ("15.0 BETA 7", VersionParts(major: 15, minor: 0, type: .beta("7"))),
         ("15.0  rc   1", VersionParts(major: 15, minor: 0, type: .rc("1"))),
-        ("15.0 beta2", VersionParts(major: 15, minor: 0, type: .beta("2"))),
+        ("15.0 beta2", VersionParts(major: 15, minor: 0, type: .beta("2")))
     ])
     func `version parts are parsed from a version string`(versionString: String, expected: VersionParts) {
         #expect(VersionParts(rawValue: versionString) == expected)

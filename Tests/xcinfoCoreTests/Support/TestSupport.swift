@@ -1,10 +1,10 @@
+import Dependencies
 import Foundation
+import OlympUs
 import os
 import XCIFoundation
-import Dependencies
-import OlympUs
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 final class TemporaryDirectory: Sendable {
     let url: URL
@@ -260,26 +260,54 @@ extension Core {
                 },
                 removeItem: { try FileManager.default.removeItem(at: $0) }
             )
-            if let listXcodes { $0.xcodeReleases.listXcodes = listXcodes }
-            if let removeCookies { $0.xcodeReleases.removeCookies = removeCookies }
-            if let accountName { $0.credentials.accountName = accountName }
-            if let password { $0.credentials.password = password }
-            if let cleanupCredentials { $0.credentials.removeAll = cleanupCredentials }
-            if let store { $0.credentials.store = store }
+            if let listXcodes {
+                $0.xcodeReleases.listXcodes = listXcodes
+            }
+            if let removeCookies {
+                $0.xcodeReleases.removeCookies = removeCookies
+            }
+            if let accountName {
+                $0.credentials.accountName = accountName
+            }
+            if let password {
+                $0.credentials.password = password
+            }
+            if let cleanupCredentials {
+                $0.credentials.removeAll = cleanupCredentials
+            }
+            if let store {
+                $0.credentials.store = store
+            }
             if let authenticate {
                 $0.authentication.authenticate = { accountName, password in
                     try await authenticate(accountName, password)
                     return downloadListing
                 }
             }
-            if let cleanupAuthentication { $0.authentication.cleanup = cleanupAuthentication }
-            if let download { $0.downloads.download = download }
-            if let extract { $0.extraction.extract = extract }
-            if let shell { $0.processes = shell.client }
-            if let isAppleSilicon { $0.processes.isAppleSilicon = { isAppleSilicon } }
-            if let prompt { $0.prompt = prompt.client }
-            if let promptClient { $0.prompt = promptClient }
-            if let revealInFinder { $0.workspace.revealInFinder = { revealInFinder($0) } }
+            if let cleanupAuthentication {
+                $0.authentication.cleanup = cleanupAuthentication
+            }
+            if let download {
+                $0.downloads.download = download
+            }
+            if let extract {
+                $0.extraction.extract = extract
+            }
+            if let shell {
+                $0.processes = shell.client
+            }
+            if let isAppleSilicon {
+                $0.processes.isAppleSilicon = { isAppleSilicon }
+            }
+            if let prompt {
+                $0.prompt = prompt.client
+            }
+            if let promptClient {
+                $0.prompt = promptClient
+            }
+            if let revealInFinder {
+                $0.workspace.revealInFinder = { revealInFinder($0) }
+            }
         } operation: {
             Core()
         }

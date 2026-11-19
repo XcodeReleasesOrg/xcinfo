@@ -2,17 +2,34 @@ import Foundation
 import Testing
 import XCIFoundation
 @testable import xcinfo
-@testable import XCInfoTUI
 @testable import xcinfoCore
+@testable import XCInfoTUI
 
 private final class FakeTerminal: TerminalControl, Sendable {
     let calls = Recorder<String>()
-    func enter() { calls.append("enter") }
-    func leave() { calls.append("leave") }
-    func enterRawMode() { calls.append("raw") }
-    func leaveRawMode() { calls.append("cooked") }
-    func discardInput() { calls.append("discard") }
-    var modeDescription: String { "fake terminal" }
+    func enter() {
+        calls.append("enter")
+    }
+
+    func leave() {
+        calls.append("leave")
+    }
+
+    func enterRawMode() {
+        calls.append("raw")
+    }
+
+    func leaveRawMode() {
+        calls.append("cooked")
+    }
+
+    func discardInput() {
+        calls.append("discard")
+    }
+
+    var modeDescription: String {
+        "fake terminal"
+    }
 }
 
 struct TerminalHandoverTests {
@@ -28,10 +45,14 @@ struct TerminalHandoverTests {
             return 42
         }
         var iterator = inputs.makeAsyncIterator()
-        guard case let .releaseTerminal(release) = await iterator.next() else { Issue.record("Expected a release"); return }
+        guard case let .releaseTerminal(release) = await iterator.next() else { Issue.record("Expected a release")
+            return
+        }
         await terminal.handOver(release, gate: gate)
         #expect(await gate.isPaused)
-        guard case let .reacquireTerminal(back) = await iterator.next() else { Issue.record("Expected a reacquire"); return }
+        guard case let .reacquireTerminal(back) = await iterator.next() else { Issue.record("Expected a reacquire")
+            return
+        }
         await terminal.takeBack(back, gate: gate)
 
         #expect(try await result == 42)
@@ -48,8 +69,12 @@ struct TerminalHandoverTests {
         let events = Recorder<String>()
         let loads = Recorder<Bool>()
         let live = KeychainClient(
-            load: { loads.append(await gate.isPaused); return VaultContents(accountName: "user") },
-            reload: { loads.append(await gate.isPaused); return VaultContents(accountName: "user") },
+            load: { await loads.append(gate.isPaused)
+                return VaultContents(accountName: "user")
+            },
+            reload: { await loads.append(gate.isPaused)
+                return VaultContents(accountName: "user")
+            },
             stage: { _ in },
             commit: { _ in }
         )

@@ -1,9 +1,9 @@
 import Foundation
 import Testing
 import XCIFoundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfo
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct ExistingDownloadTests {
     private let content = Data("xar!xip-content".utf8)
@@ -68,8 +68,14 @@ struct ExistingDownloadTests {
         #expect(fixture.logs.messages.contains("Using the existing \(existing.path) (SHA-1 matches xcodereleases.com)."))
     }
 
-    @Test(arguments: [("0000000000000000000000000000000000000000", "its SHA-1 does not match xcodereleases.com"), (nil, "xcodereleases.com has no checksum to check it against")] as [(String?, String)])
-    func `an existing file that cannot be confirmed is kept and the download refused without overwrite`(sha1: String?, reason: String) async throws {
+    @Test(arguments: [
+        ("0000000000000000000000000000000000000000", "its SHA-1 does not match xcodereleases.com"),
+        (nil, "xcodereleases.com has no checksum to check it against")
+    ] as [(String?, String)])
+    func `an existing file that cannot be confirmed is kept and the download refused without overwrite`(
+        sha1: String?,
+        reason: String
+    ) async throws {
         let fixture = try Fixture(name: "Xcode.xip", sha1: sha1)
         let existing = try fixture.existing("Xcode.xip", contents: content)
 
@@ -106,7 +112,12 @@ struct ExistingDownloadTests {
         #expect(url == existing)
         #expect(fixture.requested.values.isEmpty)
         #expect(fixture.logs.messages.contains("Using the existing \(existing.path) (Apple signature checked)."))
-        #expect(fixture.logs.progress.last == OutputProgress(title: "Verifying", fraction: 1, detail: "signature checked", isFinished: true))
+        #expect(fixture.logs.progress.last == OutputProgress(
+            title: "Verifying",
+            fraction: 1,
+            detail: "signature checked",
+            isFinished: true
+        ))
     }
 
     @Test(arguments: ["wrong-signer.aea", "signed.aea"])

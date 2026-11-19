@@ -14,7 +14,7 @@ extension XCInfo {
             discussion: "Show all installed versions of Xcode and their location on this computer."
         )
 
-        @OptionGroup()
+        @OptionGroup
         var globals: DefaultOptions
 
         @OptionGroup

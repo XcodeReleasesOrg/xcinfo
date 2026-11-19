@@ -32,7 +32,7 @@ struct ArchiveFormatTests {
         ("AEA1rest", .some(.aea)),
         ("PK\u{3}\u{4}", nil),
         ("xar", nil),
-        ("", nil),
+        ("", nil)
     ])
     func `the format is detected from the first bytes`(contents: String, format: ArchiveFormat?) throws {
         let directory = try TemporaryDirectory()
@@ -174,7 +174,11 @@ struct AEAExtractionTests {
             calls.append(archive.path)
             let contents = workingDirectory.appendingPathComponent("Xcode.app/Contents")
             try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
-            let info = try PropertyListSerialization.data(fromPropertyList: ["CFBundleIdentifier": "com.apple.dt.Xcode"], format: .xml, options: 0)
+            let info = try PropertyListSerialization.data(
+                fromPropertyList: ["CFBundleIdentifier": "com.apple.dt.Xcode"],
+                format: .xml,
+                options: 0
+            )
             try info.write(to: contents.appendingPathComponent("Info.plist"))
             return ProcessResult(exitStatus: 0, stdout: "Extraction completed to: \(workingDirectory.path)\n")
         }
@@ -203,7 +207,10 @@ struct AEAExtractionTests {
 
         await #expect {
             try await fixture.extractor("symmetric.aea").extractAEA(trust: AEAFixture.trust) { _, workingDirectory in
-                try FileManager.default.createDirectory(at: workingDirectory.appendingPathComponent("Other.app"), withIntermediateDirectories: true)
+                try FileManager.default.createDirectory(
+                    at: workingDirectory.appendingPathComponent("Other.app"),
+                    withIntermediateDirectories: true
+                )
                 return ProcessResult(exitStatus: 0)
             }
         } throws: { error in
@@ -217,11 +224,16 @@ struct AEAProgressTests {
     @Test
     func `progress follows the read position through a large file`() throws {
         let directory = try TemporaryDirectory()
-        let file = try directory.file("large.bin", contents: Data(repeating: 7, count: 4 * 1024 * 1024))
+        let file = try directory.file("large.bin", contents: Data(repeating: 7, count: 4 * 1_024 * 1_024))
         let reports = Recorder<Double>()
-        let inner = try #require(ArchiveByteStream.fileStream(path: FilePath(file.path), mode: .readOnly, options: [], permissions: FilePermissions(rawValue: 0o644)))
-        let stream = ProgressReportingStream(inner: inner, size: 4 * 1024 * 1024) { reports.append($0) }
-        let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: 64 * 1024, alignment: 1)
+        let inner = try #require(ArchiveByteStream.fileStream(
+            path: FilePath(file.path),
+            mode: .readOnly,
+            options: [],
+            permissions: FilePermissions(rawValue: 0o644)
+        ))
+        let stream = ProgressReportingStream(inner: inner, size: 4 * 1_024 * 1_024) { reports.append($0) }
+        let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: 64 * 1_024, alignment: 1)
         defer { buffer.deallocate() }
 
         while try stream.read(into: buffer) > 0 {}

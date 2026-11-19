@@ -113,7 +113,10 @@ struct OlympUsServiceKeyTests {
     func `the service key is read from the sign-out redirect`() async throws {
         let fixture = OlympUsFixture { request in
             request.url?.path == "/logout"
-                ? StubResponse(statusCode: 302, headers: ["Location": "https://idmsa.apple.com/appleauth/signout?widgetKey=redirect-key&asop=destroy-session"])
+                ? StubResponse(
+                    statusCode: 302,
+                    headers: ["Location": "https://idmsa.apple.com/appleauth/signout?widgetKey=redirect-key&asop=destroy-session"]
+                )
                 : .json(#"{"authServiceKey":"config-key"}"#)
         }
 
@@ -135,12 +138,12 @@ struct OlympUsServiceKeyTests {
         #expect(key == "fresh-key")
         #expect(fixture.server.requests.values.map { $0.url?.absoluteString } == [
             "https://appstoreconnect.apple.com/logout",
-            "https://appstoreconnect.apple.com/olympus/v1/app/config?hostname=itunesconnect.apple.com",
+            "https://appstoreconnect.apple.com/olympus/v1/app/config?hostname=itunesconnect.apple.com"
         ])
     }
 
     @Test
-    func `a missing service key fails`() async throws {
+    func `a missing service key fails`() async {
         let fixture = OlympUsFixture { request in
             request.url?.path == "/logout" ? StubResponse(statusCode: 200) : .json(#"{"message":"Not Found"}"#, statusCode: 404)
         }
@@ -166,7 +169,12 @@ struct OlympUsSignInTests {
         let result = try await fixture.olymp.signIn(accountName: "user@example.invalid", password: "correct horse", serviceKey: "key")
 
         #expect(result.requiresTwoFactorAuthentication)
-        #expect(result.assets == OlympUs.AuthenticationAssets(serviceKey: "key", scnt: "scnt-value", asid: "session-id", authenticationType: "hsa2"))
+        #expect(result.assets == OlympUs.AuthenticationAssets(
+            serviceKey: "key",
+            scnt: "scnt-value",
+            asid: "session-id",
+            authenticationType: "hsa2"
+        ))
         let completion = try #require(fixture.server.requests(to: AppleEndpoint.signInComplete).first)
         #expect(completion.url?.query == "isRememberMeEnabled=false")
         let body = try json(completion)
@@ -183,7 +191,7 @@ struct OlympUsSignInTests {
 
         let bodies = fixture.server.requests.values.compactMap(\.httpBody).map { String(decoding: $0, as: UTF8.self) }
         #expect(!bodies.contains { $0.contains("correct horse") })
-        let initBody = try json(try #require(fixture.server.requests(to: AppleEndpoint.signInInit).first))
+        let initBody = try json(#require(fixture.server.requests(to: AppleEndpoint.signInInit).first))
         #expect(initBody["protocols"] as? [String] == ["s2k", "s2k_fo"])
         #expect(initBody["a"] is String)
     }
@@ -225,7 +233,7 @@ struct OlympUsSignInTests {
     }
 
     @Test
-    func `verbose output shows each sign in step without secrets`() async throws {
+    func `verbose output shows each sign in step without secrets`() async {
         let fixture = OlympUsFixture(handler: appleServer(srp: srp, completion: { _, _ in
             .json(#"{"serviceErrors":[{"code":"-20101","message":"Your Apple ID or password was incorrect."}]}"#, statusCode: 401)
         }))
@@ -255,7 +263,7 @@ struct OlympUsSignInTests {
     }
 
     @Test
-    func `a wrong password is reported`() async throws {
+    func `a wrong password is reported`() async {
         let fixture = OlympUsFixture(handler: appleServer(srp: srp))
 
         await #expect(performing: {
@@ -267,9 +275,9 @@ struct OlympUsSignInTests {
         (401, OlympUsError.incorrectCredentials),
         (403, .accountLocked),
         (412, .privacyAcknowledgementRequired),
-        (500, .signInRequestFailed),
+        (500, .signInRequestFailed)
     ])
-    func `rejected sign ins are reported specifically`(statusCode: Int, error: OlympUsError) async throws {
+    func `rejected sign ins are reported specifically`(statusCode: Int, error: OlympUsError) async {
         let fixture = OlympUsFixture(handler: appleServer(srp: srp, completion: { _, _ in .json("{}", statusCode: statusCode) }))
 
         await #expect(performing: {
@@ -278,7 +286,7 @@ struct OlympUsSignInTests {
     }
 
     @Test
-    func `an unknown account is reported when the challenge is refused`() async throws {
+    func `an unknown account is reported when the challenge is refused`() async {
         let fixture = OlympUsFixture(handler: appleServer(srp: srp))
 
         await #expect(performing: {
@@ -288,7 +296,7 @@ struct OlympUsSignInTests {
     }
 
     @Test
-    func `a broken challenge fails the sign in`() async throws {
+    func `a broken challenge fails the sign in`() async {
         let fixture = OlympUsFixture { request in
             request.url?.path == AppleEndpoint.signInInit ? .json(#"{"unexpected":true}"#) : StubResponse()
         }
@@ -317,7 +325,8 @@ struct OlympUsTwoFactorTests {
         #expect(request.value(forHTTPHeaderField: "scnt") == "scnt-value")
         #expect(request.value(forHTTPHeaderField: "X-Apple-ID-Session-Id") == "session-id")
         #expect(request.value(forHTTPHeaderField: "Accept") == "application/json")
-        #expect(fixture.logs.messages.contains("Enter the 6 digit verification code that Apple shows on one of your trusted Apple devices."))
+        #expect(fixture.logs.messages
+            .contains("Enter the 6 digit verification code that Apple shows on one of your trusted Apple devices."))
     }
 
     @Test
@@ -339,7 +348,7 @@ struct OlympUsTwoFactorTests {
         _ = try await fixture.olymp.requestAuthentication(assets: assets)
 
         #expect(validators.values == [
-            "Apple ID verification code: |Enter 6 digits|12345=true,123456=false,1234567=true,sms=false",
+            "Apple ID verification code: |Enter 6 digits|12345=true,123456=false,1234567=true,sms=false"
         ])
     }
 
@@ -357,7 +366,7 @@ struct OlympUsTwoFactorTests {
     }
 
     @Test
-    func `a locked verification is reported`() async throws {
+    func `a locked verification is reported`() async {
         let fixture = OlympUsFixture { _ in
             .json(#"{"securityCode":{"length":6,"securityCodeLocked":true}}"#)
         }
@@ -387,7 +396,7 @@ struct OlympUsTwoFactorTests {
     }
 
     @Test(arguments: [StubResponse.failure(.notConnectedToInternet), StubResponse(statusCode: 423)])
-    func `a failed sms request fails`(failure: StubResponse) async throws {
+    func `a failed sms request fails`(failure: StubResponse) async {
         let prompt = FakePrompt(answers: ["sms"], choices: [0])
         let fixture = OlympUsFixture(prompt: prompt) { request in
             request.url?.path == AppleEndpoint.auth ? .json(authResponse) : failure
@@ -399,7 +408,7 @@ struct OlympUsTwoFactorTests {
     }
 
     @Test
-    func `a failed authentication request fails`() async throws {
+    func `a failed authentication request fails`() async {
         let fixture = OlympUsFixture { _ in .json("{}", statusCode: 409) }
 
         await #expect(performing: {
@@ -438,9 +447,9 @@ struct OlympUsTwoFactorTests {
         (400, OlympUsError.incorrectVerificationCode),
         (401, .incorrectVerificationCode),
         (412, .privacyAcknowledgementRequired),
-        (500, .deviceTrustFailed),
+        (500, .deviceTrustFailed)
     ])
-    func `a wrong code fails`(statusCode: Int, error: OlympUsError) async throws {
+    func `a wrong code fails`(statusCode: Int, error: OlympUsError) async {
         let fixture = OlympUsFixture { _ in StubResponse(statusCode: statusCode) }
 
         await #expect(performing: {
@@ -449,7 +458,7 @@ struct OlympUsTwoFactorTests {
     }
 
     @Test
-    func `a failed code request fails`() async throws {
+    func `a failed code request fails`() async {
         let fixture = OlympUsFixture { _ in .failure(.timedOut) }
 
         await #expect(performing: {
@@ -471,7 +480,7 @@ struct OlympUsTwoFactorTests {
     }
 
     @Test(arguments: [StubResponse.failure(.timedOut), StubResponse(statusCode: 500)])
-    func `a failed trust request fails`(failure: StubResponse) async throws {
+    func `a failed trust request fails`(failure: StubResponse) async {
         let fixture = OlympUsFixture { _ in failure }
 
         await #expect(performing: {
@@ -480,7 +489,7 @@ struct OlympUsTwoFactorTests {
     }
 
     @Test
-    func `validation types point to their endpoint`() throws {
+    func `validation types point to their endpoint`() {
         #expect(ValidationType.securityCode("1").verificationURL.path == AppleEndpoint.trustedDeviceCode)
         #expect(ValidationType.verificationCode(1, "1").verificationURL.path == AppleEndpoint.phoneCode)
     }
@@ -494,7 +503,12 @@ struct OlympUsSessionTests {
         let fixture = OlympUsFixture { request in
             request.url?.path == AppleEndpoint.downloads
                 ? StubResponse(headers: ["Set-Cookie": downloadAuthCookie])
-                : StubResponse(headers: ["Set-Cookie": "dqsid=abc; Path=/; Domain=.apple.com, myacinfo=def; Expires=Wed, 21 Oct 2099 07:28:00 GMT; Path=/; Domain=.apple.com, nodomain=1; Path=/"])
+                :
+                StubResponse(
+                    headers: [
+                        "Set-Cookie": "dqsid=abc; Path=/; Domain=.apple.com, myacinfo=def; Expires=Wed, 21 Oct 2099 07:28:00 GMT; Path=/; Domain=.apple.com, nodomain=1; Path=/"
+                    ]
+                )
         }
 
         try await fixture.olymp.getOlympusSession(assets: assets, for: "user")
@@ -511,7 +525,12 @@ struct OlympUsSessionTests {
 
     @Test
     func `a session whose only change is a new download cookie is not saved again`() async throws {
-        let stored = InMemorySessionStore.session(cookies: [HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "account"])!])
+        let stored = try InMemorySessionStore.session(cookies: [#require(HTTPCookie(properties: [
+            .domain: ".apple.com",
+            .path: "/",
+            .name: "myacinfo",
+            .value: "account"
+        ]))])
         let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in StubResponse(headers: ["Set-Cookie": downloadAuthCookie]) }
 
         try await fixture.olymp.validateSession(for: "user")
@@ -524,9 +543,15 @@ struct OlympUsSessionTests {
     @Test
     func `an expired stored cookie alone does not cause a keychain write`() async throws {
         let now = Date(timeIntervalSince1970: 1_700_000_000)
-        let stored = InMemorySessionStore.session(cookies: [
-            HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "account"])!,
-            HTTPCookie(properties: [.domain: "appstoreconnect.apple.com", .path: "/", .name: "dqsid", .value: "old", .expires: now.addingTimeInterval(-60)])!,
+        let stored = try InMemorySessionStore.session(cookies: [
+            #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "account"])),
+            #require(HTTPCookie(properties: [
+                .domain: "appstoreconnect.apple.com",
+                .path: "/",
+                .name: "dqsid",
+                .value: "old",
+                .expires: now.addingTimeInterval(-60)
+            ]))
         ])
         let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in StubResponse(headers: ["Set-Cookie": downloadAuthCookie]) }
 
@@ -539,7 +564,12 @@ struct OlympUsSessionTests {
 
     @Test
     func `a refreshed cookie value saves the session and names the cookie`() async throws {
-        let stored = InMemorySessionStore.session(cookies: [HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "old"])!])
+        let stored = try InMemorySessionStore.session(cookies: [#require(HTTPCookie(properties: [
+            .domain: ".apple.com",
+            .path: "/",
+            .name: "myacinfo",
+            .value: "old"
+        ]))])
         let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in
             StubResponse(headers: ["Set-Cookie": "\(downloadAuthCookie), myacinfo=new; Path=/; Domain=.apple.com"])
         }
@@ -552,7 +582,7 @@ struct OlympUsSessionTests {
     }
 
     @Test(arguments: [201, 401, 500])
-    func `a session needs a 200 response`(statusCode: Int) async throws {
+    func `a session needs a 200 response`(statusCode: Int) async {
         let fixture = OlympUsFixture { _ in StubResponse(statusCode: statusCode) }
 
         await #expect(performing: {
@@ -591,7 +621,7 @@ struct OlympUsSessionTests {
     }
 
     @Test
-    func `download auth fails without the download cookie`() async throws {
+    func `download auth fails without the download cookie`() async {
         let fixture = OlympUsFixture { _ in StubResponse(headers: ["Set-Cookie": "other=1; Path=/"]) }
 
         await #expect(performing: {
@@ -600,7 +630,7 @@ struct OlympUsSessionTests {
     }
 
     @Test
-    func `download auth fails when the request fails`() async throws {
+    func `download auth fails when the request fails`() async {
         let fixture = OlympUsFixture { _ in .failure(.timedOut) }
 
         await #expect(performing: {
@@ -620,8 +650,10 @@ struct OlympUsSessionTests {
     }
 
     @Test
-    func `an expired stored session is invalid`() async throws {
-        let fixture = OlympUsFixture(storedAssets: ["user": OlympUs.AuthenticationAssets.fixtureData]) { _ in StubResponse(statusCode: 401) }
+    func `an expired stored session is invalid`() async {
+        let fixture = OlympUsFixture(storedAssets: ["user": OlympUs.AuthenticationAssets.fixtureData]) { _ in
+            StubResponse(statusCode: 401)
+        }
 
         await #expect(performing: {
             try await fixture.olymp.validateSession(for: "user")
@@ -630,7 +662,7 @@ struct OlympUsSessionTests {
     }
 
     @Test
-    func `without a stored session there is nothing to validate`() async throws {
+    func `without a stored session there is nothing to validate`() async {
         let fixture = OlympUsFixture { _ in
             Issue.record("Must not request")
             return StubResponse()
@@ -644,7 +676,13 @@ struct OlympUsSessionTests {
 
     @Test
     func `stored cookies are restored with the session, session-only cookies included`() async throws {
-        let persistent = try #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "1", .expires: Date().addingTimeInterval(3600)]))
+        let persistent = try #require(HTTPCookie(properties: [
+            .domain: ".apple.com",
+            .path: "/",
+            .name: "myacinfo",
+            .value: "1",
+            .expires: Date().addingTimeInterval(3_600)
+        ]))
         let sessionOnly = try #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "DES1234", .value: "trusted"]))
         let stored = InMemorySessionStore.session(cookies: [persistent, sessionOnly])
         let fixture = OlympUsFixture(storedAssets: ["user": stored]) { _ in StubResponse() }
@@ -664,12 +702,22 @@ struct OlympUsSessionTests {
                 ? StubResponse(headers: ["Set-Cookie": downloadAuthCookie])
                 : StubResponse(headers: ["Set-Cookie": "myacinfo=session; Path=/; Domain=.apple.com"])
         }
-        let first = OlympUs(logger: LogRecorder().logger(), session: server.session(), sessionStore: sessionStore.store, prompt: FakePrompt().client)
+        let first = OlympUs(
+            logger: LogRecorder().logger(),
+            session: server.session(),
+            sessionStore: sessionStore.store,
+            prompt: FakePrompt().client
+        )
         try await first.getOlympusSession(assets: assets, for: "user")
         try await first.getDownloadAuth(assets: assets)
 
         let restartedLogs = LogRecorder()
-        let restarted = OlympUs(logger: restartedLogs.logger(), session: server.session(), sessionStore: sessionStore.store, prompt: FakePrompt().client)
+        let restarted = OlympUs(
+            logger: restartedLogs.logger(),
+            session: server.session(),
+            sessionStore: sessionStore.store,
+            prompt: FakePrompt().client
+        )
         try await restarted.validateSession(for: "user")
 
         #expect(restarted.session.configuration.httpCookieStorage?.cookies?.map(\.name).sorted() == ["myacinfo"])
@@ -683,7 +731,10 @@ struct OlympUsSessionTests {
         let expired = try #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "myacinfo", .value: "expired"]))
         let abuse = try #require(HTTPCookie(properties: [.domain: "idmsa.apple.com", .path: "/", .name: "aasp", .value: "old"]))
         let srp = FakeAppleSRPServer(accountName: "user", password: "secret")
-        let fixture = OlympUsFixture(storedAssets: ["user": InMemorySessionStore.session(cookies: [trust, expired, abuse])], handler: appleServer(srp: srp))
+        let fixture = OlympUsFixture(
+            storedAssets: ["user": InMemorySessionStore.session(cookies: [trust, expired, abuse])],
+            handler: appleServer(srp: srp)
+        )
 
         _ = try await fixture.olymp.signIn(accountName: "user", password: "secret", serviceKey: "key")
 
@@ -724,13 +775,27 @@ struct OlympUsSessionTests {
         )
 
         #expect(await olymp.storedAuthenticationAssets(for: "user") == nil)
-        #expect(logs.events.contains(.verbose("No stored Apple session is used, because the Keychain could not be read (\(KeychainAccessError(underlying: "denied"))).")))
-        #expect(!logs.events.contains { if case .message(_, .warning) = $0 { true } else { false } })
+        #expect(logs.events
+            .contains(
+                .verbose(
+                    "No stored Apple session is used, because the Keychain could not be read (\(KeychainAccessError(underlying: "denied")))."
+                )
+            ))
+        #expect(!logs.events.contains {
+            if case .message(_, .warning) = $0 {
+                true
+            } else {
+                false
+            }
+        })
     }
 
     @Test
     func `cleanup removes the stored session and cookies`() async throws {
-        let fixture = OlympUsFixture(storedAssets: ["user": InMemorySessionStore.session(cookies: [])], legacyCookies: [HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "old", .value: "1"])!]) { _ in StubResponse() }
+        let fixture = try OlympUsFixture(
+            storedAssets: ["user": InMemorySessionStore.session(cookies: [])],
+            legacyCookies: [#require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: "old", .value: "1"]))]
+        ) { _ in StubResponse() }
 
         #expect(await fixture.olymp.cleanup())
 
@@ -825,13 +890,13 @@ struct AppleAuthenticatorTests {
             AppleEndpoint.trustedDeviceCode,
             AppleEndpoint.trust,
             AppleEndpoint.session,
-            AppleEndpoint.downloads,
+            AppleEndpoint.downloads
         ])
         #expect(fixture.sessionStore.data(for: "user") != nil)
         #expect(Array(fixture.logs.messages.prefix(3)) == [
             "[0/7] Validating existing session",
             "No stored session found.",
-            "Signing in again.",
+            "Signing in again."
         ])
     }
 
@@ -877,7 +942,7 @@ struct AppleAuthenticatorTests {
     }
 
     @Test
-    func `a wrong password fails the authentication`() async throws {
+    func `a wrong password fails the authentication`() async {
         let fixture = OlympUsFixture(handler: appleServer(srp: srp, otherwise: { request in
             request.url?.path == AppleEndpoint.config ? .json(#"{"authServiceKey":"service-key"}"#) : StubResponse(statusCode: 401)
         }))
@@ -897,7 +962,7 @@ struct SessionCookieTests {
         "dqsid=host-only; Path=/; Secure",
         "myacinfo=account; Path=/; Domain=.apple.com; Secure; Expires=Wed, 21 Oct 2099 07:28:00 GMT",
         "dslang=US-EN; Path=/; Domain=.apple.com",
-        "site=USA; Path=/; Domain=.apple.com",
+        "site=USA; Path=/; Domain=.apple.com"
     ].joined(separator: ", ")
 
     private func fixture() -> OlympUsFixture {
@@ -923,7 +988,7 @@ struct SessionCookieTests {
         ("myacinfo", ".example.com", nil, false),
         ("myacinfo", "notapple.com", nil, false),
         ("myacinfo", ".apple.com", -1, false),
-        ("myacinfo", ".apple.com", 3600, true),
+        ("myacinfo", ".apple.com", 3_600, true),
     ] as [(String, String, Double?, Bool)])
     func `only the cookies the session needs are kept`(name: String, domain: String, expiresIn: Double?, isKept: Bool) throws {
         var properties: [HTTPCookiePropertyKey: Any] = [.name: name, .value: "1", .domain: domain, .path: "/"]
@@ -939,7 +1004,7 @@ struct SessionCookieTests {
         ("site", ".apple.com", nil, "not needed"),
         ("ADCDownloadAuth", ".apple.com", nil, "renewed on every run"),
         ("dqsid", "localhost", nil, "not an Apple domain"),
-        ("dqsid", ".apple.com", -1, "expired"),
+        ("dqsid", ".apple.com", -1, "expired")
     ] as [(String, String, Double?, String)])
     func `a dropped cookie names its reason`(name: String, domain: String, expiresIn: Double?, reason: String) throws {
         var properties: [HTTPCookiePropertyKey: Any] = [.name: name, .value: "1", .domain: domain, .path: "/"]
@@ -959,7 +1024,10 @@ struct SessionCookieTests {
         try await fixture.olymp.getDownloadAuth(assets: assets)
 
         #expect(fixture.sessionStore.cookieNames(for: "user") == ["dqsid", "myacinfo"])
-        #expect(fixture.logs.messages.contains("Keeping cookies: dqsid, myacinfo. Dropping cookies: ADCDownloadAuth on .apple.com, renewed on every run; dslang on .apple.com, not needed; site on .apple.com, not needed."))
+        #expect(fixture.logs.messages
+            .contains(
+                "Keeping cookies: dqsid, myacinfo. Dropping cookies: ADCDownloadAuth on .apple.com, renewed on every run; dslang on .apple.com, not needed; site on .apple.com, not needed."
+            ))
     }
 
     @Test
@@ -984,7 +1052,8 @@ struct SessionCookieTests {
 
         let original = (first.olymp.session.configuration.httpCookieStorage?.cookies ?? []).filter { $0.isNeededForSession(at: now) }
         let restored = restarted.olymp.session.configuration.httpCookieStorage?.cookies ?? []
-        let attributes: (HTTPCookie) -> String = { "\($0.name)|\($0.domain)|\($0.path)|\($0.expiresDate?.description ?? "session")|\($0.isSecure)" }
+        let attributes: (HTTPCookie)
+            -> String = { "\($0.name)|\($0.domain)|\($0.path)|\($0.expiresDate?.description ?? "session")|\($0.isSecure)" }
         #expect(Set(restored.map(attributes)) == Set(original.map(attributes)))
         let myacinfo = try #require(restored.first { $0.name == "myacinfo" })
         #expect(myacinfo.domain == ".apple.com")
@@ -996,7 +1065,7 @@ struct SessionCookieTests {
     @Test
     func `a stored jar with unneeded cookies is saved again without them`() async throws {
         let cookies = try [
-            ("myacinfo", "account"), ("ADCDownloadAuth", "token"), ("site", "USA"), ("dslang", "US-EN"),
+            ("myacinfo", "account"), ("ADCDownloadAuth", "token"), ("site", "USA"), ("dslang", "US-EN")
         ].map { name, value in
             try #require(HTTPCookie(properties: [.domain: ".apple.com", .path: "/", .name: name, .value: value]))
         }
@@ -1008,8 +1077,12 @@ struct SessionCookieTests {
         try await fixture.olymp.getDownloadAuth(assets: assets)
 
         #expect(fixture.cookieNames == ["ADCDownloadAuth", "myacinfo"])
-        #expect(fixture.logs.messages.contains("Dropped 3 stored cookies: ADCDownloadAuth on .apple.com, renewed on every run; dslang on .apple.com, not needed; site on .apple.com, not needed"))
-        #expect(fixture.logs.messages.contains("Saving the session because the stored session still had cookies it no longer needs: ADCDownloadAuth, dslang, site."))
+        #expect(fixture.logs.messages
+            .contains(
+                "Dropped 3 stored cookies: ADCDownloadAuth on .apple.com, renewed on every run; dslang on .apple.com, not needed; site on .apple.com, not needed"
+            ))
+        #expect(fixture.logs.messages
+            .contains("Saving the session because the stored session still had cookies it no longer needs: ADCDownloadAuth, dslang, site."))
         #expect(fixture.sessionStore.saves.values == ["user"])
         #expect(fixture.sessionStore.cookieNames(for: "user") == ["myacinfo"])
     }

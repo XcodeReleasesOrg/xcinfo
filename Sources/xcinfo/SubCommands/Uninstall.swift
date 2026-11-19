@@ -14,7 +14,7 @@ extension XCInfo {
             discussion: "Moves a specific version of Xcode to the Trash after asking, showing its full path."
         )
 
-        @OptionGroup()
+        @OptionGroup
         var globals: DefaultOptions
 
         @Argument(

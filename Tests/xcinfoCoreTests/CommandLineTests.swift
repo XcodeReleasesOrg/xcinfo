@@ -35,7 +35,7 @@ struct CommandLineTests {
         (["list", "-v"], true, true),
         (["list", "--verbose"], true, true),
         (["list", "--no-ansi"], false, false),
-        (["list", "--ansi"], false, true),
+        (["list", "--ansi"], false, true)
     ])
     func `global options are parsed`(arguments: [String], isVerbose: Bool, useANSI: Bool) throws {
         let list = try parse(XCInfo.List.self, arguments)
@@ -50,7 +50,7 @@ struct CommandLineTests {
         (["list", "--only-gm"], false, .onlyGM, true),
         (["list", "--only-releases"], false, .onlyReleases, true),
         (["list", "--no-update-list"], false, nil, false),
-        (["list", "--update-list"], false, nil, true),
+        (["list", "--update-list"], false, nil, true)
     ])
     func `list options are parsed`(arguments: [String], showAll: Bool, filter: Core.ListFilter?, updateList: Bool) throws {
         let list = try parse(XCInfo.List.self, arguments)
@@ -64,7 +64,7 @@ struct CommandLineTests {
         (["list", "-q"], true, false),
         (["list", "--quiet"], true, false),
         (["list", "--json"], false, true),
-        (["list", "--quiet", "--json"], true, true),
+        (["list", "--quiet", "--json"], true, true)
     ])
     func `output modes are parsed`(arguments: [String], isQuiet: Bool, isJSON: Bool) throws {
         let list = try parse(XCInfo.List.self, arguments)
@@ -113,7 +113,7 @@ struct CommandLineTests {
 
     @Test(arguments: [
         ["download", "15.0", "-d", "/tmp/xcinfo-downloads"],
-        ["download", "15.0", "--download-directory", "/tmp/xcinfo-downloads"],
+        ["download", "15.0", "--download-directory", "/tmp/xcinfo-downloads"]
     ])
     func `download directory is parsed`(arguments: [String]) throws {
         let download = try parse(XCInfo.Download.self, arguments)
@@ -170,7 +170,7 @@ struct CommandLineTests {
             "--preserve-xip",
             "--no-symlink",
             "--no-xcode-select",
-            "--no-update-list",
+            "--no-update-list"
         ])
         let options = install.installationOptions
 
@@ -187,7 +187,7 @@ struct CommandLineTests {
 
     @Test(arguments: [
         ["--archive-path", "/tmp/Xcode.aea", "--preserve-archive"],
-        ["--xip-path", "/tmp/Xcode.aea", "--preserve-xip"],
+        ["--xip-path", "/tmp/Xcode.aea", "--preserve-xip"]
     ])
     func `archive options accept the new names and the deprecated xip names`(arguments: [String]) throws {
         let options = try parse(XCInfo.Install.self, ["install", "15.0"] + arguments).installationOptions
@@ -208,8 +208,10 @@ struct CommandLineTests {
     @Test
     func `the archive format can be chosen for download and install`() throws {
         #expect(try parse(XCInfo.Download.self, ["download", "15.0"]).downloadOptions.options.archiveFormat == nil)
-        #expect(try parse(XCInfo.Download.self, ["download", "15.0", "--archive-format", "aea"]).downloadOptions.options.archiveFormat == .aea)
-        #expect(try parse(XCInfo.Install.self, ["install", "15.0", "--archive-format", "xip"]).installationOptions.downloadOptions.options.archiveFormat == .xip)
+        #expect(try parse(XCInfo.Download.self, ["download", "15.0", "--archive-format", "aea"]).downloadOptions.options
+            .archiveFormat == .aea)
+        #expect(try parse(XCInfo.Install.self, ["install", "15.0", "--archive-format", "xip"]).installationOptions.downloadOptions.options
+            .archiveFormat == .xip)
         #expect(throws: (any Error).self) { try parse(XCInfo.Download.self, ["download", "15.0", "--archive-format", "dmg"]) }
     }
 
@@ -246,7 +248,7 @@ struct CommandLineTests {
     @Test(arguments: [
         (["uninstall"], String?.none),
         (["uninstall", "15.0"], "15.0"),
-        (["uninstall", "15.0 Beta 2"], "15.0 Beta 2"),
+        (["uninstall", "15.0 Beta 2"], "15.0 Beta 2")
     ])
     func `uninstall takes an optional version`(arguments: [String], version: String?) throws {
         #expect(try !parse(XCInfo.Uninstall.self, arguments).deletePermanently)

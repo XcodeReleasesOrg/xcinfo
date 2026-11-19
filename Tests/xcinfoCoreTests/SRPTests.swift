@@ -23,10 +23,14 @@ private extension BigUInt {
         }
         witness: for base in rounds {
             var x = BigUInt(base).power(d, modulus: self)
-            if x == one || x == minusOne { continue }
+            if x == one || x == minusOne {
+                continue
+            }
             for _ in 0 ..< r - 1 {
                 x = (x * x) % self
-                if x == minusOne { continue witness }
+                if x == minusOne {
+                    continue witness
+                }
             }
             return false
         }
@@ -37,7 +41,7 @@ private extension BigUInt {
 struct BigUIntTests {
     @Test
     func `arithmetic matches 64-bit arithmetic`() {
-        let values: [UInt64] = [0, 1, 2, 3, 0xFFFF_FFFF, 0x1_0000_0000, 0x1234_5678_9ABC, UInt64(UInt32.max) * 3]
+        let values: [UInt64] = [0, 1, 2, 3, 0xffffffff, 0x100000000, 0x123456789abc, UInt64(UInt32.max) * 3]
         for a in values {
             for b in values {
                 #expect(BigUInt(a) + BigUInt(b) == BigUInt(UInt64(a).addingReportingOverflow(b).partialValue))
@@ -81,9 +85,9 @@ struct BigUIntTests {
     }
 
     @Test(arguments: [SRPGroup.rfc5054_1024, .rfc5054_2048])
-    func `montgomery exponentiation matches square and multiply`(group: SRPGroup) {
-        let base = BigUInt(hex: "60975527035CF2AD1989806F0407210BC81EDC04E2762A56AFD529DDDA2D4393E487CB59D31AC550")!
-        let exponent = BigUInt(hex: "F3A5C7E9B0D2F4A6C8E0B1D3F5A7C9E1")!
+    func `montgomery exponentiation matches square and multiply`(group: SRPGroup) throws {
+        let base = try #require(BigUInt(hex: "60975527035CF2AD1989806F0407210BC81EDC04E2762A56AFD529DDDA2D4393E487CB59D31AC550"))
+        let exponent = try #require(BigUInt(hex: "F3A5C7E9B0D2F4A6C8E0B1D3F5A7C9E1"))
         var expected = BigUInt.one
         for index in stride(from: exponent.bitWidth - 1, through: 0, by: -1) {
             expected = (expected * expected) % group.prime
@@ -155,7 +159,7 @@ struct SRPTests {
         let group = SRPGroup.rfc5054_2048
         let client = SRPClient(group: group, hash: .sha256)
         let salt = Array("pepper".utf8)
-        let passwordKey = derivedPasswordKey(password: "correct horse", salt: salt, iterations: 1000, protocol: .s2k)
+        let passwordKey = derivedPasswordKey(password: "correct horse", salt: salt, iterations: 1_000, protocol: .s2k)
 
         let verifierExponent = client.passwordVerifierExponent(identity: "", password: passwordKey, salt: salt)
         let verifier = group.generator.power(verifierExponent, modulus: group.prime)
@@ -179,15 +183,25 @@ struct SRPTests {
 
     @Test
     func `the client proof hashes the generator padded to the group size`() throws {
-        let serverPublicKey = hex("BD0C61512C692C0CB6D041FA01BB152D4916A1E77AF46AE105393011BAF38964DC46A0670DD125B95A981652236F99D9B681CBF87837EC996C6DA04453728610D0C6DDB58B318885D7D82C7F8DEB75CE7BD4FBAA37089E6F9C6059F388838E7A00030B331EB76840910440B1B27AAEAEEB4012B7D7665238A8E3FB004B117B58")
+        let serverPublicKey =
+            hex(
+                "BD0C61512C692C0CB6D041FA01BB152D4916A1E77AF46AE105393011BAF38964DC46A0670DD125B95A981652236F99D9B681CBF87837EC996C6DA04453728610D0C6DDB58B318885D7D82C7F8DEB75CE7BD4FBAA37089E6F9C6059F388838E7A00030B331EB76840910440B1B27AAEAEEB4012B7D7665238A8E3FB004B117B58"
+            )
         let group = SRPGroup.rfc5054_1024
         let sha1: ([UInt8]) -> [UInt8] = { Array(Insecure.SHA1.hash(data: $0)) }
 
-        let proof = try client.proof(accountName: "alice", passwordIdentity: "alice", password: Array("password123".utf8), salt: salt, serverPublicKey: serverPublicKey)
+        let proof = try client.proof(
+            accountName: "alice",
+            passwordIdentity: "alice",
+            password: Array("password123".utf8),
+            salt: salt,
+            serverPublicKey: serverPublicKey
+        )
 
         let paddedGenerator = [UInt8](repeating: 0, count: group.length - 1) + [2]
         let xored = zip(sha1(group.prime.bytes()), sha1(paddedGenerator)).map { $0 ^ $1 }
-        let expected = sha1(xored + sha1(Array("alice".utf8)) + salt + client.publicKey.bytes() + serverPublicKey.bytes() + proof.sessionKey)
+        let expected = sha1(xored + sha1(Array("alice".utf8)) + salt + client.publicKey.bytes() + serverPublicKey.bytes() + proof
+            .sessionKey)
         #expect(proof.clientProof == expected)
         #expect(proof.expectedServerProof == sha1(client.publicKey.bytes() + proof.clientProof + proof.sessionKey))
     }
@@ -195,7 +209,13 @@ struct SRPTests {
     @Test
     func `a server public key of zero is rejected`() {
         #expect(throws: SRPError.invalidServerPublicKey) {
-            try client.proof(accountName: "a", passwordIdentity: "a", password: [1], salt: [1], serverPublicKey: SRPGroup.rfc5054_1024.prime)
+            try client.proof(
+                accountName: "a",
+                passwordIdentity: "a",
+                password: [1],
+                salt: [1],
+                serverPublicKey: SRPGroup.rfc5054_1024.prime
+            )
         }
     }
 
@@ -203,7 +223,9 @@ struct SRPTests {
     func `pbkdf2 matches rfc 7914`() {
         let key = pbkdf2SHA256(password: Array("passwd".utf8), salt: Array("salt".utf8), iterations: 1, keyLength: 64)
 
-        #expect(key.map { String(format: "%02x", $0) }.joined() == "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783")
+        #expect(key.map { String(format: "%02x", $0) }
+            .joined() ==
+            "55ac046e56e3089fec1691c22544b605f94185216dde0465e68b9d57c20dacbc49ca9cccf179b645991664b39d77ef317c71b845b1e30bd509112041d3a19783")
     }
 
     @Test
@@ -221,10 +243,13 @@ struct SRPTests {
 
 struct HashcashTests {
     @Test(arguments: [8, 11, 12])
-    func `a stamp has the requested leading zero bits`(bits: Int) {
+    func `a stamp has the requested leading zero bits`(bits: Int) throws {
         let date = Date(timeIntervalSince1970: 1_700_000_000)
 
-        let stamp = Hashcash(bits: bits, challenge: "4d74fb15eb23f465f1f6fcbf534e5877").stamp(date: date, timeZone: TimeZone(identifier: "UTC")!)
+        let stamp = try Hashcash(bits: bits, challenge: "4d74fb15eb23f465f1f6fcbf534e5877").stamp(
+            date: date,
+            timeZone: #require(TimeZone(identifier: "UTC"))
+        )
 
         #expect(stamp.hasPrefix("1:\(bits):20231114221320:4d74fb15eb23f465f1f6fcbf534e5877::"))
         #expect(Hashcash.hasLeadingZeroBits(bits, in: Array(Insecure.SHA1.hash(data: Data(stamp.utf8)))))
@@ -232,8 +257,8 @@ struct HashcashTests {
 
     @Test
     func `leading zero bits are counted per bit`() {
-        #expect(Hashcash.hasLeadingZeroBits(12, in: [0x00, 0x0F, 0xFF]))
-        #expect(!Hashcash.hasLeadingZeroBits(13, in: [0x00, 0x0F, 0xFF]))
-        #expect(Hashcash.hasLeadingZeroBits(0, in: [0xFF]))
+        #expect(Hashcash.hasLeadingZeroBits(12, in: [0x00, 0x0f, 0xff]))
+        #expect(!Hashcash.hasLeadingZeroBits(13, in: [0x00, 0x0f, 0xff]))
+        #expect(Hashcash.hasLeadingZeroBits(0, in: [0xff]))
     }
 }

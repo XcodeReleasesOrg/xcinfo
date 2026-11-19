@@ -152,7 +152,11 @@ public actor KeychainVault {
         do {
             data = try storage.read()
         } catch {
-            let status: OSStatus? = if case let KeychainPasswordItem.KeychainError.unhandledError(status) = error { status } else { nil }
+            let status: OSStatus? = if case let KeychainPasswordItem.KeychainError.unhandledError(status) = error {
+                status
+            } else {
+                nil
+            }
             let accessError = KeychainAccessError(underlying: "\(error)", status: status)
             readError = accessError
             throw accessError
@@ -175,7 +179,10 @@ public actor KeychainVault {
                 storage.deleteLegacy()
                 logger.log("Moved the stored Apple ID and session into one Keychain item named 'xcinfo'.")
                 if legacy.hadStoredPassword {
-                    logger.log("Removed the stored Apple ID password from the Keychain: xcinfo now keeps only the account name and the session, and asks for the password when Apple needs it.")
+                    logger
+                        .log(
+                            "Removed the stored Apple ID password from the Keychain: xcinfo now keeps only the account name and the session, and asks for the password when Apple needs it."
+                        )
                 }
             } catch {
                 logger.warn("Could not move the stored Apple ID and session into one Keychain item (\(error)).")

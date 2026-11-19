@@ -1,13 +1,17 @@
 import Foundation
 import Testing
 import XCIFoundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfo
-@testable import XCInfoTUI
 @testable import xcinfoCore
+@testable import XCInfoTUI
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct SwitchTests {
-    private let xcodes = [Xcode.fixture("16.0", build: "16A1"), .fixture("15.0", build: "15A1", release: .beta(2)), .fixture("15.0", build: "15A2")]
+    private let xcodes = [
+        Xcode.fixture("16.0", build: "16A1"),
+        .fixture("15.0", build: "15A1", release: .beta(2)),
+        .fixture("15.0", build: "15A2")
+    ]
 
     private struct Fixture {
         let caches: TemporaryDirectory
@@ -17,12 +21,23 @@ struct SwitchTests {
         let prompt: FakePrompt
         let core: Core
 
-        init(xcodes: [Xcode], apps: (TemporaryDirectory) throws -> [URL], prompt: FakePrompt = FakePrompt(passwords: ["sudo-password"])) throws {
+        init(
+            xcodes: [Xcode],
+            apps: (TemporaryDirectory) throws -> [URL],
+            prompt: FakePrompt = FakePrompt(passwords: ["sudo-password"])
+        ) throws {
             caches = try TemporaryDirectory()
             applications = try TemporaryDirectory()
-            shell = .installedXcodes(try apps(applications))
+            shell = try .installedXcodes(apps(applications))
             self.prompt = prompt
-            core = Core.test(logs: logs, cachesDirectory: caches.url, listXcodes: { xcodes }, shell: shell, prompt: prompt, applicationsDirectory: applications.url)
+            core = Core.test(
+                logs: logs,
+                cachesDirectory: caches.url,
+                listXcodes: { xcodes },
+                shell: shell,
+                prompt: prompt,
+                applicationsDirectory: applications.url
+            )
         }
 
         var symlink: URL {
@@ -32,7 +47,7 @@ struct SwitchTests {
 
     @Test
     func `switch points the link to the chosen xcode and selects it`() async throws {
-        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+        let fixture = try Fixture(xcodes: xcodes) { try [$0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
         let app = fixture.applications.url.appendingPathComponent("Xcode-16.app")
 
         let switched = try await fixture.core.switchXcode(to: "16", options: .init(), updateVersionList: true)
@@ -50,7 +65,7 @@ struct SwitchTests {
     func `several matches are offered with their paths`() async throws {
         let prompt = FakePrompt(choices: [1], passwords: ["sudo-password"])
         let fixture = try Fixture(xcodes: xcodes, apps: {
-            [try $0.fakeXcode(named: "Xcode-15-copy.app", build: "15A2"), try $0.fakeXcode(named: "Xcode-15.app", build: "15A2")]
+            try [$0.fakeXcode(named: "Xcode-15-copy.app", build: "15A2"), $0.fakeXcode(named: "Xcode-15.app", build: "15A2")]
         }, prompt: prompt)
 
         let switched = try await fixture.core.switchXcode(to: "15", options: .init(skipXcodeSelection: true), updateVersionList: true)
@@ -64,9 +79,13 @@ struct SwitchTests {
 
     @Test
     func `both changes can be skipped`() async throws {
-        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+        let fixture = try Fixture(xcodes: xcodes) { try [$0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
 
-        try await fixture.core.switchXcode(to: "16a1", options: .init(skipSymlinkCreation: true, skipXcodeSelection: true), updateVersionList: true)
+        try await fixture.core.switchXcode(
+            to: "16a1",
+            options: .init(skipSymlinkCreation: true, skipXcodeSelection: true),
+            updateVersionList: true
+        )
 
         #expect(!FileManager.default.fileExists(atPath: fixture.symlink.path))
         #expect(fixture.shell.privilegedCalls.isEmpty)
@@ -75,7 +94,7 @@ struct SwitchTests {
 
     @Test
     func `an xcode that is itself at Xcode.app keeps its place`() async throws {
-        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode.app", build: "16A1")] }
+        let fixture = try Fixture(xcodes: xcodes) { try [$0.fakeXcode(named: "Xcode.app", build: "16A1")] }
 
         try await fixture.core.switchXcode(to: "16", options: .init(skipXcodeSelection: true), updateVersionList: true)
 
@@ -86,7 +105,7 @@ struct SwitchTests {
 
     @Test
     func `no installed match is a version not found error`() async throws {
-        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+        let fixture = try Fixture(xcodes: xcodes) { try [$0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
 
         await #expect {
             try await fixture.core.switchXcode(to: "13", options: .init(), updateVersionList: true)
@@ -112,7 +131,7 @@ struct SwitchTests {
         let app = XcodeApplication(url: URL(fileURLWithPath: "/Applications/Xcode-16.app"), xcode: xcodes[0])
         var model = TUIModel(sections: [
             TUISection(title: "Installed", entries: [TUIEntry(kind: .installed(app.url), xcode: app.xcode)]),
-            TUISection(title: "Available", entries: [TUIEntry(kind: .available, xcode: xcodes[2])]),
+            TUISection(title: "Available", entries: [TUIEntry(kind: .available, xcode: xcodes[2])])
         ])
 
         #expect(model.handle(.character("s")) == .switchTo(app))
@@ -124,15 +143,24 @@ struct SwitchTests {
     @Test
     func `xcode-select runs before the link changes`() async throws {
         let order = Recorder<String>()
-        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+        let fixture = try Fixture(xcodes: xcodes) { try [$0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
         let shell = FakeShell { call in
-            if call.command == "mdfind" { return (0, fixture.applications.url.appendingPathComponent("Xcode-16.app").path + "\n", "") }
+            if call.command == "mdfind" {
+                return (0, fixture.applications.url.appendingPathComponent("Xcode-16.app").path + "\n", "")
+            }
             if call.command == "xcode-select" {
                 order.append(FileManager.default.isSymbolicLink(atPath: fixture.symlink.path) ? "link first" : "select first")
             }
             return (0, "", "")
         }
-        let core = Core.test(logs: fixture.logs, cachesDirectory: fixture.caches.url, listXcodes: { [xcodes] in xcodes }, shell: shell, prompt: fixture.prompt, applicationsDirectory: fixture.applications.url)
+        let core = Core.test(
+            logs: fixture.logs,
+            cachesDirectory: fixture.caches.url,
+            listXcodes: { [xcodes] in xcodes },
+            shell: shell,
+            prompt: fixture.prompt,
+            applicationsDirectory: fixture.applications.url
+        )
 
         try await core.switchXcode(to: "16", options: .init(), updateVersionList: true)
 
@@ -142,7 +170,11 @@ struct SwitchTests {
 
     @Test
     func `a cancelled password question changes nothing`() async throws {
-        let fixture = try Fixture(xcodes: xcodes, apps: { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }, prompt: FakePrompt(cancelsOnSecret: true))
+        let fixture = try Fixture(
+            xcodes: xcodes,
+            apps: { try [$0.fakeXcode(named: "Xcode-16.app", build: "16A1")] },
+            prompt: FakePrompt(cancelsOnSecret: true)
+        )
 
         await #expect(throws: CancellationError.self) {
             try await fixture.core.switchXcode(to: "16", options: .init(), updateVersionList: true)
@@ -161,7 +193,14 @@ struct SwitchTests {
         let shell = FakeShell { call in
             call.command == "mdfind" ? (0, app.path + "\n", "") : call.command == "ls" ? (1, "", "") : (0, "", "")
         }
-        let core = Core.test(logs: logs, cachesDirectory: caches.url, listXcodes: { [xcodes] in xcodes }, shell: shell, prompt: FakePrompt(passwords: ["a", "b", "c"]), applicationsDirectory: applications.url)
+        let core = Core.test(
+            logs: logs,
+            cachesDirectory: caches.url,
+            listXcodes: { [xcodes] in xcodes },
+            shell: shell,
+            prompt: FakePrompt(passwords: ["a", "b", "c"]),
+            applicationsDirectory: applications.url
+        )
 
         await #expect(throws: CoreError.self) {
             try await core.switchXcode(to: "16", options: .init(), updateVersionList: true)
@@ -180,7 +219,14 @@ struct SwitchTests {
         let shell = FakeShell { call in
             call.command == "mdfind" ? (0, app.path + "\n", "") : call.command == "xcode-select" ? (1, "", "") : (0, "", "")
         }
-        let core = Core.test(logs: logs, cachesDirectory: caches.url, listXcodes: { [xcodes] in xcodes }, shell: shell, prompt: FakePrompt(passwords: ["sudo-password"]), applicationsDirectory: applications.url)
+        let core = Core.test(
+            logs: logs,
+            cachesDirectory: caches.url,
+            listXcodes: { [xcodes] in xcodes },
+            shell: shell,
+            prompt: FakePrompt(passwords: ["sudo-password"]),
+            applicationsDirectory: applications.url
+        )
 
         await #expect(throws: CoreError.self) {
             try await core.switchXcode(to: "16", options: .init(), updateVersionList: true)
@@ -191,7 +237,7 @@ struct SwitchTests {
 
     @Test
     func `without xcode-select only the link changes`() async throws {
-        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+        let fixture = try Fixture(xcodes: xcodes) { try [$0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
 
         try await fixture.core.switchXcode(to: "16", options: .init(skipXcodeSelection: true), updateVersionList: true)
 
@@ -202,7 +248,7 @@ struct SwitchTests {
 
     @Test
     func `without the link only xcode-select changes`() async throws {
-        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+        let fixture = try Fixture(xcodes: xcodes) { try [$0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
 
         try await fixture.core.switchXcode(to: "16", options: .init(skipSymlinkCreation: true), updateVersionList: true)
 
@@ -212,7 +258,7 @@ struct SwitchTests {
 
     @Test
     func `a link that cannot be changed after xcode-select says what changed`() async throws {
-        let fixture = try Fixture(xcodes: xcodes) { [try $0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
+        let fixture = try Fixture(xcodes: xcodes) { try [$0.fakeXcode(named: "Xcode-16.app", build: "16A1")] }
         try FileManager.default.createDirectory(at: fixture.symlink, withIntermediateDirectories: true)
 
         await #expect(throws: CoreError.self) {
@@ -226,7 +272,7 @@ struct SwitchTests {
     @Test
     func `a version without a qualifier switches to the installed final release`() async throws {
         let fixture = try Fixture(xcodes: xcodes, apps: {
-            [try $0.fakeXcode(named: "Xcode-beta.app", build: "15A1"), try $0.fakeXcode(named: "Xcode-15.app", build: "15A2")]
+            try [$0.fakeXcode(named: "Xcode-beta.app", build: "15A1"), $0.fakeXcode(named: "Xcode-15.app", build: "15A2")]
         })
 
         let switched = try await fixture.core.switchXcode(to: "15.0", options: .init(skipXcodeSelection: true), updateVersionList: true)

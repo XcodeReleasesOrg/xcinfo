@@ -24,7 +24,7 @@ extension XCInfo {
         @OptionGroup
         var downloadOptions: DownloadOptions
 
-        @OptionGroup()
+        @OptionGroup
         var globals: DefaultOptions
 
         @OptionGroup

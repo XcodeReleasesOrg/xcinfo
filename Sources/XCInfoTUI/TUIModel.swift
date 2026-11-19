@@ -5,7 +5,7 @@
 
 import Foundation
 import xcinfoCore
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 // annotations.
 

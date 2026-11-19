@@ -1,8 +1,8 @@
 import Foundation
 import OlympUs
 import Testing
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 private let folder = "https://download.developer.apple.com/Developer_Tools/Xcode_27.4"
 private let xip = URL(string: "\(folder)/Xcode_27.4.xip")!
@@ -15,7 +15,7 @@ struct DownloadSourceTests {
         (xip, nil, xip, false, aea),
         (xip, [], xip, false, aea),
         (aea, [xip, aea], xip, true, nil),
-        (aea, nil, aea, false, nil),
+        (aea, nil, aea, false, nil)
     ])
     func `xip is preferred, aea is used when it is the only file, and the derived aea is a last resort`(
         listed: URL, offered: [URL]?, expected: URL, hasNote: Bool, fallback: URL?
@@ -34,9 +34,13 @@ struct ArchiveFormatChoiceTests {
         (.xip, nil, xip),
         (.aea, [xip, aea], aea),
         (.aea, nil, aea),
-        (.aea, [], aea),
+        (.aea, [], aea)
     ])
-    func `a requested format is downloaded when it is offered or can be derived`(format: ArchiveFormat, offered: [URL]?, expected: URL) throws {
+    func `a requested format is downloaded when it is offered or can be derived`(
+        format: ArchiveFormat,
+        offered: [URL]?,
+        expected: URL
+    ) throws {
         let source = try DownloadSource(listed: xip, offered: offered, format: format)
 
         #expect(source.url == expected)
@@ -50,7 +54,8 @@ struct ArchiveFormatChoiceTests {
             try DownloadSource(listed: xip, offered: offered, format: format)
         } throws: { error in
             guard case let CoreError.archiveFormatNotOffered(requested, names) = error else { return false }
-            return requested == format && names == offered.map(\.lastPathComponent) && error.localizedDescription.contains("--archive-format")
+            return requested == format && names == offered.map(\.lastPathComponent) && error.localizedDescription
+                .contains("--archive-format")
         }
     }
 
@@ -84,8 +89,8 @@ struct DownloadListingTests {
     func `archives are found by name when the url does not match`() throws {
         let listing = try #require(DownloadListing(data: Data(json.utf8)))
 
-        #expect(listing.archiveURLs(inFolderOf: nil, named: "xcode 27.5 BETA") == [
-            URL(string: "https://download.developer.apple.com/Developer_Tools/Xcode_27.5_beta/Xcode_27.5_beta.xip")!,
+        #expect(try listing.archiveURLs(inFolderOf: nil, named: "xcode 27.5 BETA") == [
+            #require(URL(string: "https://download.developer.apple.com/Developer_Tools/Xcode_27.5_beta/Xcode_27.5_beta.xip"))
         ])
         #expect(listing.archiveURLs(inFolderOf: nil, named: "Xcode 1.0").isEmpty)
     }
@@ -121,7 +126,10 @@ struct DownloadFormatFlowTests {
         let caches = try TemporaryDirectory()
         let requested = Recorder<URL>()
         let logs = LogRecorder()
-        let listing = DownloadListing(downloads: [.init(name: "Xcode 27.4", files: [.init(remotePath: "/Developer_Tools/Xcode_27.4/Xcode_27.4.aea")])])
+        let listing = DownloadListing(downloads: [.init(
+            name: "Xcode 27.4",
+            files: [.init(remotePath: "/Developer_Tools/Xcode_27.4/Xcode_27.4.aea")]
+        )])
         let core = core(logs: logs, caches: caches, listing: listing) { url, destination, _ in
             requested.append(url)
             return try caches.file(url.lastPathComponent, contents: Data("AEA1".utf8))

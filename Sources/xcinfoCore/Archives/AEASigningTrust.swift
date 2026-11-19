@@ -20,7 +20,9 @@ struct AEAAuthData: Sendable, Equatable {
             let size = data[offset ..< offset + 4].enumerated().reduce(0) { $0 | Int($1.element) << (8 * $1.offset) }
             guard size > 4, offset + size <= data.endIndex else { throw AEAError.malformedAuthData }
             let entry = data[offset + 4 ..< offset + size]
-            guard let separator = entry.firstIndex(of: 0), let key = String(data: entry[entry.startIndex ..< separator], encoding: .utf8) else {
+            guard let separator = entry.firstIndex(of: 0),
+                  let key = String(data: entry[entry.startIndex ..< separator], encoding: .utf8)
+            else {
                 throw AEAError.malformedAuthData
             }
             entries[key] = Data(entry[(separator + 1)...])
@@ -35,11 +37,12 @@ struct AEAAuthData: Sendable, Equatable {
                 let chain = entries[Self.certificateChainKey],
                 let pem = String(data: chain, encoding: .utf8)
             else { throw AEAError.untrusted("The archive has no signing certificate chain.") }
-            let certificates = pem.components(separatedBy: "-----BEGIN CERTIFICATE-----").dropFirst().compactMap { block -> SecCertificate? in
-                let body = block.components(separatedBy: "-----END CERTIFICATE-----")[0]
-                guard let der = Data(base64Encoded: body, options: .ignoreUnknownCharacters) else { return nil }
-                return SecCertificateCreateWithData(nil, der as CFData)
-            }
+            let certificates = pem.components(separatedBy: "-----BEGIN CERTIFICATE-----").dropFirst()
+                .compactMap { block -> SecCertificate? in
+                    let body = block.components(separatedBy: "-----END CERTIFICATE-----")[0]
+                    guard let der = Data(base64Encoded: body, options: .ignoreUnknownCharacters) else { return nil }
+                    return SecCertificateCreateWithData(nil, der as CFData)
+                }
             guard !certificates.isEmpty else { throw AEAError.untrusted("The signing certificate chain could not be read.") }
             return certificates
         }
@@ -72,7 +75,10 @@ struct AEASigningTrust: Sendable {
         }
         var error: CFError?
         guard SecTrustEvaluateWithError(trust, &error) else {
-            throw AEAError.untrusted("The signing certificate is not trusted: \(error.map { CFErrorCopyDescription($0) as String } ?? "unknown reason").")
+            throw AEAError
+                .untrusted(
+                    "The signing certificate is not trusted: \(error.map { CFErrorCopyDescription($0) as String } ?? "unknown reason")."
+                )
         }
         guard
             let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],

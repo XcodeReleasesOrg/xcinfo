@@ -108,7 +108,7 @@ final class TerminalSession: TerminalControl {
 struct TerminalInput: Sendable {
     func readKeys(timeout: Duration) -> [Key] {
         guard waitForInput(timeout: timeout) else { return [] }
-        var buffer = [UInt8](repeating: 0, count: 4096)
+        var buffer = [UInt8](repeating: 0, count: 4_096)
         var bytes: [UInt8] = []
         repeat {
             let count = read(STDIN_FILENO, &buffer, buffer.count)
@@ -120,8 +120,7 @@ struct TerminalInput: Sendable {
 
     private func waitForInput(timeout: Duration) -> Bool {
         var descriptor = pollfd(fd: STDIN_FILENO, events: Int16(POLLIN), revents: 0)
-        let milliseconds = Int32(timeout.components.seconds * 1000 + timeout.components.attoseconds / 1_000_000_000_000_000)
+        let milliseconds = Int32(timeout.components.seconds * 1_000 + timeout.components.attoseconds / 1_000_000_000_000_000)
         return poll(&descriptor, 1, milliseconds) > 0
     }
-
 }

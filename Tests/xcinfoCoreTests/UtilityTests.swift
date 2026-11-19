@@ -9,7 +9,7 @@ struct ProgressDisplayTests {
         (0.5, "[██████████          ] 50.0%"),
         (0.25, "[█████               ] 25.0%"),
         (0.123, "[██▍                 ] 12.3%"),
-        (0.999, "[███████████████████▉] 99.9%"),
+        (0.999, "[███████████████████▉] 99.9%")
     ])
     func `progress is drawn as a bar with a percentage`(ratio: Double, expected: String) {
         let display = ProgressDisplay(ratio: ratio, width: 20)
@@ -43,13 +43,13 @@ struct SpeedMeasurementsTests {
     @Test
     func `speed is the sum of the bytes over the elapsed time`() async throws {
         var measurements = SpeedMeasurements()
-        measurements.append(1000)
+        measurements.append(1_000)
         try await Task.sleep(nanoseconds: 50_000_000)
-        measurements.append(1000)
+        measurements.append(1_000)
 
         let speed = measurements.averageSpeed()
         #expect(speed > 0)
-        #expect(speed < 2000 / 0.05)
+        #expect(speed < 2_000 / 0.05)
     }
 }
 
@@ -120,7 +120,7 @@ struct LoggerTests {
             .section("Section"),
             .paragraph("Paragraph"),
             .check("Step", .passed),
-            .progress(OutputProgress(title: "Downloading", fraction: 0.5)),
+            .progress(OutputProgress(title: "Downloading", fraction: 0.5))
         ])
     }
 }
@@ -130,7 +130,7 @@ struct ExtensionTests {
         ("abc", 5, "abc  "),
         ("abc", 3, "abc"),
         ("abcdef", 3, "abcdef"),
-        ("", 2, "  "),
+        ("", 2, "  ")
     ])
     func `strings are padded with spaces`(string: String, length: Int, expected: String) {
         #expect(string.paddedWithSpaces(to: length) == expected)

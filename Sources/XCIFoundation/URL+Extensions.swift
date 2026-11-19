@@ -1,6 +1,6 @@
 //
-//  File.swift
-//  
+//  URL+Extensions.swift
+//
 //
 //  Created by Gunnar Herzog on 31.10.23.
 //

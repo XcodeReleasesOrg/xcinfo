@@ -93,7 +93,7 @@ final class FakeAppleSRPServer: Sendable {
     init(accountName: String, password: String, passwordProtocol: PasswordProtocol = .s2k) {
         self.accountName = accountName
         salt = Array("apple-salt".utf8)
-        iterations = 1000
+        iterations = 1_000
         self.passwordProtocol = passwordProtocol
         let key = derivedPasswordKey(password: password, salt: salt, iterations: iterations, protocol: passwordProtocol)
         let client = SRPClient(group: .rfc5054_2048, hash: .sha256, privateKey: .one)
@@ -103,7 +103,6 @@ final class FakeAppleSRPServer: Sendable {
         let serverPrivateKey = BigUInt(hex: "E487CB59D31AC550471E81F00F6928E01DDA08E974A004F49E61F5D105284D20")!
         serverPublicKey = (client.multiplier * verifier + group.generator.power(serverPrivateKey, modulus: group.prime)) % group.prime
     }
-
 
     func initResponse(for request: URLRequest) -> StubResponse {
         guard
@@ -120,9 +119,13 @@ final class FakeAppleSRPServer: Sendable {
             "salt": Data(salt).base64EncodedString(),
             "protocol": passwordProtocol.rawValue,
             "b": Data(serverPublicKey.bytes()).base64EncodedString(),
-            "c": "challenge-token",
+            "c": "challenge-token"
         ]
-        return StubResponse(statusCode: 200, headers: ["Content-Type": "application/json"], body: try! JSONSerialization.data(withJSONObject: response))
+        return StubResponse(
+            statusCode: 200,
+            headers: ["Content-Type": "application/json"],
+            body: try! JSONSerialization.data(withJSONObject: response)
+        )
     }
 
     func isValidCompletion(_ request: URLRequest) -> Bool {
@@ -140,7 +143,8 @@ final class FakeAppleSRPServer: Sendable {
         let secret = (clientPublicKey * verifier.power(u, modulus: group.prime)).power(serverPrivateKey, modulus: group.prime)
         let sessionKey = sha256(secret.bytes())
         let xored = zip(sha256(group.prime.bytes()), sha256(group.generator.bytes(paddedTo: length))).map { $0 ^ $1 }
-        let expected = sha256(xored + sha256(Array(accountName.utf8)) + salt + clientPublicKey.bytes() + serverPublicKey.bytes() + sessionKey)
+        let expected = sha256(xored + sha256(Array(accountName.utf8)) + salt + clientPublicKey.bytes() + serverPublicKey
+            .bytes() + sessionKey)
         return Array(m1) == expected
     }
 }

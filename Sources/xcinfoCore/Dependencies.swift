@@ -10,7 +10,7 @@ import Foundation
 import IssueReporting
 import OlympUs
 import XCIFoundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 @DependencyClient
 public struct XcodeReleasesClient: Sendable {
@@ -28,7 +28,8 @@ public struct CredentialsClient: Sendable {
 
 @DependencyClient
 public struct AuthenticationClient: Sendable {
-    public var authenticate: @Sendable (_ accountName: String, _ password: @escaping @Sendable () async throws -> String) async throws -> DownloadListing?
+    public var authenticate: @Sendable (_ accountName: String, _ password: @escaping @Sendable () async throws -> String) async throws
+        -> DownloadListing?
     public var cleanup: @Sendable () async -> Bool = { false }
 }
 
@@ -59,6 +60,7 @@ public struct FileSystemClient: Sendable {
         reportIssue("Unimplemented: fileSystem.trashItem(\(url.path))")
         return nil
     }
+
     public var removeItem: @Sendable (_ url: URL) throws -> Void = { url in
         reportIssue("Unimplemented: fileSystem.removeItem(\(url.path))")
     }
@@ -241,7 +243,8 @@ extension WorkspaceClient: DependencyKey {
 }
 
 extension Logger: DependencyKey {
-    public static let liveValue = TerminalRenderer(options: .detect(isVerbose: false, isQuiet: false, isJSON: false, allowsColors: true)).logger
+    public static let liveValue = TerminalRenderer(options: .detect(isVerbose: false, isQuiet: false, isJSON: false, allowsColors: true))
+        .logger
 
     public static let testValue = Logger { event in
         reportIssue("Unimplemented: logger was asked to emit \(event)")

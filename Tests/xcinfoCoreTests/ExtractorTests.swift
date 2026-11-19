@@ -47,7 +47,7 @@ struct ExtractorTests {
         let progress = Recorder<Double>()
 
         var chunks = FileChunks(handle: handle, total: 100_000, progress: { progress.append($0) })
-        chunks.chunkSize = 30000
+        chunks.chunkSize = 30_000
         var bytes = 0
         for try await chunk in chunks {
             bytes += chunk.count

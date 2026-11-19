@@ -4,10 +4,10 @@
 //
 
 import Dependencies
-import OlympUs
 import Foundation
+import OlympUs
 import XCIFoundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 public enum CoreError: LocalizedError, Sendable {
     case authenticationFailed
@@ -33,41 +33,41 @@ public enum CoreError: LocalizedError, Sendable {
     public var errorDescription: String? {
         switch self {
         case .authenticationFailed:
-            return "Authentication with Apple failed."
+            "Authentication with Apple failed."
         case let .signInFailed(reason):
-            return reason
+            reason
         case let .downloadFailed(description), let .uninstallationFailed(description):
-            return description
+            description
         case .invalidDownloadURL:
-            return "Invalid download url"
+            "Invalid download url"
         case let .versionNotFound(version):
-            return "No Xcode found for given version '\(version)'."
+            "No Xcode found for given version '\(version)'."
         case let .extractionFailed(error):
-            return error.localizedDescription
+            error.localizedDescription
         case let .unsupportedFile(name):
-            return "\(name) is not a .xip or .aea archive."
+            "\(name) is not a .xip or .aea archive."
         case .installationFailed:
-            return "Xcode could not be installed."
+            "Xcode could not be installed."
         case let .gatekeeperVerificationFailed(url):
-            return "Gatekeeper could not verify Xcode at \(url.path)"
+            "Gatekeeper could not verify Xcode at \(url.path)"
         case let .codesignVerificationFailed(url):
-            return "Code sign could not verify Xcode at \(url.path)"
+            "Code sign could not verify Xcode at \(url.path)"
         case .incorrectSuperUserPassword:
-            return "The administrator password was rejected three times."
-        case .invalidExtractionOutputURL(let output):
-            return "Failed to access output directory at \(output.path)."
+            "The administrator password was rejected three times."
+        case let .invalidExtractionOutputURL(output):
+            "Failed to access output directory at \(output.path)."
         case let .archiveFormatNotOffered(format, offered):
-            return "Apple does not offer this version as .\(format.rawValue)\(offered.isEmpty ? "." : ", only as \(offered.joined(separator: ", ")).") Run the command without --archive-format to take what is offered."
+            "Apple does not offer this version as .\(format.rawValue)\(offered.isEmpty ? "." : ", only as \(offered.joined(separator: ", ")).") Run the command without --archive-format to take what is offered."
         case let .destinationExists(url, reason):
-            return "\(url.path) already exists, and \(reason). Move or delete it, or run the command again with --overwrite to move it to the Trash and download anew."
+            "\(url.path) already exists, and \(reason). Move or delete it, or run the command again with --overwrite to move it to the Trash and download anew."
         case let .noInstalledXcode(version):
-            return version.map { "No installed Xcode matches '\($0)'. Run xcinfo installed to see the installed versions." } ?? "No installed Xcode was found."
+            version.map { "No installed Xcode matches '\($0)'. Run xcinfo installed to see the installed versions." } ?? "No installed Xcode was found."
         case .versionRequired:
-            return "Give an Xcode version, or an archive with --archive-path."
+            "Give an Xcode version, or an archive with --archive-path."
         case let .unknownArchiveVersion(build):
-            return "The archive contains \(build.map { "Xcode build \($0)" } ?? "no readable Xcode version"), which xcodereleases.com does not list. Run install again with the version."
+            "The archive contains \(build.map { "Xcode build \($0)" } ?? "no readable Xcode version"), which xcodereleases.com does not list. Run install again with the version."
         case let .checksumMismatch(file, expected, actual):
-            return """
+            """
             The archive at \(file.path) is corrupt: its SHA-1 is \(actual), but xcodereleases.com lists \(expected).
             The file was kept. Delete it and run the command again to download it anew, or pass --no-verify to skip the check.
             """
@@ -186,7 +186,12 @@ public struct Core: Sendable {
         options: DownloadOptions,
         updateVersionList: Bool
     ) async throws -> (Xcode, URL) {
-        try await download(version: version, options: options, updateVersionList: updateVersionList, question: "Please choose the version to download:")
+        try await download(
+            version: version,
+            options: options,
+            updateVersionList: updateVersionList,
+            question: "Please choose the version to download:"
+        )
     }
 
     private func download(
@@ -218,7 +223,11 @@ public struct Core: Sendable {
         if let note = source.note {
             logger.log(note)
         }
-        if let existing = try await reusableDownload(at: options.destination.appendingPathComponent(source.url.lastPathComponent), xcode: xcode, options: options) {
+        if let existing = try await reusableDownload(
+            at: options.destination.appendingPathComponent(source.url.lastPathComponent),
+            xcode: xcode,
+            options: options
+        ) {
             return (xcode, existing)
         }
         do {
@@ -227,7 +236,10 @@ public struct Core: Sendable {
                 downloadURL = try await downloads.download(source.url, options.destination, options.disableSleep)
             } catch XCAPIError.unexpectedStatusCode(404) where source.derivedFallback != nil {
                 let fallback = source.derivedFallback!
-                logger.warn("Apple has no file at \(source.url.lastPathComponent). Trying the .aea at the same path, a derived address: \(fallback)")
+                logger
+                    .warn(
+                        "Apple has no file at \(source.url.lastPathComponent). Trying the .aea at the same path, a derived address: \(fallback)"
+                    )
                 downloadURL = try await downloads.download(fallback, options.destination, options.disableSleep)
             }
             logger.success("Downloaded to \(downloadURL.path)")
@@ -245,7 +257,11 @@ public struct Core: Sendable {
     @discardableResult
     public func signIn(appleID: String? = nil) async throws -> String {
         logger.beginSection("Sign in to Apple Developer")
-        let accountName = if let appleID { appleID } else { try await credentials.accountName() }
+        let accountName = if let appleID {
+            appleID
+        } else {
+            try await credentials.accountName()
+        }
         try await authenticate(accountName: accountName)
         do {
             try await credentials.store(accountName)
@@ -253,7 +269,10 @@ public struct Core: Sendable {
             logger.warn("Signed in, but the Apple ID could not be saved in the Keychain item 'xcinfo' (\(error)).")
         }
         logger.success("Signed in as \(accountName).")
-        logger.log("The Apple session is stored in the Keychain item 'xcinfo'. download and install reuse it without asking for the password until Apple ends it.")
+        logger
+            .log(
+                "The Apple session is stored in the Keychain item 'xcinfo'. download and install reuse it without asking for the password until Apple ends it."
+            )
         return accountName
     }
 
@@ -283,7 +302,8 @@ public struct Core: Sendable {
 
     private func reusableDownload(at file: URL, xcode: Xcode, options: DownloadOptions) async throws -> URL? {
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-        logger.log("\(file.lastPathComponent) is already in \(file.deletingLastPathComponent().path). Checking it before downloading again.")
+        logger
+            .log("\(file.lastPathComponent) is already in \(file.deletingLastPathComponent().path). Checking it before downloading again.")
         switch try await check(existing: file, xcode: xcode) {
         case let .valid(reason):
             logger.success("Using the existing \(file.path) (\(reason)).")
@@ -401,7 +421,10 @@ public struct Core: Sendable {
         }
 
         if let build = applicationURL.xcodeBuild, let expected = downloadResult.xcode.version.build, build != expected {
-            logger.warn("The archive contains Xcode build \(build), not \(expected) as requested. xcinfo continues with Xcode \(downloadResult.xcode.displayName).")
+            logger
+                .warn(
+                    "The archive contains Xcode build \(build), not \(expected) as requested. xcinfo continues with Xcode \(downloadResult.xcode.displayName)."
+                )
         }
 
         let app = XcodeApplication(url: applicationURL, xcode: downloadResult.xcode)
@@ -409,7 +432,11 @@ public struct Core: Sendable {
         return app
     }
 
-    private func installIdentifyingArchive(_ archive: URL, options: InstallationOptions, updateVersionList: Bool) async throws -> XcodeApplication {
+    private func installIdentifyingArchive(
+        _ archive: URL,
+        options: InstallationOptions,
+        updateVersionList: Bool
+    ) async throws -> XcodeApplication {
         let knownVersions = try await list(shouldUpdate: updateVersionList)
         let destination = options.extractionOptions.destination
         let extracted = try await extractArchive(
@@ -464,7 +491,7 @@ public struct Core: Sendable {
         if xcodes.count > 1 {
             let width = xcodes.map(\.xcode.displayName.count).max() ?? 0
             let choices = xcodes.map { "\($0.xcode.displayName.paddedWithSpaces(to: width)) – \($0.url.path)" }
-            selected = xcodes[try await prompt.choose("Please choose the Xcode to switch to: ", choices)]
+            selected = try await xcodes[prompt.choose("Please choose the Xcode to switch to: ", choices)]
         } else {
             selected = xcodes[0]
         }
@@ -527,7 +554,7 @@ public struct Core: Sendable {
             let choices = xcodes.map { xcodeApp in
                 "\(xcodeApp.xcode.displayName.paddedWithSpaces(to: longestXcodeNameLength)) – \(xcodeApp.url.path)"
             }
-            selected = xcodes[try await prompt.choose("Please choose the version you want to uninstall: ", choices)]
+            selected = try await xcodes[prompt.choose("Please choose the version you want to uninstall: ", choices)]
         } else {
             selected = xcodes[0]
         }
@@ -661,7 +688,10 @@ extension Core {
         do {
             try await setUp(xcode, options: options)
         } catch {
-            logger.warn("Xcode \(xcode.xcode.displayName) is at \(xcode.url.path), but its setup (license, components, selection) did not finish. Move it to the Trash, or open it once to finish the setup.")
+            logger
+                .warn(
+                    "Xcode \(xcode.xcode.displayName) is at \(xcode.url.path), but its setup (license, components, selection) did not finish. Move it to the Trash, or open it once to finish the setup."
+                )
             throw error
         }
     }
@@ -713,13 +743,15 @@ extension Core {
 
     private func approveLicense(password: String, url: URL) async throws {
         try await check("Approving License") {
-            try await processes.runPrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-license", "accept"]).exitStatus == EXIT_SUCCESS
+            try await processes.runPrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-license", "accept"])
+                .exitStatus == EXIT_SUCCESS
         }
     }
 
     private func installComponents(password: String, url: URL) async throws {
         try await check("Installing additional components") {
-            try await processes.runPrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-runFirstLaunch"]).exitStatus == EXIT_SUCCESS
+            try await processes.runPrivileged("\(url.path)/Contents/Developer/usr/bin/xcodebuild", password, ["-runFirstLaunch"])
+                .exitStatus == EXIT_SUCCESS
         }
     }
 
@@ -777,7 +809,8 @@ extension Core {
 
     private func verify(_ app: XcodeApplication) async throws {
         try await check("Verifying Xcode with Gatekeeper", failure: .gatekeeperVerificationFailed(app.url)) {
-            try await processes.run("/usr/sbin/spctl", ["--assess", "--verbose", "--type", "execute", app.url.path]).exitStatus == EXIT_SUCCESS
+            try await processes.run("/usr/sbin/spctl", ["--assess", "--verbose", "--type", "execute", app.url.path])
+                .exitStatus == EXIT_SUCCESS
         }
         try await check("Verifying the code signature", failure: .codesignVerificationFailed(app.url)) {
             try await processes.run("/usr/bin/codesign", ["--verify", "--verbose", app.url.path]).exitStatus == EXIT_SUCCESS
@@ -815,7 +848,7 @@ extension Core {
 
     private func findInstalledXcodes(for version: String?, knownVersions: [Xcode]) async throws -> [XcodeApplication] {
         var xcodesApplications = try await installedXcodes(knownVersions: knownVersions)
-        if let version = version {
+        if let version {
             let (fullVersion, betaVersion) = extractVersionParts(from: version)
             xcodesApplications = xcodesApplications.filter {
                 $0.xcode.matching(fullVersion: fullVersion, betaVersion: betaVersion, version: version)
@@ -977,7 +1010,9 @@ extension Core {
 }
 
 extension Core {
-    private var cacheFile: URL { fileSystem.cachesDirectory().appendingPathComponent(.xcodesCacheFile) }
+    private var cacheFile: URL {
+        fileSystem.cachesDirectory().appendingPathComponent(.xcodesCacheFile)
+    }
 
     private func cache(_ xcodes: [Xcode]) async throws {
         let data = try JSONEncoder().encode(xcodes)
@@ -1051,12 +1086,18 @@ extension Xcode {
         let patch = parts[safe: 2].flatMap { Int(String($0)) }
 
         let p = VersionParts(major: major, minor: minor, patch: patch, type: version.release.versionType)
-        if p.major != versionParts.major { return false }
+        if p.major != versionParts.major {
+            return false
+        }
         if let pMinor = p.minor, let vMinor = versionParts.minor {
-            if pMinor != vMinor { return false }
+            if pMinor != vMinor {
+                return false
+            }
 
             if let pPatch = p.patch, let vPatch = versionParts.patch {
-                if pPatch != vPatch { return false }
+                if pPatch != vPatch {
+                    return false
+                }
             }
         }
         if let vType = versionParts.type {
@@ -1066,7 +1107,7 @@ extension Xcode {
     }
 
     func matching(fullVersion: String?, betaVersion: Int?, version: String) -> Bool {
-        if let betaVersion = betaVersion {
+        if let betaVersion {
             let versionNumberHaveSamePrefix = self.version.number?.lowercased()
                 .hasPrefix(fullVersion ?? version) == true
             let betaVersionsAreSame: Bool = {
@@ -1078,7 +1119,7 @@ extension Xcode {
             return versionNumberHaveSamePrefix && betaVersionsAreSame || areSameVersions
         } else {
             return self.version.number?.lowercased().hasPrefix(fullVersion ?? version) == true ||
-            self.version.build?.lowercased() == version
+                self.version.build?.lowercased() == version
         }
     }
 }

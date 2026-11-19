@@ -26,7 +26,7 @@ extension XCInfo {
         @Argument(help: "The Apple ID (email) to sign in with.")
         var appleID: String?
 
-        @OptionGroup()
+        @OptionGroup
         var globals: DefaultOptions
 
         mutating func validate() throws {

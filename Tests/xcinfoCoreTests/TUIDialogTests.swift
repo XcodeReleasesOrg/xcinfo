@@ -35,7 +35,12 @@ struct TUIDialogTests {
 
     @Test
     func `a secret is never shown and not kept after confirming`() {
-        var dialog = TUIDialog(.text(prompt: "Apple ID password for user (not your Mac password):", isSecret: true, invalidMessage: nil, isInvalid: { _ in false }))
+        var dialog = TUIDialog(.text(
+            prompt: "Apple ID password for user (not your Mac password):",
+            isSecret: true,
+            invalidMessage: nil,
+            isInvalid: { _ in false }
+        ))
         type("Grüße 🎉", into: &dialog)
 
         let rendered = TUIRenderer(usesColors: false).box(dialog, width: 80).joined(separator: "\n")

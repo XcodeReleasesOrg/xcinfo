@@ -66,7 +66,7 @@ struct PromptTests {
         (["Yes"], true),
         (["n"], false),
         (["No"], false),
-        (["maybe", "yes"], true),
+        (["maybe", "yes"], true)
     ])
     func `agree accepts yes and no`(input: [String], expected: Bool) throws {
         let script = ScriptedConsole(input)
@@ -90,7 +90,10 @@ struct PromptTests {
 
         #expect(throws: PromptUnavailable(question: "Continue?")) { try script.console.agree("Continue?") }
         #expect(throws: PromptUnavailable(question: "Code:")) { try script.console.ask("Code:", invalidMessage: "Invalid") { $0.isEmpty } }
-        #expect(throws: PromptUnavailable(question: "Pick: ", choices: ["a", "b"])) { try script.console.choose("Pick: ", choices: ["a", "b"]) }
+        #expect(throws: PromptUnavailable(question: "Pick: ", choices: ["a", "b"])) { try script.console.choose(
+            "Pick: ",
+            choices: ["a", "b"]
+        ) }
     }
 
     @Test

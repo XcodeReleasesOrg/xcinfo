@@ -17,7 +17,7 @@ public struct ProcessResult: Sendable, Equatable {
     }
 }
 
-struct ProcessRunner {
+enum ProcessRunner {
     static func run(_ command: String, arguments: [String]) async throws -> ProcessResult {
         try await launch(executable: URL(fileURLWithPath: "/usr/bin/env"), arguments: [command] + arguments, input: nil)
     }
@@ -44,7 +44,12 @@ struct ProcessRunner {
         }
     }
 
-    private static func launch(executable: URL, arguments: [String], input: Data?, workingDirectory: URL? = nil) async throws -> ProcessResult {
+    private static func launch(
+        executable: URL,
+        arguments: [String],
+        input: Data?,
+        workingDirectory: URL? = nil
+    ) async throws -> ProcessResult {
         let process = Process()
         process.executableURL = executable
         process.arguments = arguments

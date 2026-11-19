@@ -94,7 +94,7 @@ struct Downloader: Sendable {
                 lastMilestone = max(lastMilestone, milestone)
 
                 var details = [
-                    "\(Self.bytes(progress.remainingBytes)) of \(Self.bytes(progress.totalBytes)) remaining",
+                    "\(Self.bytes(progress.remainingBytes)) of \(Self.bytes(progress.totalBytes)) remaining"
                 ]
                 if progress.downloadSpeed.value > 0 {
                     details.append("\(Self.bytes(progress.downloadSpeed))/s")
@@ -248,7 +248,16 @@ struct ResumeData: Sendable, Equatable {
         }
         if plist["$archiver"] as? String == "NSKeyedArchiver", plist["$top"] != nil {
             let archived = try? NSKeyedUnarchiver.unarchivedObject(
-                ofClasses: [NSDictionary.self, NSArray.self, NSString.self, NSNumber.self, NSData.self, NSDate.self, NSURL.self, NSURLRequest.self],
+                ofClasses: [
+                    NSDictionary.self,
+                    NSArray.self,
+                    NSString.self,
+                    NSNumber.self,
+                    NSData.self,
+                    NSDate.self,
+                    NSURL.self,
+                    NSURLRequest.self
+                ],
                 from: data
             ) as? [String: Any]
             if let downloadURL = archived?["NSURLSessionDownloadURL"] as? String, downloadURL != url.absoluteString {

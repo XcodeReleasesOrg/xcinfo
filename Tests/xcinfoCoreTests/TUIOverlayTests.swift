@@ -1,8 +1,8 @@
 import Foundation
 import Testing
-@testable import XCInfoTUI
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@testable import XCInfoTUI
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct TUIOverlayTests {
     private var model: TUIModel {
@@ -51,7 +51,7 @@ struct TUIOverlayTests {
     @Test(arguments: [
         ("abcdef", 2, "ab", "cdef"),
         ("a界b", 2, "a ", " b"),
-        ("\u{1B}[7mabcd\u{1B}[0m", 2, "\u{1B}[7mab\u{1B}[0m\u{1B}[0m", "\u{1B}[7mcd\u{1B}[0m"),
+        ("\u{1B}[7mabcd\u{1B}[0m", 2, "\u{1B}[7mab\u{1B}[0m\u{1B}[0m", "\u{1B}[7mcd\u{1B}[0m")
     ])
     func `styled text is split by terminal columns`(text: String, column: Int, before: String, from: String) {
         #expect(text.columns(before: column) == before)

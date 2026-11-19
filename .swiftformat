@@ -2,7 +2,7 @@
 --header "//\n//  Copyright © {year} xcodereleases.com\n//  LGPL-3.0 license - see COPYING.LESSER\n//"
 --exclude "**/Package.swift"
 --enable isEmpty
---maxwidth 120
+--maxwidth 140
 --wraparguments before-first
 --wrapcollections before-first
 --binarygrouping none
@@ -16,3 +16,4 @@
 --disable unusedArguments
 --disable preferKeyPath
 --disable redundantNilInit
+--disable fileHeader

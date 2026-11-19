@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct XcodeModelTests {
     @Test(arguments: [
@@ -10,7 +10,7 @@ struct XcodeModelTests {
         (.release, "12.4", "Xcode_12.4.app"),
         (.rc(1), "12.4", "Xcode_12.4_rc_1.app"),
         (.dp(6), "12.3", "Xcode_12.3_dp_6.app"),
-        (.gmSeed(3), "12", "Xcode_12_gmseed_3.app"),
+        (.gmSeed(3), "12", "Xcode_12_gmseed_3.app")
     ])
     func `filename is derived from the version`(release: Release, number: String, expected: String) throws {
         let applications = try TemporaryDirectory()
@@ -37,7 +37,7 @@ struct XcodeModelTests {
         (.gmSeed(2), "15.0", "15.0 GM Seed 2"),
         (.beta(3), "15.0", "15.0 Beta 3"),
         (.dp(4), "15.0", "15.0 DP 4"),
-        (.rc(1), "15.0", "15.0 RC 1"),
+        (.rc(1), "15.0", "15.0 RC 1")
     ])
     func `display names describe the release`(release: Release, number: String, displayVersion: String) {
         let xcode = Xcode.fixture(number, build: "15A1", release: release)
@@ -50,17 +50,17 @@ struct XcodeModelTests {
 
     @Test
     func `display name without a build number has empty parentheses`() {
-        let xcode = Xcode(version: Version(number: "15.0", nil, .release), date: (2023, 9, 18), requires: "13.5")
+        let xcode = Xcode(version: Version(number: "15.0", nil, .release), date: (2_023, 9, 18), requires: "13.5")
 
         #expect(xcode.displayName == "15.0 ()")
     }
 
     @Test
     func `release date is built from the year, month and day`() {
-        let xcode = Xcode(version: Version("15A240d", "15.0", .release), date: (2023, 9, 18), requires: "13.5")
+        let xcode = Xcode(version: Version("15A240d", "15.0", .release), date: (2_023, 9, 18), requires: "13.5")
         let components = Calendar.current.dateComponents([.year, .month, .day], from: xcode.releaseDate)
 
-        #expect(components.year == 2023)
+        #expect(components.year == 2_023)
         #expect(components.month == 9)
         #expect(components.day == 18)
     }

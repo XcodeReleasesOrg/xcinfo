@@ -21,7 +21,7 @@ extension XCInfo {
         @OptionGroup
         var listOptions: ListOptions
 
-        @OptionGroup()
+        @OptionGroup
         var globals: DefaultOptions
 
         func run() async throws {

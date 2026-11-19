@@ -59,7 +59,7 @@ public struct InterruptSignals: Sendable {
             group.addTask {
                 defer { pipe.write(token) }
                 do {
-                    return try .finished(.success(await operation()))
+                    return try await .finished(.success(operation()))
                 } catch {
                     return .finished(.failure(error))
                 }

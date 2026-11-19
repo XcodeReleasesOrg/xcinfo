@@ -4,7 +4,7 @@
 //
 
 import Foundation
-@preconcurrency import Rainbow // Rainbow (Swift 4 mode) keeps its color switch in an unannotated global; it is written once at startup before any concurrent work.
+@preconcurrency import Rainbow // Rainbow (Swift 4 mode) keeps its color switch in an unannotated global set at startup.
 
 public enum OutputStyle: String, Sendable, Equatable {
     case plain

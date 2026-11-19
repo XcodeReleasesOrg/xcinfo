@@ -531,7 +531,7 @@ public actor OlympUs {
 
     private func send(
         _ request: URLRequest,
-        delegate: (any URLSessionTaskDelegate)? = nil
+        delegate: any URLSessionTaskDelegate? = nil
     ) async throws -> (Data, URLResponse) {
         do {
             let (data, response) = try await session.data(for: request, delegate: delegate)

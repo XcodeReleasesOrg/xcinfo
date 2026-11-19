@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct CoreListTests {
     private let recent = Xcode.fixture("16.0", build: "16A1", date: .monthsAgo(1))
@@ -11,7 +11,9 @@ struct CoreListTests {
     private let withoutDownload = Xcode.fixture("13.0", build: "13A1", date: .monthsAgo(2), download: nil)
     private let gm = Xcode.fixture("12.0", build: "12A1", release: .gm, date: .monthsAgo(3))
 
-    private var all: [Xcode] { [recent, lastSummer, old, futureOS, withoutDownload] }
+    private var all: [Xcode] {
+        [recent, lastSummer, old, futureOS, withoutDownload]
+    }
 
     @Test
     func `list returns installable versions of the last year, installed and not installable versions`() async throws {
@@ -55,7 +57,7 @@ struct CoreListTests {
 
     @Test(arguments: [
         (Core.ListFilter.onlyGM, ["12A1"]),
-        (.onlyReleases, ["16A1", "15A1"]),
+        (.onlyReleases, ["16A1", "15A1"])
     ])
     func `list filters by release kind`(filter: Core.ListFilter, expected: [String]) async throws {
         let caches = try TemporaryDirectory()
@@ -120,7 +122,12 @@ struct CoreListTests {
         let cached = try JSONDecoder().decode([Xcode].self, from: Data(contentsOf: cacheFile))
         #expect(cached.map(\.version.build) == ["16A1", "15A1"])
 
-        let offlineCore = Core.test(logs: LogRecorder(), cachesDirectory: caches.url, shell: FakeShell(), applicationsDirectory: applications.url)
+        let offlineCore = Core.test(
+            logs: LogRecorder(),
+            cachesDirectory: caches.url,
+            shell: FakeShell(),
+            applicationsDirectory: applications.url
+        )
         let list = try await offlineCore.list(shouldUpdate: false, showAllVersions: true, filter: nil)
 
         #expect(list.listed.map(\.version.build) == ["16A1", "15A1"])
@@ -188,7 +195,7 @@ struct CoreListTests {
         #expect(installed.map(\.url.path) == [newer.path, older.path])
         #expect(installed.map(\.xcode.version.build) == ["16A1", "15A1"])
         #expect(shell.calls.values == [
-            ShellCall(command: "mdfind", args: ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"], password: nil),
+            ShellCall(command: "mdfind", args: ["kMDItemCFBundleIdentifier == 'com.apple.dt.Xcode'"], password: nil)
         ])
     }
 

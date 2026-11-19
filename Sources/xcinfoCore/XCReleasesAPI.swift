@@ -5,7 +5,7 @@
 
 import Foundation
 import XCIFoundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 // annotations.
 
@@ -268,25 +268,25 @@ public enum XCAPIError: Error, CustomStringConvertible, Sendable {
     public var description: String {
         switch self {
         case .invalidResponse:
-            return "Invalid response"
+            "Invalid response"
         case .invalidCache:
-            return "Invalid cache file"
+            "Invalid cache file"
         case .versionNotFound:
-            return "Version not found"
+            "Version not found"
         case .recoverableDownloadError:
-            return "Download failed"
+            "Download failed"
         case .downloadInterrupted:
-            return "Download was interrupted"
+            "Download was interrupted"
         case .couldNotMoveToTemporaryFile:
-            return "Could not move downloaded file into temporary directory"
+            "Could not move downloaded file into temporary directory"
         case let .couldNotMoveToDestinationFolder(source, destination, error):
-            return "Could not move downloaded file from \(source.standardizedFileURL.path) to \(destination.standardizedFileURL.path). \(error.localizedFailureReason ?? error.localizedDescription))"
+            "Could not move downloaded file from \(source.standardizedFileURL.path) to \(destination.standardizedFileURL.path). \(error.localizedFailureReason ?? error.localizedDescription))"
         case .timeout:
-            return "The request timed out"
+            "The request timed out"
         case let .unexpectedStatusCode(statusCode):
-            return "The server responded with HTTP status \(statusCode)"
+            "The server responded with HTTP status \(statusCode)"
         case .unauthorized:
-            return "The Apple Developer Portal did not authorize the download"
+            "The Apple Developer Portal did not authorize the download"
         }
     }
 }
@@ -353,17 +353,17 @@ extension Release {
     var versionType: VersionParts.VersionType? {
         switch self {
         case .gm:
-            return .gm("")
+            .gm("")
         case let .gmSeed(seed):
-            return .gm("Seed \(seed)")
+            .gm("Seed \(seed)")
         case let .rc(rc):
-            return .rc(String(rc))
+            .rc(String(rc))
         case let .beta(beta):
-            return .beta(String(beta))
+            .beta(String(beta))
         case let .dp(dp):
-            return .dp(String(dp))
+            .dp(String(dp))
         case .release:
-            return nil
+            nil
         }
     }
 }

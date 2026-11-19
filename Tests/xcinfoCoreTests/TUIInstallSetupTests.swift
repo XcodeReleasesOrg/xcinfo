@@ -1,8 +1,8 @@
 import Foundation
 import Testing
-@testable import XCInfoTUI
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@testable import XCInfoTUI
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct TUIInstallSetupTests {
     private let xcode = Xcode.fixture("27.3", build: "27C5035i", release: .beta(2))
@@ -28,7 +28,7 @@ struct TUIInstallSetupTests {
     @Test
     func `option-backspace and ctrl-u clear the folder without leaving the setup`() {
         var setup = TUIInstallSetup(xcode: xcode, options: TUIInstallOptions(folder: "/Volumes/External/Xcodes"))
-        for key in Key.parse([0x1B, 0x7F]) {
+        for key in Key.parse([0x1b, 0x7f]) {
             #expect(setup.handle(key) == nil)
         }
         #expect(setup.options.folder == "/Volumes/External/")

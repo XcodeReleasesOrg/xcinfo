@@ -2,13 +2,13 @@ import Foundation
 import Testing
 import XCIFoundation
 @testable import xcinfo
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct PresentationTests {
     private let xcode = Xcode(
         version: Version("15A240d", "15.0", .release),
-        date: (2023, 9, 18),
+        date: (2_023, 9, 18),
         requires: "13.5",
         sdks: SDKs(macOS: Version("23A334"), iOS: Version("21A325")),
         compilers: Compilers(swift: Version("5.9.0.128.108", "5.9")),
@@ -36,13 +36,13 @@ struct PresentationTests {
             "",
             "Links",
             "Download:      https://download.example.invalid/Xcode_15.xip",
-            "Release Notes: https://notes.example.invalid/15",
+            "Release Notes: https://notes.example.invalid/15"
         ])
     }
 
     @Test
     func `info without sdks, compilers and links ends with the requirement`() {
-        let bare = Xcode(version: Version("15A240d", "15.0", .release), date: (2023, 9, 18), requires: "13.5")
+        let bare = Xcode(version: Version("15A240d", "15.0", .release), date: (2_023, 9, 18), requires: "13.5")
 
         #expect(bare.infoLines.last?.strippingANSI == "Requires macOS 13.5")
     }
@@ -64,7 +64,7 @@ struct PresentationTests {
             "",
             "Not installable:",
             "17.0 Beta 1 (17A1)",
-            "13.0 (13A1)",
+            "13.0 (13A1)"
         ])
     }
 
@@ -91,13 +91,16 @@ struct PresentationTests {
     @Test
     func `installed applications are padded to the longest name`() {
         let applications = [
-            XcodeApplication(url: URL(fileURLWithPath: "/Applications/Xcode-beta.app"), xcode: .fixture("17.0", build: "17A1", release: .beta(1))),
-            XcodeApplication(url: URL(fileURLWithPath: "/Applications/Xcode.app"), xcode: .fixture("16.0", build: "16A1")),
+            XcodeApplication(
+                url: URL(fileURLWithPath: "/Applications/Xcode-beta.app"),
+                xcode: .fixture("17.0", build: "17A1", release: .beta(1))
+            ),
+            XcodeApplication(url: URL(fileURLWithPath: "/Applications/Xcode.app"), xcode: .fixture("16.0", build: "16A1"))
         ]
 
         #expect(applications.lines.map(\.strippingANSI) == [
             "17.0 Beta 1 (17A1) – /Applications/Xcode-beta.app",
-            "16.0 (16A1)        – /Applications/Xcode.app",
+            "16.0 (16A1)        – /Applications/Xcode.app"
         ])
         #expect([XcodeApplication]().lines.isEmpty)
     }
@@ -119,7 +122,7 @@ struct PresentationTests {
             (XCAPIError.invalidResponse, 9),
             (URLError(.notConnectedToInternet), 9),
             (CocoaError(.fileReadNoSuchFile), 9),
-            (CancellationError(), 1),
+            (CancellationError(), 1)
         ]
 
         for (error, code) in expectations {
@@ -133,7 +136,8 @@ struct PresentationTests {
         #expect(XCAPIError.invalidResponse.message == "Invalid response")
         #expect(Interrupted(signal: SIGINT).message == "Stopped with Ctrl-C.")
         #expect(Interrupted(signal: SIGTERM).message == "Stopped by signal 15.")
-        #expect(CocoaError(.fileReadNoSuchFile).message == "No cached list of Xcode versions. Run the command again without --no-update-list.")
+        #expect(CocoaError(.fileReadNoSuchFile)
+            .message == "No cached list of Xcode versions. Run the command again without --no-update-list.")
     }
 
     @Test

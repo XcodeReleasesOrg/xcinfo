@@ -4,7 +4,7 @@
 //
 
 import Foundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 public enum XcodeVersion: Sendable {
     case version(String)
@@ -26,11 +26,11 @@ extension XcodeVersion: CustomStringConvertible {
     public var description: String {
         switch self {
         case .latest:
-            return "latest"
+            "latest"
         case let .version(string):
-            return string
+            string
         case let .exactly(xcode):
-            return xcode.labeledName
+            xcode.labeledName
         }
     }
 }

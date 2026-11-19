@@ -93,19 +93,19 @@ public struct TUIDialog: Sendable {
     func lines(fieldWidth: Int = 56) -> [String] {
         switch question {
         case let .text(_, isSecret, _, _):
-            return [
+            [
                 "> " + field.display(width: fieldWidth, masked: isSecret),
                 error ?? "",
                 isSecret ? "Return to confirm · Esc to cancel · typing is hidden" : "Return to confirm · Esc to cancel"
             ]
         case let .choice(_, choices):
-            return choices.enumerated()
+            choices.enumerated()
                 .map { (selection == $0.offset ? "› " : "  ") + "\($0.offset + 1). \($0.element)" } + [
                     "",
                     "↑↓ choose · Return to confirm · Esc to cancel"
                 ]
         case .confirm:
-            return [selection == 0 ? "[ Yes ]   No  " : "  Yes   [ No ]", "", "y yes · n no · Esc to cancel"]
+            [selection == 0 ? "[ Yes ]   No  " : "  Yes   [ No ]", "", "y yes · n no · Esc to cancel"]
         }
     }
 }

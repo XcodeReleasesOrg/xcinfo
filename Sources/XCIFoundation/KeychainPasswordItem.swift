@@ -18,15 +18,15 @@ public struct KeychainPasswordItem {
         public var description: String {
             switch self {
             case .noPassword:
-                return "No password set."
+                "No password set."
             case .unexpectedPasswordData:
-                return "unexpectedPasswordData"
+                "unexpectedPasswordData"
             case .unexpectedItemData:
-                return "unexpectedItemData"
+                "unexpectedItemData"
             case let .unhandledError(status):
-                return KeychainPasswordItem.explanation(for: status)
+                KeychainPasswordItem.explanation(for: status)
             case .passwordAlreadySet:
-                return "Password already exists."
+                "Password already exists."
             }
         }
     }
@@ -238,11 +238,11 @@ public struct KeychainPasswordItem {
         query[kSecClass as String] = kSecClassGenericPassword
         query[kSecAttrService as String] = service as AnyObject?
 
-        if let account = account {
+        if let account {
             query[kSecAttrAccount as String] = account as AnyObject?
         }
 
-        if let accessGroup = accessGroup {
+        if let accessGroup {
             query[kSecAttrAccessGroup as String] = accessGroup as AnyObject?
         }
 

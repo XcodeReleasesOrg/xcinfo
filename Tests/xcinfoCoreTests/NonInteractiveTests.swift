@@ -1,9 +1,9 @@
 import Foundation
 import Testing
 import XCIFoundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfo
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct NonInteractiveTests {
     private let xcodes = [Xcode.fixture("15.0", build: "15A240d", release: .beta(1)), .fixture("15.0", build: "15A507", release: .beta(2))]
@@ -31,7 +31,7 @@ struct NonInteractiveTests {
         let prompt = PromptClient.unavailable
         await #expect(throws: PromptUnavailable(question: "Continue?")) { try await prompt.agree("Continue?") }
         await #expect(throws: PromptUnavailable(question: "Pick:", choices: ["a"])) { try await prompt.choose("Pick:", ["a"]) }
-        await #expect(throws: PromptUnavailable(question: "Code:")) { try await prompt.ask("Code:", "", { _ in false }) }
+        await #expect(throws: PromptUnavailable(question: "Code:")) { try await prompt.ask("Code:", "") { _ in false } }
         await #expect(throws: PromptUnavailable(question: "Apple ID (email):")) { try await prompt.readLine("Apple ID (email):") }
         await #expect(throws: PromptUnavailable(question: "Password:")) { try await prompt.readSecret("Password:") }
     }
@@ -47,7 +47,10 @@ struct NonInteractiveTests {
             applicationsDirectory: caches.url
         )
 
-        await #expect(throws: PromptUnavailable(question: "Please choose a version: ", choices: ["15.0 Beta 1 (15A240d)", "15.0 Beta 2 (15A507)"])) {
+        await #expect(throws: PromptUnavailable(
+            question: "Please choose a version: ",
+            choices: ["15.0 Beta 1 (15A240d)", "15.0 Beta 2 (15A507)"]
+        )) {
             try await core.info(version: .version("15 beta"), shouldUpdate: true)
         }
     }
@@ -109,7 +112,7 @@ struct QuestionWordingTests {
         (CredentialsError.accountNameUnavailable, Int32(10)),
         (.passwordUnavailable, 10),
         (.invalidPassword, 4),
-        (.keychainError("denied"), 4),
+        (.keychainError("denied"), 4)
     ])
     func `missing credentials exit like any other unanswerable question`(error: CredentialsError, code: Int32) {
         #expect(error.exitCode == code)
@@ -142,7 +145,11 @@ struct QuestionWordingTests {
         )
 
         _ = try await core.info(version: .version("15 beta"), shouldUpdate: true)
-        _ = try await core.download(version: .version("15 beta"), options: .init(destination: caches.url, disableSleep: false), updateVersionList: true)
+        _ = try await core.download(
+            version: .version("15 beta"),
+            options: .init(destination: caches.url, disableSleep: false),
+            updateVersionList: true
+        )
 
         #expect(prompt.asked.values == ["Please choose a version: ", "Please choose the version to download: "])
     }

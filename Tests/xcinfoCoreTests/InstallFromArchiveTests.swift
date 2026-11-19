@@ -1,9 +1,9 @@
 import Foundation
 import Testing
 import XCIFoundation
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfo
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct InstallFromArchiveTests {
     private let xcodes = [Xcode.fixture("15.0", build: "15A240d"), .fixture("16.0", build: "16A1")]
@@ -56,7 +56,10 @@ struct InstallFromArchiveTests {
         let logs = LogRecorder()
         let core = core(logs: logs, caches: caches, applications: applications, archiveBuild: "16A1")
 
-        let app = try await core.install(options: options(archive: archive, version: nil, destination: applications.url), updateVersionList: true)
+        let app = try await core.install(
+            options: options(archive: archive, version: nil, destination: applications.url),
+            updateVersionList: true
+        )
 
         #expect(app.xcode.version.build == "16A1")
         #expect(app.url.lastPathComponent == "Xcode_16.0.app")
@@ -72,7 +75,14 @@ struct InstallFromArchiveTests {
         let applications = try TemporaryDirectory()
         let archive = try caches.file("Xcode.xip", contents: .xipMagic)
         let logs = LogRecorder()
-        let core = core(logs: logs, caches: caches, applications: applications, archiveBuild: "15A240d", sha1: "0000000000000000000000000000000000000000", agrees: false)
+        let core = core(
+            logs: logs,
+            caches: caches,
+            applications: applications,
+            archiveBuild: "15A240d",
+            sha1: "0000000000000000000000000000000000000000",
+            agrees: false
+        )
 
         await #expect(throws: CoreError.self) {
             try await core.install(options: options(archive: archive, version: nil, destination: applications.url), updateVersionList: true)
@@ -108,10 +118,14 @@ struct InstallFromArchiveTests {
         let logs = LogRecorder()
         let core = core(logs: logs, caches: caches, applications: applications, archiveBuild: "16A1")
 
-        let app = try await core.install(options: options(archive: archive, version: .version("15.0"), destination: applications.url), updateVersionList: true)
+        let app = try await core.install(
+            options: options(archive: archive, version: .version("15.0"), destination: applications.url),
+            updateVersionList: true
+        )
 
         #expect(app.xcode.version.build == "15A240d")
-        #expect(logs.messages.contains("The archive contains Xcode build 16A1, not 15A240d as requested. xcinfo continues with Xcode 15.0 (15A240d)."))
+        #expect(logs.messages
+            .contains("The archive contains Xcode build 16A1, not 15A240d as requested. xcinfo continues with Xcode 15.0 (15A240d)."))
     }
 
     @Test

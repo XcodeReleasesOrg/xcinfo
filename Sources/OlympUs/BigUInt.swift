@@ -202,7 +202,9 @@ struct BigUInt: Sendable, Hashable, Comparable, CustomStringConvertible {
             while qhat >= base || qhat * UInt64(v[n - 2]) > (rhat << 32) + UInt64(u[j + n - 2]) {
                 qhat -= 1
                 rhat += UInt64(v[n - 1])
-                if rhat >= base { break }
+                if rhat >= base {
+                    break
+                }
             }
 
             var borrow: Int64 = 0
@@ -210,7 +212,7 @@ struct BigUInt: Sendable, Hashable, Comparable, CustomStringConvertible {
             for i in 0 ..< n {
                 let product = qhat * UInt64(v[i]) + carry
                 carry = product >> 32
-                let difference = Int64(u[i + j]) - Int64(product & 0xFFFF_FFFF) - borrow
+                let difference = Int64(u[i + j]) - Int64(product & 0xffffffff) - borrow
                 u[i + j] = UInt32(truncatingIfNeeded: difference)
                 borrow = difference < 0 ? 1 : 0
             }
@@ -273,7 +275,7 @@ struct BigUInt: Sendable, Hashable, Comparable, CustomStringConvertible {
     }
 }
 
-private extension Array where Element == UInt32 {
+private extension [UInt32] {
     subscript(safe index: Int) -> UInt32 {
         index < count ? self[index] : 0
     }

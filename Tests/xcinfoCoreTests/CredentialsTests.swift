@@ -246,7 +246,10 @@ struct CredentialsTests {
         #expect(try await service.accountName() == "user")
         #expect(prompt.chosen.values == [["Try the Keychain again", "Sign in anew", "Cancel"]])
         #expect(storage.reads.values.count == 1)
-        #expect(logs.events.contains(.message("The Keychain item 'xcinfo' could not be read: access to the Keychain was denied in the macOS dialog.", .warning)))
+        #expect(logs.events.contains(.message(
+            "The Keychain item 'xcinfo' could not be read: access to the Keychain was denied in the macOS dialog.",
+            .warning
+        )))
         #expect(!logs.messages.contains { $0.contains("unhandledError") })
     }
 
@@ -263,9 +266,12 @@ struct CredentialsTests {
     }
 
     @Test(arguments: [
-        (errSecAuthFailed, "macOS refused access to the Keychain item: the password in the Keychain dialog was not accepted, or access was denied"),
+        (
+            errSecAuthFailed,
+            "macOS refused access to the Keychain item: the password in the Keychain dialog was not accepted, or access was denied"
+        ),
         (errSecUserCanceled, "access to the Keychain was denied in the macOS dialog"),
-        (errSecInteractionNotAllowed, "macOS could not show the Keychain dialog"),
+        (errSecInteractionNotAllowed, "macOS could not show the Keychain dialog")
     ])
     func `keychain errors are explained in plain words`(status: OSStatus, text: String) {
         #expect(KeychainPasswordItem.KeychainError.unhandledError(status: status).description == text)
@@ -304,7 +310,7 @@ struct PasswordBytesTests {
     private let passwords = ["  Grüße aus Köln 🎉  ", "plain", "trailing ", String(repeating: "ä", count: 64)]
 
     @Test
-    func `the derived key uses the exact utf8 bytes of the password`() throws {
+    func `the derived key uses the exact utf8 bytes of the password`() {
         let salt = Array("salt".utf8)
         for password in passwords {
             let digest = Array(SHA256.hash(data: Data(password.utf8)))
@@ -337,7 +343,12 @@ struct PasswordBytesTests {
                     StubResponse()
                 }
             }
-            let olymp = OlympUs(logger: LogRecorder().logger(), session: server.session(), sessionStore: InMemorySessionStore().store, prompt: prompt.client)
+            let olymp = OlympUs(
+                logger: LogRecorder().logger(),
+                session: server.session(),
+                sessionStore: InMemorySessionStore().store,
+                prompt: prompt.client
+            )
 
             let typed = try await credentials.password(for: "user")
             let result = try await olymp.signIn(accountName: "user", password: typed, serviceKey: "key")
@@ -371,7 +382,10 @@ struct SignInStorageTests {
             case "/appleauth/auth/signin/init":
                 srp.initResponse(for: request)
             case "/appleauth/auth/signin/complete":
-                srp.isValidCompletion(request) ? .json("{}", statusCode: 409, headers: ["scnt": "s", "X-Apple-ID-Session-Id": "i"]) : .json("{}", statusCode: 401)
+                srp.isValidCompletion(request) ? .json("{}", statusCode: 409, headers: ["scnt": "s", "X-Apple-ID-Session-Id": "i"]) : .json(
+                    "{}",
+                    statusCode: 401
+                )
             case "/olympus/v1/app/config":
                 .json(#"{"authServiceKey":"key"}"#)
             case "/appleauth/auth":
@@ -414,9 +428,12 @@ struct SignInSessionTests {
     @Test(arguments: [
         (StubResponse(statusCode: 500), "GET /olympus/v1/session: HTTP 500"),
         (StubResponse(statusCode: 401), "GET /olympus/v1/session: HTTP 401"),
-        (StubResponse(error: URLError(.timedOut)), "GET /olympus/v1/session: \(URLError(.timedOut).localizedDescription)"),
+        (StubResponse(error: URLError(.timedOut)), "GET /olympus/v1/session: \(URLError(.timedOut).localizedDescription)")
     ])
-    func `a failing App Store Connect session does not stop the sign-in and is logged`(sessionResponse: StubResponse, logged: String) async throws {
+    func `a failing App Store Connect session does not stop the sign-in and is logged`(
+        sessionResponse: StubResponse,
+        logged: String
+    ) async throws {
         let logs = LogRecorder()
         let prompt = FakePrompt(answers: ["123456"])
         let srp = FakeAppleSRPServer(accountName: "user", password: "correct horse")
@@ -429,7 +446,10 @@ struct SignInSessionTests {
             case "/appleauth/auth/signin/init":
                 srp.initResponse(for: request)
             case "/appleauth/auth/signin/complete":
-                srp.isValidCompletion(request) ? .json("{}", statusCode: 409, headers: ["scnt": "s", "X-Apple-ID-Session-Id": "i"]) : .json("{}", statusCode: 401)
+                srp.isValidCompletion(request) ? .json("{}", statusCode: 409, headers: ["scnt": "s", "X-Apple-ID-Session-Id": "i"]) : .json(
+                    "{}",
+                    statusCode: 401
+                )
             case "/appleauth/auth":
                 .json(#"{"securityCode":{"length":6}}"#)
             case "/appleauth/auth/verify/trusteddevice/securitycode":
@@ -444,7 +464,12 @@ struct SignInSessionTests {
                 StubResponse(statusCode: 404)
             }
         }
-        let olymp = OlympUs(logger: logs.logger(), session: server.session(), sessionStore: InMemorySessionStore().store, prompt: prompt.client)
+        let olymp = OlympUs(
+            logger: logs.logger(),
+            session: server.session(),
+            sessionStore: InMemorySessionStore().store,
+            prompt: prompt.client
+        )
 
         _ = try await AppleAuthenticator(olymp: olymp, logger: logs.logger()).authenticate(username: "user") { "correct horse" }
 
@@ -467,7 +492,12 @@ struct SignInSessionTests {
                 StubResponse()
             }
         }
-        let olymp = OlympUs(logger: logs.logger(), session: server.session(), sessionStore: InMemorySessionStore().store, prompt: FakePrompt().client)
+        let olymp = OlympUs(
+            logger: logs.logger(),
+            session: server.session(),
+            sessionStore: InMemorySessionStore().store,
+            prompt: FakePrompt().client
+        )
 
         await #expect(throws: OlympUsError.downloadAuthFailed) {
             try await olymp.getDownloadAuth(assets: .init(serviceKey: "key", scnt: "s", asid: "i"))

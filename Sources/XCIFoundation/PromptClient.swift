@@ -6,7 +6,8 @@
 import Foundation
 
 public struct PromptClient: Sendable {
-    public var ask: @Sendable (_ message: String, _ invalidMessage: String, _ isInvalid: @escaping @Sendable (String) -> Bool) async throws -> String
+    public var ask: @Sendable (_ message: String, _ invalidMessage: String, _ isInvalid: @escaping @Sendable (String) -> Bool) async throws
+        -> String
     public var choose: @Sendable (_ message: String, _ choices: [String]) async throws -> Int
     public var agree: @Sendable (_ message: String) async throws -> Bool
     public var readLine: @Sendable (_ prompt: String) async throws -> String
@@ -161,7 +162,7 @@ public struct PromptUnavailable: LocalizedError, Sendable, Equatable {
 }
 
 private func readPassphrase(prompt: String) -> String {
-    var buffer = [CChar](repeating: 0, count: 1024)
+    var buffer = [CChar](repeating: 0, count: 1_024)
     return buffer.withUnsafeMutableBufferPointer { buffer in
         defer { memset_s(buffer.baseAddress, buffer.count, 0, buffer.count) }
         guard let passphrase = readpassphrase(prompt, buffer.baseAddress, buffer.count, RPP_ECHO_OFF | RPP_REQUIRE_TTY) else {

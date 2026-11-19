@@ -21,7 +21,7 @@ struct TUIActivityTests {
             .init(text: "second", kind: .plain),
             .init(text: "Verifying Xcode with Gatekeeper", kind: .check(.passed)),
             .init(text: "careful", kind: .warning),
-            .init(text: "broken", kind: .error),
+            .init(text: "broken", kind: .error)
         ])
     }
 
@@ -49,16 +49,26 @@ struct TUIActivityTests {
     }
 
     private func runningDownload() -> TUIActivity {
-        var activity = TUIActivity(title: "Installing Xcode 16.0", steps: ["Identify", "Sign in", "Download", "Verify", "Extract", "Set up"])
+        var activity = TUIActivity(
+            title: "Installing Xcode 16.0",
+            steps: ["Identify", "Sign in", "Download", "Verify", "Extract", "Set up"]
+        )
         activity.apply(.section("Identifying"))
         activity.apply(.section("Sign in to Apple Developer"))
         activity.apply(.section("Downloading"))
-        activity.apply(.message("Source: https://download.developer.apple.com/Developer_Tools/Xcode_16_with_a_really_long_name/Xcode_16_with_a_really_long_name.xip", .plain))
+        activity.apply(.message(
+            "Source: https://download.developer.apple.com/Developer_Tools/Xcode_16_with_a_really_long_name/Xcode_16_with_a_really_long_name.xip",
+            .plain
+        ))
         for index in 0 ..< 30 {
             activity.apply(.message("message \(index)", .plain))
         }
         activity.apply(.message("watch out", .warning))
-        activity.apply(.progress(OutputProgress(title: "Downloading", fraction: 0.25, detail: "1.5 GB of 2 GB remaining, 80 MB/s, about 19 sec left")))
+        activity.apply(.progress(OutputProgress(
+            title: "Downloading",
+            fraction: 0.25,
+            detail: "1.5 GB of 2 GB remaining, 80 MB/s, about 19 sec left"
+        )))
         return activity
     }
 
@@ -98,7 +108,10 @@ struct TUIActivityTests {
 
     @Test
     func `wide terminals keep the list next to the panel`() {
-        var model = TUIModel(sections: [TUISection(title: "Available", entries: [TUIEntry(kind: .available, xcode: .fixture("16.0", build: "16A1"))])])
+        var model = TUIModel(sections: [TUISection(
+            title: "Available",
+            entries: [TUIEntry(kind: .available, xcode: .fixture("16.0", build: "16A1"))]
+        )])
         model.activity = runningDownload()
 
         let lines = TUIRenderer(usesColors: false).render(model, width: 120, height: 30)
@@ -127,7 +140,8 @@ struct TUIActivityTests {
         let warning = "The Keychain item 'xcinfo' could not be read: macOS refused access to the Keychain item: the password in the Keychain dialog was not accepted, or access was denied."
         var activity = TUIActivity(title: "Installing Xcode 16.0", steps: ["Identify"], showsVerbose: true)
         activity.apply(.message(warning, .warning))
-        activity.apply(.verbose("Source: https://download.developer.apple.com/Developer_Tools/Xcode_16_with_a_really_long_name/Xcode_16.xip"))
+        activity
+            .apply(.verbose("Source: https://download.developer.apple.com/Developer_Tools/Xcode_16_with_a_really_long_name/Xcode_16.xip"))
         var model = TUIModel(sections: [])
         model.activity = activity
 

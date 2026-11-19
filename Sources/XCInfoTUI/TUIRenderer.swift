@@ -6,7 +6,7 @@
 import Foundation
 import XCIFoundation
 import xcinfoCore
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 // annotations.
 
@@ -104,9 +104,8 @@ public struct TUIRenderer: Sendable {
                 progressContent.append((detail, .dim))
             }
         }
-        var content: [(String, Style)]
-        if activity.steps.count + progressContent.count <= max(0, height - 2) {
-            content = activity.steps.map { step in
+        var content: [(String, Style)] = if activity.steps.count + progressContent.count <= max(0, height - 2) {
+            activity.steps.map { step in
                 let (symbol, style): (String, Style) = switch step.state {
                 case .pending: ("·", .dim)
                 case .running: ("▸", .plain)
@@ -116,9 +115,9 @@ public struct TUIRenderer: Sendable {
                 return ("\(symbol) \(step.name)", style)
             }
         } else if let current = activity.steps.firstIndex(where: { $0.state == .running || $0.state == .failed }) {
-            content = [("▸ \(activity.steps[current].name) (\(current + 1) of \(activity.steps.count))", .plain)]
+            [("▸ \(activity.steps[current].name) (\(current + 1) of \(activity.steps.count))", .plain)]
         } else {
-            content = []
+            []
         }
         content += progressContent
         let fixed = content.count + 1

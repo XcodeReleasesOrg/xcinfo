@@ -68,7 +68,7 @@ public struct TUIActivity: Sendable, Equatable {
         "Downloading": "Download",
         "Verifying": "Verify",
         "Extracting": "Extract",
-        "Installing": "Set up",
+        "Installing": "Set up"
     ]
 
     mutating func begin(_ section: String) {

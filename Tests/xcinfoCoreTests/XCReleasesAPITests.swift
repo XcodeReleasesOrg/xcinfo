@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct XCReleasesAPITests {
     private let baseURL = URL(string: "https://xcodereleases.example.invalid/data.json")!
@@ -10,7 +10,7 @@ struct XCReleasesAPITests {
     func `list decodes the xcodes from the response`() async throws {
         let xcodes = [
             Xcode.fixture("15.0", build: "15A240d"),
-            Xcode.fixture("15.1", build: "15C5028h", release: .beta(1)),
+            Xcode.fixture("15.1", build: "15C5028h", release: .beta(1))
         ]
         let body = try JSONEncoder().encode(xcodes)
         let server = StubServer { _ in StubResponse(body: body) }
@@ -64,7 +64,7 @@ struct XCReleasesAPITests {
             .domain: "example.invalid",
             .path: "/",
             .name: "token",
-            .value: "1",
+            .value: "1"
         ]))
         storage.setCookie(cookie)
         #expect(storage.cookies?.isEmpty == false)

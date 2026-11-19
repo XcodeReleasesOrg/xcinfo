@@ -1,5 +1,5 @@
-import Foundation
 import Dependencies
+import Foundation
 import Testing
 @testable import xcinfoCore
 
@@ -136,30 +136,38 @@ struct DownloaderTests {
     }
 
     @Test(arguments: [
-        ("plain", true, 1234 as Int64?),
+        ("plain", true, 1_234 as Int64?),
         ("other url", false, nil),
         ("missing version", false, nil),
         ("archive", true, nil),
-        ("archived resume data", true, 5678),
+        ("archived resume data", true, 5_678),
         ("archived resume data for another url", false, nil),
-        ("garbage", false, nil),
+        ("garbage", false, nil)
     ] as [(String, Bool, Int64?)])
     func `resume data is checked before it is used`(kind: String, isUsable: Bool, bytesReceived: Int64?) throws {
         let plist: Any? = switch kind {
         case "plain":
-            ["NSURLSessionResumeInfoVersion": 2, "NSURLSessionDownloadURL": downloadURL.absoluteString, "NSURLSessionResumeBytesReceived": 1234]
+            [
+                "NSURLSessionResumeInfoVersion": 2,
+                "NSURLSessionDownloadURL": downloadURL.absoluteString,
+                "NSURLSessionResumeBytesReceived": 1_234
+            ]
         case "other url":
             ["NSURLSessionResumeInfoVersion": 2, "NSURLSessionDownloadURL": "https://example.invalid/other.xip"]
         case "missing version":
             ["NSURLSessionDownloadURL": downloadURL.absoluteString]
         case "archive":
-            ["$archiver": "NSKeyedArchiver", "$top": ["root": 1], "$version": 100000]
+            ["$archiver": "NSKeyedArchiver", "$top": ["root": 1], "$version": 100_000]
         default:
             nil
         }
         let archived: [String: Any]? = switch kind {
         case "archived resume data":
-            ["NSURLSessionResumeInfoVersion": 2, "NSURLSessionDownloadURL": downloadURL.absoluteString, "NSURLSessionResumeBytesReceived": 5678]
+            [
+                "NSURLSessionResumeInfoVersion": 2,
+                "NSURLSessionDownloadURL": downloadURL.absoluteString,
+                "NSURLSessionResumeBytesReceived": 5_678
+            ]
         case "archived resume data for another url":
             ["NSURLSessionResumeInfoVersion": 2, "NSURLSessionDownloadURL": "https://example.invalid/other.xip"]
         default:
@@ -175,7 +183,11 @@ struct DownloaderTests {
         #expect(resumeData?.bytesReceived == bytesReceived)
     }
 
-    @Test(.disabled("Crashes the process: the retry after a recoverable error resumes with resume data that URLSession rejects with an NSException"))
+    @Test(
+        .disabled(
+            "Crashes the process: the retry after a recoverable error resumes with resume data that URLSession rejects with an NSException"
+        )
+    )
     func `a recoverable error retries with the resume data`() async throws {
         let attempts = Recorder<Void>()
         let server = StubServer { _ in
@@ -249,7 +261,7 @@ struct DownloaderTests {
     func `removing apple cookies keeps other cookies`() throws {
         let storage = try #require(URLSessionConfiguration.ephemeral.httpCookieStorage)
         for (name, domain) in [("myacinfo", ".apple.com"), ("dqsid", "appstoreconnect.apple.com"), ("other", "example.com")] {
-            storage.setCookie(try #require(HTTPCookie(properties: [.name: name, .value: "1", .domain: domain, .path: "/"])))
+            try storage.setCookie(#require(HTTPCookie(properties: [.name: name, .value: "1", .domain: domain, .path: "/"])))
         }
 
         storage.removeAppleCookies()

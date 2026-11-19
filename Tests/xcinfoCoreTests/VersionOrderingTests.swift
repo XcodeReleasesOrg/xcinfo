@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct VersionOrderingTests {
     @Test
@@ -106,7 +106,8 @@ struct VersionOrderingTests {
 
         #expect(beta4 != beta6)
         #expect(Set([beta4, beta6]).count == 2)
-        #expect(Set([Xcode.fixture("11.0", build: "11M374r", release: .beta(4)), .fixture("11.0", build: "11M392q", release: .beta(6))]).count == 2)
+        #expect(Set([Xcode.fixture("11.0", build: "11M374r", release: .beta(4)), .fixture("11.0", build: "11M392q", release: .beta(6))])
+            .count == 2)
     }
 }
 
@@ -118,7 +119,7 @@ struct XcodeMatchingTests {
         ("14.3", "14.2", false),
         ("14.3.1", "14.3", true),
         ("14.3.1", "14.3.1", true),
-        ("14.3.1", "14.3.2", false),
+        ("14.3.1", "14.3.2", false)
     ])
     func `xcodes match version parts by number`(number: String, query: String, matches: Bool) throws {
         let parts = try #require(VersionParts(rawValue: query))
@@ -130,8 +131,8 @@ struct XcodeMatchingTests {
     func `release types are compared when both have a patch number`() throws {
         let rc = Xcode.fixture("14.3.1", build: "1", release: .rc(1))
 
-        #expect(rc.matching(try #require(VersionParts(rawValue: "14.3.1 RC 1"))))
-        #expect(!rc.matching(try #require(VersionParts(rawValue: "14.3.1 beta 1"))))
+        #expect(try rc.matching(#require(VersionParts(rawValue: "14.3.1 RC 1"))))
+        #expect(try !rc.matching(#require(VersionParts(rawValue: "14.3.1 beta 1"))))
     }
 
     @Test
@@ -140,23 +141,23 @@ struct XcodeMatchingTests {
         let betaQuery = try #require(VersionParts(rawValue: "14.3 beta 1"))
 
         #expect(!rc.matching(betaQuery))
-        #expect(rc.matching(try #require(VersionParts(rawValue: "14.3 RC 2"))))
-        #expect(rc.matching(try #require(VersionParts(rawValue: "14.3 rc"))))
-        #expect(!Xcode.fixture("14.3", build: "1").matching(try #require(VersionParts(rawValue: "14.3 rc"))))
+        #expect(try rc.matching(#require(VersionParts(rawValue: "14.3 RC 2"))))
+        #expect(try rc.matching(#require(VersionParts(rawValue: "14.3 rc"))))
+        #expect(try !Xcode.fixture("14.3", build: "1").matching(#require(VersionParts(rawValue: "14.3 rc"))))
     }
 
     @Test
     func `xcodes without a number never match`() throws {
-        let xcode = Xcode(version: Version("15A240d"), date: (2023, 9, 18), requires: "13.5")
+        let xcode = Xcode(version: Version("15A240d"), date: (2_023, 9, 18), requires: "13.5")
 
-        #expect(!xcode.matching(try #require(VersionParts(rawValue: "15"))))
+        #expect(try !xcode.matching(#require(VersionParts(rawValue: "15"))))
     }
 
     @Test(arguments: [
         ("15.0", 2, "15.0 beta 2", true),
         ("15.0", 3, "15.0 beta 3", false),
         ("15", 2, "15 beta 2", true),
-        ("14.0", 2, "14.0 beta 2", false),
+        ("14.0", 2, "14.0 beta 2", false)
     ])
     func `beta queries match the number prefix and the beta counter`(fullVersion: String, betaVersion: Int, query: String, matches: Bool) {
         let xcode = Xcode.fixture("15.0", build: "15A5195k", release: .beta(2))

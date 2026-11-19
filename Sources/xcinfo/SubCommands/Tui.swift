@@ -7,8 +7,8 @@ import ArgumentParser
 import Dependencies
 import Foundation
 import XCIFoundation
-import XCInfoTUI
 import xcinfoCore
+import XCInfoTUI
 
 extension XCInfo {
     struct Tui: AsyncParsableCommand {
@@ -18,7 +18,7 @@ extension XCInfo {
             discussion: "Also starts when xcinfo runs without a subcommand in an interactive terminal."
         )
 
-        @OptionGroup()
+        @OptionGroup
         var globals: DefaultOptions
 
         func run() async throws {
@@ -43,7 +43,10 @@ extension XCInfo {
                             try await withDependencies {
                                 $0.logger = session.logger
                                 $0.prompt = session.prompt
-                                $0.keychain = $0.keychain.handingOverTerminal(to: session, logsState: globals.isVerbose || ProcessInfo.processInfo.environment["XCINFO_DEBUG_KEYCHAIN"] == "1")
+                                $0.keychain = $0.keychain.handingOverTerminal(
+                                    to: session,
+                                    logsState: globals.isVerbose || ProcessInfo.processInfo.environment["XCINFO_DEBUG_KEYCHAIN"] == "1"
+                                )
                             } operation: {
                                 try await perform(command, core: Core())
                             }
@@ -87,7 +90,10 @@ private func perform(_ command: TUICommand, core: Core) async throws {
     case let .switchTo(application):
         try await core.switchXcode(to: application, options: .init())
     case let .uninstall(application):
-        try await core.uninstall(application.xcode.version.build?.lowercased() ?? application.xcode.displayVersion, updateVersionList: false)
+        try await core.uninstall(
+            application.xcode.version.build?.lowercased() ?? application.xcode.displayVersion,
+            updateVersionList: false
+        )
     case .quit, .refresh:
         break
     }
@@ -107,8 +113,8 @@ actor FirstUse {
 extension KeychainClient {
     func handingOverTerminal(to session: TUISession, logsState: Bool, firstUse: FirstUse = firstKeychainRead) -> KeychainClient {
         var client = self
-        let load = self.load
-        let reload = self.reload
+        let load = load
+        let reload = reload
         client.load = {
             guard await firstUse.claim() else { return try await load() }
             return try await session.withTerminalReleased(

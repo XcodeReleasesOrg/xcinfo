@@ -13,6 +13,7 @@ struct VersionParts: Equatable, Sendable {
         case beta(String)
         case gm(String)
     }
+
     var major: Int
     var minor: Int?
     var patch: Int?

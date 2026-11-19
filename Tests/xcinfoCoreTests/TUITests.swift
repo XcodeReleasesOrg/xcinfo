@@ -1,50 +1,50 @@
 import Foundation
 import Testing
-@testable import XCInfoTUI
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@testable import XCInfoTUI
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 private let keyExamples: [([UInt8], [Key])] = [
-    ([0x1B, 0x5B, 0x41], [.up]),
-    ([0x1B, 0x5B, 0x42], [.down]),
-    ([0x1B, 0x4F, 0x43], [.right]),
-    ([0x1B, 0x5B, 0x44], [.left]),
-    ([0x1B, 0x5B, 0x35, 0x7E], [.pageUp]),
-    ([0x1B, 0x5B, 0x36, 0x7E], [.pageDown]),
-    ([0x1B, 0x5B, 0x48], [.home]),
-    ([0x1B, 0x5B, 0x34, 0x7E], [.end]),
-    ([0x1B], [.escape]),
+    ([0x1b, 0x5b, 0x41], [.up]),
+    ([0x1b, 0x5b, 0x42], [.down]),
+    ([0x1b, 0x4f, 0x43], [.right]),
+    ([0x1b, 0x5b, 0x44], [.left]),
+    ([0x1b, 0x5b, 0x35, 0x7e], [.pageUp]),
+    ([0x1b, 0x5b, 0x36, 0x7e], [.pageDown]),
+    ([0x1b, 0x5b, 0x48], [.home]),
+    ([0x1b, 0x5b, 0x34, 0x7e], [.end]),
+    ([0x1b], [.escape]),
     ([0x03], [.interrupt]),
-    ([0x0D], [.enter]),
+    ([0x0d], [.enter]),
     ([0x09], [.tab]),
     (Array("jq".utf8), [.character("j"), .character("q")]),
-    ([0x1B, 0x5B, 0x41, 0x6A, 0x1B, 0x5B, 0x42], [.up, .character("j"), .down]),
-    ([0x7F, 0x00], [.backspace]),
+    ([0x1b, 0x5b, 0x41, 0x6a, 0x1b, 0x5b, 0x42], [.up, .character("j"), .down]),
+    ([0x7f, 0x00], [.backspace]),
     ([0x08], [.backspace]),
     (Array("Grüße🎉".utf8), Array("Grüße🎉").map { .character($0) }),
     ([0x80, 0x61], [.character("a")]),
-    ([0x1B, 0x7F], [.deleteWord]),
-    ([0x1B, 0x08], [.deleteWord]),
+    ([0x1b, 0x7f], [.deleteWord]),
+    ([0x1b, 0x08], [.deleteWord]),
     (Array("\u{1B}b\u{1B}f".utf8), [.wordLeft, .wordRight]),
     (Array("\u{1B}[1;3D\u{1B}[1;3C".utf8), [.wordLeft, .wordRight]),
     (Array("\u{1B}[3~".utf8), [.delete]),
-    ([0x01, 0x05, 0x04, 0x0B, 0x15, 0x17], [.home, .end, .delete, .deleteToEnd, .deleteToStart, .deleteWord]),
+    ([0x01, 0x05, 0x04, 0x0b, 0x15, 0x17], [.home, .end, .delete, .deleteToEnd, .deleteToStart, .deleteWord]),
     (Array("\u{1B}[99;5Xa".utf8), [.character("a")]),
     (Array("\u{1B}[1;5Pa".utf8), [.character("a")]),
     (Array("\u{1B}xa".utf8), [.character("a")]),
-    ([0x1B, 0x1B], [.escape, .escape]),
-    (Array("\u{1B}[200~/Volumes/\u{1B}Ext\nra\u{1B}[201~a".utf8), [.paste("/Volumes/Extra"), .character("a")]),
+    ([0x1b, 0x1b], [.escape, .escape]),
+    (Array("\u{1B}[200~/Volumes/\u{1B}Ext\nra\u{1B}[201~a".utf8), [.paste("/Volumes/Extra"), .character("a")])
 ]
 
 private let incompleteExamples: [([UInt8], Bool)] = [
-    ([0x1B], true),
-    ([0x1B, 0x5B], true),
+    ([0x1b], true),
+    ([0x1b, 0x5b], true),
     (Array("\u{1B}[1;3".utf8), true),
     (Array("\u{1B}[1;3D".utf8), false),
-    ([0x1B, 0x7F], false),
+    ([0x1b, 0x7f], false),
     (Array("\u{1B}[200~/Vol".utf8), true),
     (Array("\u{1B}[200~/Vol\u{1B}[201~".utf8), false),
-    (Array("abc".utf8), false),
+    (Array("abc".utf8), false)
 ]
 
 struct KeyTests {
@@ -65,9 +65,11 @@ struct KeyTests {
     @Test
     func `a control sequence split across reads decodes as one key once complete`() {
         var bytes: [UInt8] = []
-        for chunk in [[0x1B], Array("[1;".utf8), Array("3D".utf8)] as [[UInt8]] {
+        for chunk in [[0x1b], Array("[1;".utf8), Array("3D".utf8)] as [[UInt8]] {
             bytes += chunk
-            if !Key.isIncomplete(bytes) { break }
+            if !Key.isIncomplete(bytes) {
+                break
+            }
         }
         #expect(Key.parse(bytes) == [.wordLeft])
     }
@@ -81,7 +83,11 @@ struct TUIModelTests {
 
     private var model: TUIModel {
         TUIModel(
-            list: XcodeList(listed: [notInstallable, available, installed.xcode, older], installed: [installed.xcode], notInstallable: [notInstallable]),
+            list: XcodeList(
+                listed: [notInstallable, available, installed.xcode, older],
+                installed: [installed.xcode],
+                notInstallable: [notInstallable]
+            ),
             installed: [installed]
         )
     }
@@ -169,13 +175,16 @@ struct TUIRendererTests {
     private var model: TUIModel {
         let xcodes = (1 ... 30).map { Xcode.fixture("\($0).0", build: "\($0)A1") }
         return TUIModel(sections: [
-            TUISection(title: "Installed", entries: [TUIEntry(kind: .installed(URL(fileURLWithPath: "/Applications/Xcode.app")), xcode: .fixture(
-                "16.0",
-                build: "16A1",
-                sdks: SDKs(macOS: Version("25A1")),
-                compilers: Compilers(swift: Version("6.0.0.1", "6.0"))
-            ))]),
-            TUISection(title: "Available", entries: xcodes.map { TUIEntry(kind: .available, xcode: $0) }),
+            TUISection(
+                title: "Installed",
+                entries: [TUIEntry(kind: .installed(URL(fileURLWithPath: "/Applications/Xcode.app")), xcode: .fixture(
+                    "16.0",
+                    build: "16A1",
+                    sdks: SDKs(macOS: Version("25A1")),
+                    compilers: Compilers(swift: Version("6.0.0.1", "6.0"))
+                ))]
+            ),
+            TUISection(title: "Available", entries: xcodes.map { TUIEntry(kind: .available, xcode: $0) })
         ])
     }
 
@@ -233,7 +242,7 @@ struct TUIRendererTests {
     @Test
     func `long names are shortened with an ellipsis`() {
         let model = TUIModel(sections: [TUISection(title: "Available", entries: [
-            TUIEntry(kind: .available, xcode: .fixture("15.0", build: String(repeating: "B", count: 60))),
+            TUIEntry(kind: .available, xcode: .fixture("15.0", build: String(repeating: "B", count: 60)))
         ])])
 
         let lines = renderer.render(model, width: 40, height: 8)
@@ -272,6 +281,7 @@ struct TUIRendererTests {
         let entry = TUIEntry(kind: .notInstallable, xcode: .fixture("18.0", build: "18A1"))
 
         #expect(renderer.help(for: entry) == " ↑↓ move   r refresh   q quit")
-        #expect(renderer.help(for: TUIEntry(kind: .available, xcode: entry.xcode)) == " ↑↓ move   i install   d download   r refresh   q quit")
+        #expect(renderer
+            .help(for: TUIEntry(kind: .available, xcode: entry.xcode)) == " ↑↓ move   i install   d download   r refresh   q quit")
     }
 }

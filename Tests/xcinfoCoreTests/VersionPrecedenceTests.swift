@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has only immutable value types but no Sendable annotations.
 @testable import xcinfoCore
+@preconcurrency import XCModel // XCModel (Swift 5 mode, pinned) has immutable value types without Sendable annotations.
 
 struct VersionPrecedenceTests {
     private let xcodes = [
@@ -12,7 +12,7 @@ struct VersionPrecedenceTests {
         .fixture("26.6", build: "17F109", release: .rc(1)),
         .fixture("26.5", build: "17F42"),
         .fixture("27.0", build: "27A5", release: .beta(3)),
-        .fixture("27.0", build: "27A4", release: .beta(2)),
+        .fixture("27.0", build: "27A4", release: .beta(2))
     ]
 
     private func identify(_ version: String, prompt: FakePrompt = FakePrompt()) async throws -> (Xcode, LogRecorder) {
@@ -25,7 +25,7 @@ struct VersionPrecedenceTests {
             prompt: prompt,
             applicationsDirectory: caches.url
         )
-        return (try await core.info(version: .version(version), shouldUpdate: true), logs)
+        return try await (core.info(version: .version(version), shouldUpdate: true), logs)
     }
 
     @Test(arguments: [
@@ -36,7 +36,7 @@ struct VersionPrecedenceTests {
         ("26.6 rc 1", "26.6 RC 1 (17F109)", nil),
         ("17F109", "26.6 RC 1 (17F109)", nil),
         ("27", "27.0 Beta 3 (27A5)", "Using Xcode 27.0 Beta 3 (27A5), the newest pre-release of 27; there is no final release yet."),
-        ("27.0 beta 2", "27.0 Beta 2 (27A4)", nil),
+        ("27.0 beta 2", "27.0 Beta 2 (27A4)", nil)
     ] as [(String, String, String?)])
     func `a version without a qualifier means the final release`(version: String, expected: String, message: String?) async throws {
         let prompt = FakePrompt()

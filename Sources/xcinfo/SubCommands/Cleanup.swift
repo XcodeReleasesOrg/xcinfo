@@ -19,7 +19,7 @@ extension XCInfo {
             """
         )
 
-        @OptionGroup()
+        @OptionGroup
         var globals: DefaultOptions
 
         func run() async throws {

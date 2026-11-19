@@ -74,7 +74,8 @@ private struct AppleArchiveExtraction {
         ) else { throw AEAError.notAnArchive }
         defer { try? file.close() }
         let size = (try? FileManager.default.attributesOfItem(atPath: source.path)[.size] as? Int64) ?? 0
-        guard let counted = ArchiveByteStream.customStream(instance: ProgressReportingStream(inner: file, size: size, report: progress)) else {
+        guard let counted = ArchiveByteStream.customStream(instance: ProgressReportingStream(inner: file, size: size, report: progress))
+        else {
             throw AEAError.notAnArchive
         }
         defer { try? counted.close() }
@@ -175,11 +176,14 @@ extension Extractor {
         try await AEAExtractor(trust: trust, archiveUtility: archiveUtility, logger: logger).extract(source, into: target)
         logger.progress(OutputProgress(title: "Extracting", fraction: 1, isFinished: true))
 
-        let bundles = try FileManager.default.contentsOfDirectory(at: target, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-            .filter { url in
-                let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-                return url.pathExtension == "app" && values?.isDirectory == true && values?.isSymbolicLink != true
-            }
+        let bundles = try FileManager.default.contentsOfDirectory(
+            at: target,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey]
+        )
+        .filter { url in
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            return url.pathExtension == "app" && values?.isDirectory == true && values?.isSymbolicLink != true
+        }
         guard bundles.count == 1, let bundle = bundles.first, Bundle(url: bundle)?.bundleIdentifier == "com.apple.dt.Xcode" else {
             throw AEAError.unexpectedContents("The archive did not contain exactly one Xcode app.")
         }
@@ -207,7 +211,8 @@ struct AEASignatureCheck {
         ) else { throw AEAError.notAnArchive }
         defer { try? file.close() }
         let size = (try? FileManager.default.attributesOfItem(atPath: source.path)[.size] as? Int64) ?? 0
-        guard let counted = ArchiveByteStream.customStream(instance: ProgressReportingStream(inner: file, size: size, report: progress)) else {
+        guard let counted = ArchiveByteStream.customStream(instance: ProgressReportingStream(inner: file, size: size, report: progress))
+        else {
             throw AEAError.notAnArchive
         }
         defer { try? counted.close() }
@@ -232,11 +237,26 @@ struct AEASignatureCheck {
 }
 
 private final class DiscardingStream: ArchiveByteStreamProtocol {
-    func read(into buffer: UnsafeMutableRawBufferPointer) throws -> Int { 0 }
-    func read(into buffer: UnsafeMutableRawBufferPointer, atOffset offset: Int64) throws -> Int { 0 }
-    func write(from buffer: UnsafeRawBufferPointer) throws -> Int { buffer.count }
-    func write(from buffer: UnsafeRawBufferPointer, atOffset offset: Int64) throws -> Int { buffer.count }
-    func seek(toOffset offset: Int64, relativeTo origin: FileDescriptor.SeekOrigin) throws -> Int64 { offset }
+    func read(into buffer: UnsafeMutableRawBufferPointer) throws -> Int {
+        0
+    }
+
+    func read(into buffer: UnsafeMutableRawBufferPointer, atOffset offset: Int64) throws -> Int {
+        0
+    }
+
+    func write(from buffer: UnsafeRawBufferPointer) throws -> Int {
+        buffer.count
+    }
+
+    func write(from buffer: UnsafeRawBufferPointer, atOffset offset: Int64) throws -> Int {
+        buffer.count
+    }
+
+    func seek(toOffset offset: Int64, relativeTo origin: FileDescriptor.SeekOrigin) throws -> Int64 {
+        offset
+    }
+
     func cancel() {}
     func close() throws {}
 }

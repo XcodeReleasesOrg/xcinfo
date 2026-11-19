@@ -7,8 +7,8 @@ import ArgumentParser
 import Dependencies
 import Foundation
 import XCIFoundation
-import XCInfoTUI
 import xcinfoCore
+import XCInfoTUI
 
 @main
 struct XCInfo: AsyncParsableCommand {
@@ -186,7 +186,10 @@ struct ExtractionOptions: ParsableArguments {
 
     func reportDeprecations(to output: TerminalRenderer) {
         if useSystemUnxip {
-            output.render(.message("--use-system-unxip is no longer needed: xcinfo always extracts .xip archives with its built-in unxip.", .warning))
+            output.render(.message(
+                "--use-system-unxip is no longer needed: xcinfo always extracts .xip archives with its built-in unxip.",
+                .warning
+            ))
         }
     }
 }

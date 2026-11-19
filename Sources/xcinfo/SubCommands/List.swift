@@ -26,7 +26,7 @@ extension XCInfo {
             discussion: "List all available Xcode versions available according to xcodereleases.com."
         )
 
-        @OptionGroup()
+        @OptionGroup
         var globals: DefaultOptions
 
         @Flag
