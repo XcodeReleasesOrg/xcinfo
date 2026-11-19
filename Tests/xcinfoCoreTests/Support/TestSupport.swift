@@ -235,7 +235,7 @@ extension Core {
         authenticate: (@Sendable (String, @escaping @Sendable () async throws -> String) async throws -> Void)? = nil,
         downloadListing: DownloadListing? = nil,
         cleanupAuthentication: (@Sendable () async -> Bool)? = nil,
-        download: (@Sendable (URL, URL, Bool) async throws -> URL)? = nil,
+        download: (@Sendable (URL, URL, Bool, Int) async throws -> URL)? = nil,
         extract: (@Sendable (URL, URL, String?) async throws -> URL)? = nil,
         shell: FakeShell? = nil,
         isAppleSilicon: Bool? = nil,

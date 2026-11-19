@@ -18,7 +18,7 @@ struct ChecksumTests {
             listXcodes: { xcodes },
             accountName: { "user" },
             authenticate: { _, _ in },
-            download: { _, _, _ in archive },
+            download: { _, _, _, _ in archive },
             applicationsDirectory: caches.url
         )
     }

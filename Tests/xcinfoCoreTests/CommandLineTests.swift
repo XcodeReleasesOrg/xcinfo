@@ -133,6 +133,22 @@ struct CommandLineTests {
     }
 
     @Test
+    func `downloads use eight connections unless told otherwise`() throws {
+        #expect(try parse(XCInfo.Download.self, ["download", "15.0"]).downloadOptions.options.connections == 8)
+        #expect(try parse(XCInfo.Download.self, ["download", "15.0", "--connections", "1"]).downloadOptions.options
+            .connections == 1)
+        #expect(try parse(XCInfo.Install.self, ["install", "15.0", "--connections", "16"]).installationOptions
+            .downloadOptions.options.connections == 16)
+    }
+
+    @Test(arguments: ["0", "17"])
+    func `connections outside one to sixteen are rejected`(value: String) {
+        #expect(throws: (any Error).self) {
+            try XCInfo.parseAsRoot(["download", "15.0", "--connections", value])
+        }
+    }
+
+    @Test
     func `no sleep keeps the system awake`() throws {
         let noSleep = try parse(XCInfo.Download.self, ["download", "15.0", "--no-sleep"])
         let sleep = try parse(XCInfo.Download.self, ["download", "15.0", "--sleep"])

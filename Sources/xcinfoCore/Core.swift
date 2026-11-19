@@ -90,14 +90,19 @@ public struct Core: Sendable {
     }
 
     public struct DownloadOptions: Sendable {
+        public static let defaultConnections = 8
+        public static let connectionRange = 1 ... 16
+
         public init(
             destination: URL,
             disableSleep: Bool,
             verifiesChecksum: Bool = true,
             archiveFormat: ArchiveFormat? = nil,
             overwritesExistingFile: Bool = false,
-            architecture: XcodeArchitecture? = nil
+            architecture: XcodeArchitecture? = nil,
+            connections: Int = DownloadOptions.defaultConnections
         ) {
+            self.connections = connections
             self.architecture = architecture
             self.overwritesExistingFile = overwritesExistingFile
             self.destination = destination
@@ -109,6 +114,7 @@ public struct Core: Sendable {
         public var archiveFormat: ArchiveFormat?
         public var overwritesExistingFile: Bool
         public var architecture: XcodeArchitecture?
+        public var connections: Int
 
         public var destination: URL
         public var disableSleep: Bool
@@ -233,14 +239,24 @@ public struct Core: Sendable {
         do {
             let downloadURL: URL
             do {
-                downloadURL = try await downloads.download(source.url, options.destination, options.disableSleep)
+                downloadURL = try await downloads.download(
+                    source.url,
+                    options.destination,
+                    options.disableSleep,
+                    options.connections
+                )
             } catch XCAPIError.unexpectedStatusCode(404) where source.derivedFallback != nil {
                 let fallback = source.derivedFallback!
                 logger
                     .warn(
                         "Apple has no file at \(source.url.lastPathComponent). Trying the .aea at the same path, a derived address: \(fallback)"
                     )
-                downloadURL = try await downloads.download(fallback, options.destination, options.disableSleep)
+                downloadURL = try await downloads.download(
+                    fallback,
+                    options.destination,
+                    options.disableSleep,
+                    options.connections
+                )
             }
             logger.success("Downloaded to \(downloadURL.path)")
             if options.verifiesChecksum, let mismatch = try await checksumMismatch(of: downloadURL, xcode: xcode) {

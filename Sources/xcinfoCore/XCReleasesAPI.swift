@@ -259,6 +259,7 @@ public enum XCAPIError: Error, CustomStringConvertible, Sendable {
     case versionNotFound
     case downloadInterrupted
     case recoverableDownloadError(url: URL, resumeData: Data)
+    case downloadFailed(String)
     case couldNotMoveToTemporaryFile
     case couldNotMoveToDestinationFolder(URL, URL, NSError)
     case timeout
@@ -275,6 +276,8 @@ public enum XCAPIError: Error, CustomStringConvertible, Sendable {
             "Version not found"
         case .recoverableDownloadError:
             "Download failed"
+        case let .downloadFailed(reason):
+            "Download failed: \(reason)"
         case .downloadInterrupted:
             "Download was interrupted"
         case .couldNotMoveToTemporaryFile:
