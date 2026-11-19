@@ -240,7 +240,6 @@ Versions with two downloads have an extra `"architecture"` field (`"appleSilicon
 
 - Signing in has been checked by hand against Apple's service with SRP (`s2k`), two-factor codes from a trusted device and session reuse. Not yet checked live: the `s2k_fo` password protocol, two-factor codes by text message, and accounts without two-factor authentication.
 - The `archiveutil` fallback for `.aea` archives that are not signed-only, and `install --archive-path` with an `.aea`, have not been checked with real archives yet.
-- Downloads over several connections have been checked against a local test server, not yet against Apple's servers.
 - `installed` and the terminal UI can't tell whether an installed Xcode came from the Apple silicon or the Universal download, so installed versions are not labelled.
 
 ## License
