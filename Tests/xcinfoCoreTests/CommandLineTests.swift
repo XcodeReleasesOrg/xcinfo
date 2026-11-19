@@ -332,7 +332,7 @@ struct HelpTextTests {
 
 struct VersionTests {
     @Test
-    func `the version is 2.0.0`() {
-        #expect(XCInfo.configuration.version == "2.0.0")
+    func `the version is 2.1.0`() {
+        #expect(XCInfo.configuration.version == "2.1.0")
     }
 }
