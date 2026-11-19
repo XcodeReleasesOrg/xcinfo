@@ -70,7 +70,7 @@
 - In computed properties, use switch expressions (trailing expression, no `return`)
 - No new namespaces of static functions (`enum` or `struct` that only groups static helpers). Put logic in extensions, initializers or computed properties on the type that owns the data
 - Prefer `FormatStyle` over `Formatter` subclasses and `Duration` over `Double` seconds in new code. Existing formatters stay as they are unless the output is meant to change
-- Format with SwiftFormat using the repository's `.swiftformat`
+- Format with SwiftFormat using the repository's `.swiftformat` (140 columns; it reads `.swift-version`). Run `swiftformat .` before every commit and keep `swiftformat --lint .` passing
 
 ## Testing
 
