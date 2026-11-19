@@ -3,4 +3,4 @@
 //  LGPL-3.0 license - see COPYING.LESSER
 //
 
-let version = "2.0.0"
+let version = "2.1.0"

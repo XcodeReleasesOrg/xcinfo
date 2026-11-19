@@ -65,7 +65,7 @@ Lists the Xcode versions from xcodereleases.com: by default the versions release
 
 ### installed
 
-Lists the Xcode applications Spotlight finds on this Mac, with their paths.
+Lists the Xcode applications Spotlight or LaunchServices finds on this Mac, with their paths. LaunchServices also finds Xcodes in hidden folders, which Spotlight skips.
 
 ### download
 
@@ -247,6 +247,13 @@ Versions with two downloads have an extra `"architecture"` field (`"appleSilicon
 xcinfo is licensed under the GNU Lesser General Public License 3.0 ([COPYING.LESSER](COPYING.LESSER)), which builds on the GNU General Public License 3.0 ([COPYING](COPYING)).
 
 ## Changelog
+
+### Version 2.1.0
+
+- `signin` command (alias `login`) to sign in ahead of time and store the Apple ID and session
+- Downloads over 8 connections at the same time with HTTP range requests; `--connections` changes the number
+- `installed` also finds Xcodes through LaunchServices, so Xcodes in hidden folders show up
+- License named as LGPL-3.0 in the file headers, with the GPL-3.0 text in `COPYING`
 
 ### Version 2.0.0
 
